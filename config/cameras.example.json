@@ -1,0 +1,21 @@
+{
+  "cameras": [
+    {
+      "uuid": "REPLACE-WITH-SSM-CAMERA-UUID",
+      "name": "예시 산불감시 CCTV",
+      "parkId": "bukhansan",
+      "model": "XNP-6550RH",
+      "latitude": 37.0,
+      "longitude": 127.0,
+      "groundElevationM": null,
+      "cameraHeightM": null,
+      "headingOffsetDeg": 0.0,
+      "tiltOffsetDeg": 0.0,
+      "enabled": true,
+      "ptz": {
+        "getPosNormalize": null,
+        "absoluteZoom": null
+      }
+    }
+  ]
+}
