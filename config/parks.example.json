@@ -1,0 +1,14 @@
+{
+  "parks": [
+    {
+      "id": "bukhansan",
+      "name": "북한산국립공원",
+      "enabled": true,
+      "defaultView": {
+        "longitude": 126.98,
+        "latitude": 37.66,
+        "height": 8000
+      }
+    }
+  ]
+}

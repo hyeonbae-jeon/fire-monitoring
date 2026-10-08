@@ -1,0 +1,17 @@
+.env
+.vs/
+bin/
+obj/
+node_modules/
+dist/
+logs/
+config/cameras.json
+config/parks.json
+secrets/
+config/inventory.json
+config/*.lock
+config/*.tmp
+wwwroot/
+playwright-report/
+test-results/
+__pycache__/

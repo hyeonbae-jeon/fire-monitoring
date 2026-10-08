@@ -1,0 +1,13 @@
+{
+  "project": "Wisenet CCTV 3D Wildfire Monitoring",
+  "handoffVersion": "1.0",
+  "ssmVersionObserved": "2.21.00_260514",
+  "cameraModelObserved": "XNP-6550RH",
+  "primarySequence": [
+    "SSM camera inventory / UUID",
+    "select target cameras",
+    "live PTZ",
+    "VWorld 3D",
+    "terrain visibility"
+  ]
+}
