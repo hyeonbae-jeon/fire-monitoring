@@ -34,16 +34,19 @@ function App() {
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [desktopDemo, setDesktopDemo] = useState(false);
 
   async function load() {
     setBusy(true); setError(""); setMessage("");
     // On failure keep the user's selection visible, but prevent stale saves.
     setInventory(null);
     try {
-      const [inv, conf] = await Promise.all([
+      const [inv, conf, health] = await Promise.all([
         api<Inventory>("/api/inventory"), api<Configuration>("/api/cameras"),
+        api<{ localDesktopDemo: boolean }>("/health"),
       ]);
       setInventory(inv); setConfiguration(conf);
+      setDesktopDemo(health.localDesktopDemo);
       setSelected(new Set(conf.configuration.cameras.filter(c => c.enabled !== false).map(c => c.uuid.toLowerCase())));
       setDirty(false);
     } catch (e) { setError((e as Error).message); }
@@ -110,6 +113,7 @@ function App() {
       <p className="help">GET_POS_NORMALIZE는 capability 비트입니다. PTZ 구독에는 ENTITY_CAPABILITY 및 ChannelSubType 확인도 필요합니다.</p>
       <section className="save"><label>설정 저장 키<input type="password" autoComplete="off" value={writeKey} onChange={e => setWriteKey(e.target.value)} /></label>
         <button disabled={busy || !inventory || !configuration || missing.length > 0 || !writeKey || !dirty} onClick={() => void save()}>선택한 카메라 저장</button>
+        {desktopDemo && <p>로컬 샘플 시연용 저장 키: <code>local-demo-only</code> · 선택 결과는 실행파일 폴더의 data/cameras.demo.json에 저장됩니다.</p>}
         <p>선택 해제한 카메라는 설정에서 제거됩니다. 0대 저장은 전체 선택 해제입니다. 키는 브라우저 저장소에 보관하지 않습니다.</p>
       </section>
     </main>

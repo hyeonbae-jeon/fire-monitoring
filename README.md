@@ -25,6 +25,10 @@ Wisenet SSM/NVR에 연결된 산불감시 CCTV의 실시간 PTZ 상태를 받아
 
 ## 개발 및 실행
 
+설치 없이 Windows PC에서 샘플 UI를 테스트하려면 [Windows 실행 패키지 안내](docs/windows-demo.md)를
+참조하세요. 빌드 PC에서는 의존성 설치 후 `python3 scripts/build-portable.py`로 Windows x64
+ZIP을 만듭니다. 사용자 PC에는 Git/.NET/Node.js가 필요하지 않습니다. 이 패키지는 실제 SSM에 연결하지 않습니다.
+
 필수: .NET SDK 8.0.425 (`global.json`), Node.js 22.12 이상 또는 24, npm, Python 3.
 Linux x64 클라우드에서는 저장소 루트에서 `bash scripts/setup-cloud.sh`로 SDK 검증 설치,
 잠금 파일 기반 의존성 설치, 웹/Bridge 빌드, HTTP 통합 테스트를 수행합니다.

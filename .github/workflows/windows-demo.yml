@@ -1,0 +1,68 @@
+name: Windows portable demo
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feat/windows-portable-demo
+    paths:
+      - '.github/workflows/windows-demo.yml'
+      - 'bridge/**'
+      - 'web/**'
+      - 'scripts/build-portable.py'
+      - 'tests/**'
+      - 'config/inventory.example.json'
+      - 'docs/windows-demo.md'
+      - 'global.json'
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.425'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Build web and Bridge
+        run: |
+          cd web
+          npm ci --no-audit --no-fund
+          npm run build -- --outDir ../bridge/WisenetPtzBridge/wwwroot --emptyOutDir
+          cd ..
+          dotnet build bridge/WisenetPtzBridge -c Release --nologo
+      - name: Test synthetic inventory and portable startup
+        run: |
+          python3 tests/test_inventory.py
+          python3 tests/test_portable_demo.py
+      - name: Package Windows x64 demo
+        run: python3 scripts/build-portable.py
+      - name: Register downloadable artifact
+        id: artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-Camera-Inventory-Demo
+          path: |
+            artifacts/Wisenet-Camera-Inventory-Demo-win-x64.zip
+            artifacts/Wisenet-Camera-Inventory-Demo-win-x64.zip.sha256
+          if-no-files-found: error
+          retention-days: 30
+      - name: Download instructions
+        env:
+          ARTIFACT_URL: ${{ steps.artifact.outputs.artifact-url }}
+        run: |
+          echo "## Windows x64 sample demo" >> "$GITHUB_STEP_SUMMARY"
+          echo "Download: $ARTIFACT_URL" >> "$GITHUB_STEP_SUMMARY"
+          echo "Extract the artifact ZIP, then the package ZIP. Double-click WisenetPtzBridge.exe." >> "$GITHUB_STEP_SUMMARY"
+          echo "SSM is not connected. Uses synthetic cameras only. Demo save key: local-demo-only." >> "$GITHUB_STEP_SUMMARY"

@@ -15,3 +15,5 @@ wwwroot/
 playwright-report/
 test-results/
 __pycache__/
+artifacts/
+config/cameras.demo.json
