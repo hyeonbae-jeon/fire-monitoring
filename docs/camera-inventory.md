@@ -95,6 +95,11 @@ capability와 enabled만 갱신합니다. 새 카메라의 미확인 위치·보
 
 ## 실제 SSM 어댑터를 구현하기 전에 확인할 것
 
+추가 코드 추적 문서와 비교 결과는 [ptz-trace-review.md](ptz-trace-review.md) 참조.
+다음 정적 분석 후보는 DataService/관련 모델, WebServiceStub의 실제 채널 조회,
+MediaService/ControlSession 초기화 및 MapTile.OnRequest subscriber임.
+내부 RequestEx 경로가 보고됐어도 전체 목록 계약이나 외부 인증이 확인된 것은 아님.
+
 1. 지원되는 외부 인터페이스(공식 SDK/API/검증된 export), 버전 및 사용·재배포 조건
 2. 로그인/세션/계정 권한/TLS 방식. 비밀값은 채팅이나 소스에 남기지 않음
 3. 정확한 camera UUID와 channel/device 관계, 이름, uint64 PtzCap 필드 매핑

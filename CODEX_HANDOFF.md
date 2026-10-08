@@ -169,6 +169,17 @@ RequestEX(requestObj);
 
 `ControlSession.Request(RequestObj)`에서 `REQ_TYPE.PTZ_CONTROL`은 `MakeRequestPacket(..., MessageType.Command)` 후 `BeginSend(...)`로 네트워크 전송된다.
 
+추가 인수인계(`docs/PTZ_CODE_TRACE_STATUS.md`)에 따르면
+`MediaService.RequestEx(ref RequestObj, Guid)`는 카메라 UUID의 Media Gateway/CONTROL session을
+찾아 `ControlSession.Request()`로 전달한다. 절대 위치 설정 메서드의 정확한 위치는
+`PTZPanel.Function_Request(float,float,float)`로 보고되었다.
+이는 전달된 정적 분석 결과이며 외부 인증·세션 생성 또는 MapTile.OnRequest subscriber가
+확인됐다는 의미가 아니다. 해당 제어 메서드를 실행 Bridge에 추가하거나 시험 호출하지 않는다.
+
+`SetObjectPTZAngle()`은 Zoom을 사용하지 않는다고 추가 문서에 명시돼 있다.
+GROUND/CEILING 보정은 SSM 지도 표시 규칙이며 실제 북쪽 방위각 및 광학 FOV에는
+실장비 값 검증과 설치 방향 캘리브레이션이 필요하다.
+
 ## 11. VERIFIED — SSM REST/Web 구조 단서
 `WebServiceStub.dll`에서 카메라/채널/프리셋 관련 REST 경로 확인:
 - `/v3/channels?...`
