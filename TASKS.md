@@ -23,6 +23,8 @@
 상단 P1의 실제 SSM 목록 획득 완료는 주장하지 않습니다. 상세 범위: `docs/camera-inventory.md`.
 
 ## P2 PTZ Stream
+- [x] 추가 PTZ_CODE_TRACE_STATUS 문서 비교 및 새 내부 코드 위치/미확인 범위 기록
+- [ ] 실제 DLL/ILSpy 코드로 DataService 조회 및 MediaService/ControlSession 초기화 조사
 - [ ] 선택 UUID START
 - [ ] PTZ_CONTROL event receive
 - [ ] Pan/Tilt/Zoom cache
@@ -52,3 +54,11 @@
 - [ ] ray casting
 - [ ] occlusion
 - [ ] visible footprint
+
+## VWorld 위치 시안 (실장비 정보 확보 전)
+- [x] WGS84 북한산 임의 위치, 선택, JSON 입력/내보내기
+- [x] 기존 사이트와 같은 v3 SDK 연결 코드 및 모의 SDK 브라우저 검증
+- [x] 실제 방향 UNKNOWN 및 수동 시험 부채꼴 구분
+- [x] 영상/지형 기반 방향 추정 가능 조건 검토
+- [ ] 등록 주소·실제 키로 VWorld 인증/3D 지형 로딩 확인
+- [ ] 실제 UUID-좌표 매핑 및 중앙 지도 설정 저장

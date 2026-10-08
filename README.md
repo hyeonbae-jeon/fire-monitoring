@@ -22,6 +22,7 @@ Wisenet SSM/NVR에 연결된 산불감시 CCTV의 실시간 PTZ 상태를 받아
 - PTZ 명령 전송, 구독, WebSocket, VWorld 지도는 구현하지 않았습니다.
 
 접근 설계와 UNKNOWN 확인 목록은 [Camera Inventory 설계](docs/camera-inventory.md)를 참조하세요.
+추가 PTZ 코드 추적 문서의 기존/신규 비교와 반영 범위는 [추가 handoff 비교](docs/ptz-trace-review.md)에 정리했습니다.
 
 ## 개발 및 실행
 
@@ -89,3 +90,9 @@ Playwright Chromium이 필요하며, 시스템 Chromium은 `CHROMIUM_EXECUTABLE`
 - `probe/` : 실험용 코드
 
 운영 CCTV이므로 초기 개발은 읽기 전용으로 진행한다.
+
+## VWorld 위치 모니터링 시안
+
+지도 모니터링 탭에 북한산 임의 좌표, VWorld v3 연결, 좌표 JSON 입력/내보내기와 수동 시험 부채꼴을 추가했습니다.
+실제 SSM/PTZ/영상은 연결하지 않습니다. 지도 키와 등록 주소가 필요하며 클라우드 실지도 접속은 아직 미검증입니다.
+[지도 실행과 좌표 형식](docs/vworld-monitoring.md) · [영상 방향 추정 검토](docs/video-direction-feasibility.md)

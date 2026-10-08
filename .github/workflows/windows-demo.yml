@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - feat/windows-portable-demo
+      - feat/vworld-monitoring-prototype
     paths:
       - '.github/workflows/windows-demo.yml'
       - 'bridge/**'
@@ -46,6 +47,11 @@ jobs:
         run: |
           python3 tests/test_inventory.py
           python3 tests/test_portable_demo.py
+      - name: Test browser inventory and map (mock SDK)
+        run: |
+          cd web
+          npx playwright install --with-deps chromium
+          npm run test:e2e
       - name: Package Windows x64 demo
         run: python3 scripts/build-portable.py
       - name: Register downloadable artifact

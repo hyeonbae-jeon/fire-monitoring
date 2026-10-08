@@ -30,7 +30,7 @@ PC 밖에서 접속할 수 없도록 루프백 주소에만 바인딩합니다.
 
 **Wisenet SSM에 실제로 연결하지 않습니다.** 회사 PC에 Wisenet 프로그램이 있어도 자동으로
 카메라를 읽지 않습니다. `demo/inventory.json`은 합성 샘플이며 실제 장비 목록이 아닙니다.
-PTZ 제어/구독/영상 조회, VWorld 지도는 포함하지 않습니다. 운영 환경변수나 SSM 비밀번호도
+PTZ 제어/구독/영상 조회는 포함하지 않습니다. VWorld 위치 시안은 지도 모니터링 탭에서 확인합니다. 운영 환경변수나 SSM 비밀번호도
 사용하지 않습니다. 운영 cameras.json과 별도의 data/cameras.demo.json만 사용합니다.
 
 실제 전체 SSM 목록 연결은 외부 조회 인터페이스의 인증/UUID/필드/페이지 처리 확인이 선행되어야 합니다.
@@ -46,3 +46,11 @@ PTZ 제어/구독/영상 조회, VWorld 지도는 포함하지 않습니다. 운
 
 검증 범위: Linux 빌드 환경에서 Windows x64 self-contained publish 및 ZIP 무결성 검증.
 공통 웹/Bridge와 로컬 시연 시작·저장 경로는 테스트하며, Windows GUI 실행은 회사 PC에서 확인해야 합니다.
+
+## 지도 시험
+
+지도 모니터링 탭에서 북한산 임의 시험 좌표를 확인합니다. 키 없이 좌표 배치도를 볼 수 있습니다.
+VWorld 3D를 보려면 인터넷 연결과 이 앱 주소를 허용하는 VWorld 키가 필요합니다.
+키를 입력하고 연결하세요. 기존 GitHub Pages 등록 키가 로컬 주소에서도 작동한다고 보장할 수 없습니다.
+좌표 설정은 JSON으로 다운로드하고 다음 실행 때 불러옵니다. 실제 방향은 UNKNOWN이며 주황색은 시험 값입니다.
+자세한 내용: docs/vworld-monitoring.md, docs/video-direction-feasibility.md.
