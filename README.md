@@ -96,3 +96,9 @@ Playwright Chromium이 필요하며, 시스템 Chromium은 `CHROMIUM_EXECUTABLE`
 지도 모니터링 탭에 북한산 임의 좌표, VWorld v3 연결, 좌표 JSON 입력/내보내기와 수동 시험 부채꼴을 추가했습니다.
 실제 SSM/PTZ/영상은 연결하지 않습니다. 지도 키와 등록 주소가 필요하며 클라우드 실지도 접속은 아직 미검증입니다.
 [지도 실행과 좌표 형식](docs/vworld-monitoring.md) · [영상 방향 추정 검토](docs/video-direction-feasibility.md)
+
+## 장치 설정 리포트 가져오기
+
+카메라 목록 탭에서 SSM Excel XML(.xls) 리포트를 읽고 이름/Guid/모델/PTZ 지원 표시를 가져올 수 있습니다.
+원본 접속 정보는 전달하지 않습니다. 전체 목록 여부·수집 시각을 확인한 뒤 필요한 카메라를 선택해 저장하세요.
+실제 PtzCap/현재 방향은 UNKNOWN입니다. [가져오기 방법](docs/ssm-report-import.md).

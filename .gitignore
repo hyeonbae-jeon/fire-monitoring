@@ -17,3 +17,6 @@ test-results/
 __pycache__/
 artifacts/
 config/cameras.demo.json
+
+# Operational report inputs and normalized previews stay local.
+config/imports/

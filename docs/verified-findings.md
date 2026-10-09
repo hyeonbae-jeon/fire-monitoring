@@ -26,3 +26,9 @@ SSM 2.21.00_260514 정적 분석 결과이며, 이번 작업에서 원본 DLL이
 구독 요청/이벤트/PtzCtrl/구독 조건/설치형태에 따른 Pan 보정은 기존 handoff와 중복됨.
 위 MediaService 경로만으로 `MapTile.OnRequest`의 최종 subscriber나 외부 프로세스의
 인증·연결 방법이 확인된 것은 아님. 상세 비교는 [추가 handoff 비교](ptz-trace-review.md) 참조.
+
+## 장치 설정 리포트 확인
+
+사용자가 제공한 Excel XML 리포트의 Camera 시트에서 고유 Name/Guid 140개, PTZ 표시 지원함 137개/지원 안 함 3개, Model 열을 확인했습니다.
+보고서 Guid를 파일 목록의 식별자로 사용하며 실제 PTZ 이벤트 UUID와의 일치는 추가 확인이 필요합니다.
+PTZ 표시 문구는 PtzCap 비트가 아니며 위치 조회 가능 여부를 확정하지 않습니다. [상세](ssm-report-import.md).

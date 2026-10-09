@@ -38,7 +38,7 @@ with tempfile.TemporaryDirectory() as temporary:
     (package / 'portable-demo.json').write_text(json.dumps({'mode': 'synthetic-demo'}), encoding='utf-8')
     (package / '사용방법.txt').write_text((ROOT / 'docs/windows-demo.md').read_text(encoding='utf-8'), encoding='utf-8-sig')
     (package / 'docs').mkdir()
-    for name in ['vworld-monitoring.md', 'video-direction-feasibility.md']:
+    for name in ['vworld-monitoring.md', 'video-direction-feasibility.md', 'ssm-report-import.md']:
         shutil.copyfile(ROOT / 'docs' / name, package / 'docs' / name)
     (package / '문제진단.cmd').write_bytes(b'@echo off\r\ncd /d "%~dp0"\r\nWisenetPtzBridge.exe --no-browser\r\npause\r\n')
     # Ship the runtime's notices and application dependency license information.

@@ -47,6 +47,7 @@ scaffold 문제:
 - `capturedAt`: 출처에서 목록을 수집한 시각 (시간대 포함)
 - `provenance`: 검증된 수집 방식/출처 설명. 인증 정보는 넣지 않음
 - `cameras`: `uuid`, `name`, nullable `channel`, nullable `device`, nullable `ptzCap`
+- 선택 필드 `model`, `reportedPtzSupported`: 보고서 모델과 PTZ 지원 표시. PtzCap 비트와 구분
 - `ptzCap`: unsigned 64비트 **10진 문자열**. JSON 숫자는 JS 정밀도 손실 때문에 거부
 - 알 수 없는 필드는 `null`. capability=0은 확인된 비트 없음이며 UNKNOWN과 구분
 
@@ -117,3 +118,9 @@ HTTP 통합 테스트는 실제 .NET 프로세스와 임시 파일을 사용합�
 테스트는 uint64 최대값, UNKNOWN, 잘못된/부분 목록, 선택 검증, 인증, 메타데이터 보존,
 재시작 지속성, 동시 저장/오래된 목록 충돌, 손상 파일 보존과 웹 선택 흐름을 확인합니다.
 실제 SSM 전체 조회, PTZ, VWorld, 여러 운영 PC 접속 및 운영 배포는 미검증입니다.
+
+## SSM 장치 설정 리포트 입력
+
+Excel XML .xls를 브라우저에서 읽어 허용한 필드만 중앙 목록 파일에 가져올 수 있습니다.
+PTZ 지원 표시와 capability 비트는 별도이며 전체 여부·수집 시각은 운영자 확인이 필요합니다.
+실제 리포트 원본/정규화 데이터는 GitHub에 포함하지 않습니다. [실행 및 확인 범위](ssm-report-import.md).

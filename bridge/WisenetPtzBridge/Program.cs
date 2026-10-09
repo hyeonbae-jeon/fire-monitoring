@@ -21,7 +21,8 @@ if (desktopDemo)
     builder.Configuration["CAMERA_CONFIG_FILE"] = Path.Combine(AppContext.BaseDirectory, "data", "cameras.demo.json");
     builder.Configuration["INVENTORY_WRITE_KEY"] = "local-demo-only";
 }
-builder.Services.AddSingleton<ICameraInventorySource, FileCameraInventorySource>();
+builder.Services.AddSingleton<FileCameraInventorySource>();
+builder.Services.AddSingleton<ICameraInventorySource>(services => services.GetRequiredService<FileCameraInventorySource>());
 builder.Services.AddSingleton<CameraConfiguration>();
 builder.WebHost.ConfigureKestrel(options =>
 {
@@ -63,12 +64,24 @@ app.MapPut("/api/cameras", async (HttpContext context, SelectionRequest request,
         return Results.Json(new { error = "A valid configuration write key is required." }, statusCode: 401);
     return Results.Ok(await registry.SaveAsync(request, ct));
 });
+app.MapPost("/api/inventory", async (HttpContext context, InventoryImportRequest request,
+    FileCameraInventorySource source, IConfiguration config, CancellationToken ct) =>
+{
+    var expected = config["INVENTORY_WRITE_KEY"];
+    if (string.IsNullOrWhiteSpace(expected))
+        return Results.Json(new { error = "Inventory import is disabled. Configure INVENTORY_WRITE_KEY." }, statusCode: 503);
+    var provided = context.Request.Headers["X-Inventory-Write-Key"].ToString();
+    if (!CryptographicOperations.FixedTimeEquals(SHA256.HashData(Encoding.UTF8.GetBytes(expected)),
+        SHA256.HashData(Encoding.UTF8.GetBytes(provided))))
+        return Results.Json(new { error = "A valid configuration write key is required." }, statusCode: 401);
+    return Results.Ok(await source.ImportAsync(request, ct));
+});
 // Phase 1 has no SSM network client or PTZ command dispatcher.
 if (desktopDemo)
 {
     await app.StartAsync();
     var address = app.Urls.Single();
-    Console.WriteLine($"\nSYNTHETIC CAMERA INVENTORY DEMO — SSM NOT CONNECTED\nBrowser: {address}\nSave key: local-demo-only (public demo value, not an operational credential)\nClose this window or press Ctrl+C to stop.\n");
+    Console.WriteLine($"\nLOCAL CAMERA INVENTORY — INITIAL SAMPLE / REPORT IMPORT — SSM NOT CONNECTED\nBrowser: {address}\nSave key: local-demo-only (public demo value, not an operational credential)\nClose this window or press Ctrl+C to stop.\n");
     if (OperatingSystem.IsWindows() && !noBrowser)
     {
         try { Process.Start(new ProcessStartInfo(address) { UseShellExecute = true }); }

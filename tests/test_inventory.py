@@ -240,6 +240,44 @@ class BridgeTests(unittest.TestCase):
         finally:
             self.stop(); self.start()
 
+    def test_report_import_auth_revision_validation_and_metadata(self):
+        import_body = {'document': copy.deepcopy(self.fixture), 'inventoryVersion': self.request('/api/inventory')[1]['version']}
+        camera = import_body['document']['cameras'][0]
+        camera.update(ptzCap=None, model='SYNTHETIC-MODEL', reportedPtzSupported=True)
+        original = self.inventory_path.read_bytes()
+        self.assertEqual(self.request('/api/inventory', 'POST', import_body)[0], 401)
+        invalid = copy.deepcopy(import_body)
+        invalid['document']['complete'] = False
+        self.assertEqual(self.request('/api/inventory', 'POST', invalid, self.key)[0], 422)
+        invalid = copy.deepcopy(import_body)
+        invalid['document']['cameras'].append(copy.deepcopy(camera))
+        invalid['document']['totalCount'] += 1
+        self.assertEqual(self.request('/api/inventory', 'POST', invalid, self.key)[0], 422)
+        self.assertEqual(self.inventory_path.read_bytes(), original)
+        status, result = self.request('/api/inventory', 'POST', import_body, self.key)
+        self.assertEqual(status, 200)
+        self.assertIsNone(result['cameras'][0]['getPosNormalize'])
+        self.assertTrue(result['cameras'][0]['reportedPtzSupported'])
+        self.assertFalse(result['liveSsmConnected'])
+        self.assertEqual(self.request('/api/inventory', 'POST', import_body, self.key)[0], 409)
+        self.assertEqual(self.request('/api/cameras', 'PUT', self.selection(), self.key)[0], 200)
+        selected = self.request('/api/cameras')[1]['configuration']['cameras'][0]
+        self.assertEqual(selected['model'], 'SYNTHETIC-MODEL')
+        self.assertTrue(selected['reportedPtzSupported'])
+        self.assertIsNone(selected['ptz']['getPosNormalize'])
+
+    def test_report_import_initial_missing_file_preserves_configuration(self):
+        self.inventory_path.unlink()
+        body = {'document': copy.deepcopy(self.fixture), 'inventoryVersion': None}
+        self.assertEqual(self.request('/api/inventory', 'POST', body, self.key)[0], 200)
+        self.assertEqual(self.request('/api/inventory')[1]['totalCount'], 3)
+        selection = self.selection()
+        self.assertEqual(self.request('/api/cameras', 'PUT', selection, self.key)[0], 200)
+        previous = self.config_path.read_bytes()
+        body['inventoryVersion'] = self.request('/api/inventory')[1]['version']
+        self.assertEqual(self.request('/api/inventory', 'POST', body, self.key)[0], 200)
+        self.assertEqual(self.config_path.read_bytes(), previous)
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./style.css";
+import { ReportImport } from "./ReportImport";
 import { MonitoringMap } from "./MonitoringMap";
 
 type Camera = {
   uuid: string; name: string; channel: string | null; device: string | null;
+  model?: string | null; reportedPtzSupported?: boolean | null;
   ptzCap: string | null; getPosNormalize: boolean | null; absoluteZoom: boolean | null;
 };
 type Inventory = {
@@ -59,7 +61,7 @@ function App() {
   const missing = [...selected].filter(id => !known.has(id));
   const filter = query.trim().toLocaleLowerCase();
   const visible = inventory?.cameras.filter(c =>
-    [c.name, c.uuid, c.device, c.channel].some(v => v?.toLocaleLowerCase().includes(filter))) ?? [];
+    [c.name, c.uuid, c.device, c.channel, c.model].some(v => v?.toLocaleLowerCase().includes(filter))) ?? [];
 
   function toggle(id: string) {
     setSelected(previous => {
@@ -88,6 +90,7 @@ function App() {
     <nav className="tabs" aria-label="기능 선택"><button aria-pressed={tab === "inventory"} onClick={() => setTab("inventory")}>카메라 목록</button><button aria-pressed={tab === "map"} onClick={() => setTab("map")}>지도 모니터링</button></nav>
     <div hidden={tab !== "map"}><MonitoringMap /></div>
     <main hidden={tab !== "inventory"}>
+      <ReportImport version={inventory?.version ?? null} writeKey={writeKey} dirty={dirty} onImported={async () => { setWriteKey(""); await load(); }} />
       <section className="notice" aria-label="연결 상태">
         <strong>파일 입력 모드 · 실제 SSM 미연결</strong>
         <p>SSM 전체 조회 인터페이스는 UNKNOWN입니다. 전체 목록 여부는 입력 작성자의 선언이며 자동 검증되지 않습니다.
@@ -95,7 +98,7 @@ function App() {
         {inventory && <p>입력: {inventory.provenance} · 수집 시각: {new Date(inventory.capturedAt).toLocaleString()}</p>}
       </section>
       <div className="toolbar">
-        <label>이름 / UUID / 장치 / 채널 검색<input type="search" value={query} onChange={e => setQuery(e.target.value)} /></label>
+        <label>이름 / UUID / 장치 / 채널 / 모델 검색<input type="search" value={query} onChange={e => setQuery(e.target.value)} /></label>
         <button disabled={busy} onClick={() => { if (!dirty || window.confirm("저장하지 않은 선택을 버리고 다시 불러올까요?")) void load(); }}>목록 다시 불러오기</button>
       </div>
       {error && <p className="error" role="alert">{error}</p>}
@@ -105,11 +108,12 @@ function App() {
         <p>목록의 완전성을 확인하세요. 제거하지 않으면 저장할 수 없습니다.</p>
         <ul>{missing.map(id => <li key={id}><code>{id}</code> <button disabled={busy} onClick={() => toggle(id)}>선택에서 제거</button></li>)}</ul>
       </section>}
-      <div className="table-scroll"><table><thead><tr><th>선택</th><th>이름 / UUID</th><th>장치 / 채널</th><th>PtzCap (uint64)</th><th>GET_POS_NORMALIZE</th><th>ABSOLUTE_ZOOM</th></tr></thead>
+      <div className="table-scroll"><table><thead><tr><th>선택</th><th>이름 / UUID</th><th>장치 / 채널</th><th>모델 / 보고서 PTZ</th><th>PtzCap (uint64)</th><th>GET_POS_NORMALIZE</th><th>ABSOLUTE_ZOOM</th></tr></thead>
         <tbody>{visible.map(camera => <tr key={camera.uuid}>
           <td><input type="checkbox" aria-label={`${camera.name} (${camera.uuid}) 선택`} checked={selected.has(camera.uuid)} disabled={busy} onChange={() => toggle(camera.uuid)} /></td>
           <td><strong>{camera.name}</strong><code className="uuid">{camera.uuid}</code></td>
           <td>{camera.device ?? "UNKNOWN"}<br />{camera.channel ?? "UNKNOWN"}</td>
+          <td>{camera.model ?? "UNKNOWN"}<br />보고서 PTZ: {flag(camera.reportedPtzSupported ?? null)}</td>
           <td><code>{camera.ptzCap ?? "UNKNOWN"}</code></td>
           <td>{flag(camera.getPosNormalize)}</td><td>{flag(camera.absoluteZoom)}</td>
         </tr>)}</tbody></table></div>

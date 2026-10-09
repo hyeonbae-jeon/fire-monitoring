@@ -54,3 +54,11 @@ VWorld 3D를 보려면 인터넷 연결과 이 앱 주소를 허용하는 VWorld
 키를 입력하고 연결하세요. 기존 GitHub Pages 등록 키가 로컬 주소에서도 작동한다고 보장할 수 없습니다.
 좌표 설정은 JSON으로 다운로드하고 다음 실행 때 불러옵니다. 실제 방향은 UNKNOWN이며 주황색은 시험 값입니다.
 자세한 내용: docs/vworld-monitoring.md, docs/video-direction-feasibility.md.
+
+## 실제 장치 리포트 가져오기
+
+카메라 목록 탭에서 SSM 장치 설정 리포트(.xls)를 선택하면 이름/Guid/모델/PTZ 표시를 미리 볼 수 있습니다.
+전체 목록 확인과 수집 시각 입력 후 local-demo-only 키로 반영하고 필요한 대상을 선택해 저장하세요.
+원본 IP/접속 정보는 가져오지 않으며 PtzCap와 현재 방향은 UNKNOWN입니다.
+정규화 목록은 demo/inventory.json에 보관하고 재시작해도 유지합니다. 실제 SSM 연결은 없습니다.
+배포 ZIP에는 실장비 데이터가 없으며 리포트는 직접 불러옵니다. 상세: docs/ssm-report-import.md.
