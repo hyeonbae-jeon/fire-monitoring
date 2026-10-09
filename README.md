@@ -108,3 +108,6 @@ Playwright Chromium이 필요하며, 시스템 Chromium은 `CHROMIUM_EXECUTABLE`
 제공된 6개 SSM DLL을 실행 없이 분석해 카메라 모델 변환, 로그인/목록 Stub 호출과 PTZ 경로를 확인했습니다.
 실제 연결은 미검증이며 원본/전체 디컴파일 소스는 공개 저장소와 패키지에 포함하지 않습니다.
 [확인된 사실과 다음 파일](docs/ssm-dll-analysis.md).
+
+추가 WebServiceStub/ControllerService에서 실제 인증·목록 조회 계약과 페이지/배치를 정적으로 확인했습니다.
+실제 접속/현재 PTZ는 미검증입니다. [추가 분석 및 현장 확인 순서](docs/ssm-web-controller-analysis.md).

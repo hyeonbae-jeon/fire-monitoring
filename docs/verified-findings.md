@@ -40,3 +40,10 @@ PTZ 표시 문구는 PtzCap 비트가 아니며 위치 조회 가능 여부를 �
 strExtendData의 latitude/longitude/heading 저장 필드도 확인했습니다.
 이는 실장비 수신 성공이나 외부 조회 계약 전체 확인이 아닙니다.
 [분석 결과와 미확인 경계](ssm-dll-analysis.md) · [원본 SHA256](ssm-dll-manifest.json).
+
+## WebServiceStub / ControllerService 원본 추가 확인
+
+POST /V1/Session, Session_ID 쿠키 + x-ssm-date + HMAC 인증, 실제 채널 JSON 필드,
+컴포넌트 10개/Guid 128개 배치와 권한 매핑 페이지를 원본에서 확인했습니다.
+ControllerService는 SPC 조작 장치 담당으로 지도 요청 라우터 후보에서 제외합니다.
+[상세 근거와 미확인 범위](ssm-web-controller-analysis.md). 서버 접속/로그인/PTZ 수신 성공은 미검증입니다.

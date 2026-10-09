@@ -76,3 +76,10 @@
 - [ ] WebServiceStub 실제 인증/조회 계약 및 페이지 처리
 - [ ] ControllerService 요청·이벤트 연결 조사
 - [ ] 독립 읽기 전용 연결 및 실장비 PTZ 수신 검증
+
+## 추가 WebServiceStub / ControllerService 정적 조사
+- [x] 실제 로그인 경로, 쿠키/서명, RSA 처리 및 성공 응답 필드 확인
+- [x] 서버/컴포넌트/채널 조회 JSON, 권한 매핑 페이지와 배치 크기 확인
+- [x] ControllerService를 SPC 조작 장치 모듈로 확인하여 지도 라우터 후보에서 제외
+- [ ] 현장 상태 GET 및 버전/SSL/권한/응답 검증
+- [ ] SystemService/LiveViewer의 MapTile 요청·이벤트 연결 조사

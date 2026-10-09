@@ -39,3 +39,11 @@
 - 실장비 PTZ 수신·단위·설치 보정·Zoom/FOV는 미확인 유지
 
 상세 근거: [ssm-dll-analysis.md](ssm-dll-analysis.md).
+
+## WebServiceStub / ControllerService 추가 분석 이후
+
+앞선 추가 DLL 필요 항목을 정적 조사로 갱신했습니다. HTTP 로그인/목록 계약의 클라이언트 구현은 확인됐으며
+상세 path/query/JSON/인증/분할은 [추가 분석](ssm-web-controller-analysis.md) 참조.
+현재 남은 것은 실제 서버 주소·포트·TLS·권한·계정 및 실응답 검증, 전체 목록 범위/수집 중 변경/누락 대조입니다.
+ControllerService는 조작 장치 모듈이므로 MapTile 연결 조사 대상에서 제외합니다.
+SystemService/LiveViewer가 다음 정적 후보이며 실시간 PTZ 연결·단위·실수신 검증은 계속 미완료입니다.
