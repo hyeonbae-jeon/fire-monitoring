@@ -47,3 +47,10 @@ POST /V1/Session, Session_ID 쿠키 + x-ssm-date + HMAC 인증, 실제 채널 JS
 컴포넌트 10개/Guid 128개 배치와 권한 매핑 페이지를 원본에서 확인했습니다.
 ControllerService는 SPC 조작 장치 담당으로 지도 요청 라우터 후보에서 제외합니다.
 [상세 근거와 미확인 범위](ssm-web-controller-analysis.md). 서버 접속/로그인/PTZ 수신 성공은 미검증입니다.
+
+## SystemService / LiveViewer 원본 추가 확인
+
+SystemService의 PTZ_CONTROL → MEDIA_MAN 요청 전달 및 지정된 화면 sink로의 PTZ 이벤트 배분을 확인했습니다.
+CLIENT_SDK_MAN/일반 OnCallbackEvent가 이 PTZ 분기의 수신처라고 가정할 수 없습니다.
+LiveViewer의 ILiveInput, XScreen/Mediator 및 BaseViewerForm 이벤트 위임도 확인했습니다.
+MapTile 직접 연결과 실장비 수신은 미확인입니다. [상세 근거](ssm-routing-analysis.md).

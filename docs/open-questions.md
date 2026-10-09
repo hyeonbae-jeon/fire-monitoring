@@ -47,3 +47,11 @@
 현재 남은 것은 실제 서버 주소·포트·TLS·권한·계정 및 실응답 검증, 전체 목록 범위/수집 중 변경/누락 대조입니다.
 ControllerService는 조작 장치 모듈이므로 MapTile 연결 조사 대상에서 제외합니다.
 SystemService/LiveViewer가 다음 정적 후보이며 실시간 PTZ 연결·단위·실수신 검증은 계속 미완료입니다.
+
+## SystemService / LiveViewer 추가 분석 이후 (최신 상태)
+
+중앙 요청·이벤트 전달은 확인됐고, MapTile와 화면의 직접 연결은 외부 BaseViewerForm/XScreen 구현에 남아 있습니다.
+일반 콜백/SDK sink만으로 PTZ를 받을 수 있다는 근거는 없습니다. [라우팅 분석](ssm-routing-analysis.md) 참조.
+추가 UI DLL 조사는 독립 목록 조회의 선행 조건이 아닙니다. 우선 회사 서버의 상태 GET 응답,
+주소/포트/TLS/버전과 허용 계정의 목록 응답·전체 범위를 확인해야 합니다.
+실시간 PTZ의 독립 세션 초기화·수신·단위·설치 보정은 계속 미검증입니다.

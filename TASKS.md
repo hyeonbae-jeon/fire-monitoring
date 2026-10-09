@@ -73,8 +73,8 @@
 - [x] 제공된 6개 원본 SHA256 기록, 실행 없이 디컴파일
 - [x] UUID/이름/PtzCap 모델 변환, 로그인/조회 Stub 호출, CONTROL 세션 및 PTZ 이벤트 경로 확인
 - [x] 위치/heading 확장 필드 존재와 실제 의미 미확인 구분
-- [ ] WebServiceStub 실제 인증/조회 계약 및 페이지 처리
-- [ ] ControllerService 요청·이벤트 연결 조사
+- [x] WebServiceStub 실제 인증/조회 계약 및 페이지 처리 정적 확인
+- [x] ControllerService 요청·이벤트 연결 조사 (SPC 조작 장치 담당)
 - [ ] 독립 읽기 전용 연결 및 실장비 PTZ 수신 검증
 
 ## 추가 WebServiceStub / ControllerService 정적 조사
@@ -82,4 +82,6 @@
 - [x] 서버/컴포넌트/채널 조회 JSON, 권한 매핑 페이지와 배치 크기 확인
 - [x] ControllerService를 SPC 조작 장치 모듈로 확인하여 지도 라우터 후보에서 제외
 - [ ] 현장 상태 GET 및 버전/SSL/권한/응답 검증
-- [ ] SystemService/LiveViewer의 MapTile 요청·이벤트 연결 조사
+- [x] SystemService 중앙 PTZ 요청 전달 및 지정 sink 이벤트 배분 확인
+- [x] LiveViewer의 SYSTEM_MAN 입력 및 외부 BaseViewerForm/XScreen 위임 확인
+- [ ] MapTile와 화면의 직접 연결 (독립 목록 조회의 선행 조건 아님)

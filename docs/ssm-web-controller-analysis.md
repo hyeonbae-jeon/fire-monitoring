@@ -120,10 +120,10 @@ MapTile 참조나 OnRequest 구독은 확인되지 않았습니다. 이전 문�
 
 ## 다음 조사와 현장 확인
 
-실시간 PTZ 연결에는 system sink/UI dispatcher와 MapTile의 요청·이벤트 등록 호출부가 남아 있습니다.
-다음 정적 후보는 설치 목록에 있는 HTW.SSM.ConsoleStudio.Services.SystemService.dll과
-HTW.SSM.ConsoleStudio.Views.LiveViewer.dll입니다. 해당 연결이 들어 있다고 확정한 것은 아닙니다.
-확인된 MediaService.Request 경로를 이용할 경우 UI 전체를 그대로 로드할 필요가 있는지도 검토합니다.
+추가 제공된 SystemService/LiveViewer에서 중앙 요청 전달과 PTZ 이벤트의 지정 sink 배분을 확인했습니다.
+MapTile와 화면의 직접 연결은 미확인입니다. 일반 OnCallbackEvent나 CLIENT_SDK_MAN으로 PTZ 이벤트를
+받는다고 가정할 수 없습니다. [추가 라우팅 분석](ssm-routing-analysis.md) 참조.
+기존 UI/서비스 전체 로딩보다 독립 중앙 Bridge에서 목록 REST 계약부터 현장 검증하는 접근을 유지합니다.
 
 현장에서는 상태 GET -> 서버 버전/SSL/공개키 확인 -> 허용된 계정의 정상 로그인 -> 작은 범위의
 목록 조회 -> 전체 수집 대조 -> 한 카메라의 검증된 PTZ 상태 구독 순서로 진행합니다.

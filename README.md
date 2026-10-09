@@ -111,3 +111,6 @@ Playwright Chromium이 필요하며, 시스템 Chromium은 `CHROMIUM_EXECUTABLE`
 
 추가 WebServiceStub/ControllerService에서 실제 인증·목록 조회 계약과 페이지/배치를 정적으로 확인했습니다.
 실제 접속/현재 PTZ는 미검증입니다. [추가 분석 및 현장 확인 순서](docs/ssm-web-controller-analysis.md).
+
+추가 SystemService/LiveViewer에서 중앙 PTZ 요청·이벤트 라우터를 확인했습니다.
+일반 콜백의 수신과 실장비 연결은 미검증입니다. [라우팅 분석](docs/ssm-routing-analysis.md).
