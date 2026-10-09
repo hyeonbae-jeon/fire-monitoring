@@ -102,3 +102,9 @@ Playwright Chromium이 필요하며, 시스템 Chromium은 `CHROMIUM_EXECUTABLE`
 카메라 목록 탭에서 SSM Excel XML(.xls) 리포트를 읽고 이름/Guid/모델/PTZ 지원 표시를 가져올 수 있습니다.
 원본 접속 정보는 전달하지 않습니다. 전체 목록 여부·수집 시각을 확인한 뒤 필요한 카메라를 선택해 저장하세요.
 실제 PtzCap/현재 방향은 UNKNOWN입니다. [가져오기 방법](docs/ssm-report-import.md).
+
+## 원본 DLL 조사
+
+제공된 6개 SSM DLL을 실행 없이 분석해 카메라 모델 변환, 로그인/목록 Stub 호출과 PTZ 경로를 확인했습니다.
+실제 연결은 미검증이며 원본/전체 디컴파일 소스는 공개 저장소와 패키지에 포함하지 않습니다.
+[확인된 사실과 다음 파일](docs/ssm-dll-analysis.md).

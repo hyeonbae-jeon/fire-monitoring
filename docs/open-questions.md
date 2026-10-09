@@ -20,8 +20,7 @@
 - 내부 이벤트 어댑터가 불가능할 때의 SUNAPI/ONVIF 지원 여부 및 읽기 전용 상태 조회 계약.
   대체 어댑터에는 SSM UUID ↔ 장비 ID/ProfileToken/채널 매핑 검증이 필요함.
 
-다음 분석에는 해당 버전의 실제 DLL 또는 인증/조회/세션 관련 ILSpy 코드가 필요함.
-현재 받은 추가 문서는 코드 위치 요약이며 실제 DLL이나 완전한 외부 접속 계약이 아님.
+위 문단은 추가 코드 요약 문서를 받았을 당시의 상태입니다. 2026-10-09 원본 6개 DLL 분석 후 상태는 아래 참조.
 
 ## 리포트 확보 후 남은 확인
 
@@ -29,3 +28,14 @@
 - Camera.Guid와 실제 PTZ 이벤트/외부 API UUID의 일치
 - PTZ 지원 표시 외의 uint64 PtzCap, ENTITY_CAPABILITY, ChannelSubType
 - 실제 조회 인터페이스 인증/필드/페이지 처리와 현재 방향/줌 관측
+
+## 원본 6개 DLL 분석 후 남은 항목
+
+- 내부 카메라 모델 변환 및 로그인/목록 Stub 호출 위치는 확인됨. 실제 HTTP 계약은 WebServiceStub.dll 추가 분석 필요
+- MapTile.OnRequest 구독자 및 system sink -> UI 이벤트 연결은 아직 미확인; ControllerService가 다음 후보
+- 권한/서버/연합 범위와 페이지/배치 처리, 부분 조회 실패 검출
+- strExtendData의 latitude/longitude/heading 실제 값 존재 여부와 단위·의미
+- 원본은 net48 대상으로 분석됨; 독립 실행 및 .NET 8 호환성, 외부 사용 조건 미검증
+- 실장비 PTZ 수신·단위·설치 보정·Zoom/FOV는 미확인 유지
+
+상세 근거: [ssm-dll-analysis.md](ssm-dll-analysis.md).

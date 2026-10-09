@@ -68,3 +68,11 @@
 - [x] 미리보기, 전체 범위·수집 시각 확인, 인증된 중앙 목록 교체
 - [x] 보고서 PTZ bool과 PtzCap UNKNOWN 구분, 선택·모델 정보 저장
 - [ ] 보고서 출력 범위와 실시간 이벤트 UUID 일치 검증
+
+## 원본 SSM DLL 정적 조사
+- [x] 제공된 6개 원본 SHA256 기록, 실행 없이 디컴파일
+- [x] UUID/이름/PtzCap 모델 변환, 로그인/조회 Stub 호출, CONTROL 세션 및 PTZ 이벤트 경로 확인
+- [x] 위치/heading 확장 필드 존재와 실제 의미 미확인 구분
+- [ ] WebServiceStub 실제 인증/조회 계약 및 페이지 처리
+- [ ] ControllerService 요청·이벤트 연결 조사
+- [ ] 독립 읽기 전용 연결 및 실장비 PTZ 수신 검증

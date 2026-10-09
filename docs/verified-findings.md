@@ -32,3 +32,11 @@ SSM 2.21.00_260514 정적 분석 결과이며, 이번 작업에서 원본 DLL이
 사용자가 제공한 Excel XML 리포트의 Camera 시트에서 고유 Name/Guid 140개, PTZ 표시 지원함 137개/지원 안 함 3개, Model 열을 확인했습니다.
 보고서 Guid를 파일 목록의 식별자로 사용하며 실제 PTZ 이벤트 UUID와의 일치는 추가 확인이 필요합니다.
 PTZ 표시 문구는 PtzCap 비트가 아니며 위치 조회 가능 여부를 확정하지 않습니다. [상세](ssm-report-import.md).
+
+## 제공된 원본 DLL에서 직접 재검증 (2026-10-09)
+
+여섯 원본을 ILSpyCmd로 정적으로 분석해 PTZ 구독 요청·이벤트 수신·CONTROL 세션 전달을 직접 재확인했습니다.
+새로 ObjConverter의 Guid/Name/PtzCap/subType/capability 변환, 채널 조회 및 로그인 Stub 호출,
+strExtendData의 latitude/longitude/heading 저장 필드도 확인했습니다.
+이는 실장비 수신 성공이나 외부 조회 계약 전체 확인이 아닙니다.
+[분석 결과와 미확인 경계](ssm-dll-analysis.md) · [원본 SHA256](ssm-dll-manifest.json).
