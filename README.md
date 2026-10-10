@@ -121,3 +121,7 @@ Playwright Chromium이 필요하며, 시스템 Chromium은 `CHROMIUM_EXECUTABLE`
 Git/.NET/Node.js 설치가 필요 없는 Windows x64 패키지는 Actions의 **SSM connection test**에서 받습니다.
 카메라 이동/설정/영상 요청은 없으며 기존 지도 데모·선택 설정을 변경하지 않습니다.
 운영 서버 연결은 회사 PC에서 검증해야 합니다. [실행 및 결과 공유 방법](docs/ssm-connection-test.md).
+
+회사 PC에서 지문 고정 HTTPS 로그인·목록 조회·로그아웃이 성공했고 고유 UUID 146개를 확인했습니다.
+이전 보고서의 140개가 모두 포함됩니다. 전체 범위 및 현재 PTZ는 계속 미확인입니다.
+[현장 검증 결과](docs/ssm-live-inventory-validation.md).

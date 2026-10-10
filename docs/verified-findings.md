@@ -64,3 +64,11 @@ SSL 포트·PublicKey 존재입니다. HTTPS에서는 ERR_CERT_AUTHORITY_INVALID
 원본 WebServiceImplementation.LogInSessionRequest의 CLIENT_SDK wire service=12,
 비-SVM의 TSM 선택, LogOutRequest의 자기 세션 DELETE /V1/Session도 확인했습니다.
 [연결 진단 도구](ssm-connection-test.md)의 합성 서버 검증과 운영 로그인 성공은 구분합니다.
+
+## 회사 PC 정상 로그인·목록 조회 성공 (2026-10-10)
+
+사용자 진단 결과에서 지문 고정 HTTPS 상태/로그인/목록 GET/자기 세션 로그아웃이 모두 HTTP 200입니다.
+3개 서버·3개 컴포넌트에서 고유 UUID 146개, 이름 및 uint64 PtzCap를 읽었습니다.
+이전 보고서의 140개는 이름/UUID가 모두 일치하며 이번에만 있는 6개가 있습니다.
+GET_POS_NORMALIZE 비트는 6개에서 관측됐으나 현재 PTZ 수신은 아직 미검증입니다.
+전체 범위는 미확인이므로 complete=false입니다. [현장 검증과 대조](ssm-live-inventory-validation.md).
