@@ -53,3 +53,4 @@ jobs:
           echo "Download: $ARTIFACT_URL" >> "$GITHUB_STEP_SUMMARY"
           echo "Extract both ZIPs, then run SsmConnectionTest.exe. Enter your HTTPS origin and SHA-256 pin locally." >> "$GITHUB_STEP_SUMMARY"
           echo "No PTZ commands. Keep camera-preview.private.json local; share connection-report.json only." >> "$GITHUB_STEP_SUMMARY"
+          echo "Version 3: after login choose Y for one camera's configured connection details, then enter its name or UUID. Keep camera-connection.private.json local." >> "$GITHUB_STEP_SUMMARY"

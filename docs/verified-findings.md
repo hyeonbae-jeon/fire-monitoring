@@ -96,3 +96,12 @@ ONVIF 서비스 URL과 실제 위치 응답은 사진으로 확인되지 않았�
 공식 ONVIF WSDL의 GetStatus 등 네 읽기 작업에 한정한 독립 시험 도구를 준비합니다.
 표준 계약/합성 장비 검증과 운영 장비의 지원·수신 성공은 구분합니다.
 [추가 조사](ptz-investigation-decision.md) · [시험 방법](ptz-readonly-test.md).
+
+## 카메라 포트 관측과 선택 한 대의 등록 접속 정보 추출
+
+대상 IP/포트 설정에서 HTTP 80/HTTPS 443/RTSP 554를 확인했고 사용자가 주소창 미표시를 확인했습니다.
+카메라 내부 포트와 실제 외부 접속 포트는 구분합니다. 원본 Stub 모델과 ObjConverter에서
+networkInfo 주소/포트·연결 방식의 매핑을 확인하여 같은 목록 GET에서 선택 한 대의 연결 정보를
+추출하는 진단 v3를 추가했습니다. 계정/비밀 필드는 제외하고 운영 주소는 private 파일에만 저장합니다.
+설정 화면의 최종 URL 생성은 찾지 못했으며, 운영 networkInfo 실값과 접근 경로는 다음 회사 실행에서 확인합니다.
+[근거와 다음 확인](ptz-investigation-decision.md).

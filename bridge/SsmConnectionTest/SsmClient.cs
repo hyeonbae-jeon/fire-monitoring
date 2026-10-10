@@ -15,7 +15,7 @@ public sealed record CameraMetadata(string uuid, string name, string? entityCapa
 public sealed record RequestResult(string stage, int httpStatus);
 public sealed class DiagnosticReport
 {
-    public string toolVersion { get; } = "2";
+    public string toolVersion { get; } = "3";
     public DateTimeOffset capturedAt { get; set; } = DateTimeOffset.UtcNow;
     public string result { get; set; } = "not-started";
     public string? serverStatus { get; set; }
@@ -32,6 +32,8 @@ public sealed class DiagnosticReport
     public int metadataIssueCameraCount { get; set; }
     public int xMapSubscriptionCandidateCount { get; set; }
     public int unknownSubscriptionConditionsCount { get; set; }
+    public int connectionDetailCameraCount { get; set; }
+    public int connectionDetailIssueCount { get; set; }
     public bool complete { get; set; } = false;
     public List<RequestResult> requests { get; } = [];
     public string? error { get; set; }
@@ -54,7 +56,9 @@ public sealed class SsmClient : IDisposable
     private bool loginAttempted;
     private int requestCount;
     private readonly Dictionary<Guid, CameraMetadata> metadata = [];
+    private readonly Dictionary<Guid, CameraConnectionDetail> connections = [];
     public IReadOnlyList<CameraMetadata> Metadata => metadata.Values.OrderBy(c => c.uuid, StringComparer.Ordinal).ToList();
+    public CameraConnectionDetail? SelectedConnection => connections.Count == 1 ? connections.Values.Single() : null;
 
     public SsmClient(string endpoint, string fingerprint, DiagnosticReport report)
     {
@@ -304,7 +308,7 @@ public sealed class SsmClient : IDisposable
             latitude, longitude, heading, conditions, issues.ToArray());
     }
 
-    public async Task<List<CameraPreview>> Inventory()
+    public async Task<List<CameraPreview>> Inventory(string? connectionTarget = null)
     {
         var cameras = new Dictionary<Guid, CameraPreview>();
         var servers = new HashSet<Guid>();
@@ -343,6 +347,17 @@ public sealed class SsmClient : IDisposable
                         throw new DiagnosticException("CONFLICTING_CAMERA_METADATA");
                     cameras[uuid] = camera;
                     metadata[uuid] = detail;
+                    if (connectionTarget is not null && (camera.uuid.Equals(connectionTarget, StringComparison.OrdinalIgnoreCase) ||
+                        camera.name.Contains(connectionTarget, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        var connection = new CameraConnectionDetail(camera.uuid, camera.name, serverId.ToString("D"), componentId.ToString("D"),
+                            ConnectionDetails.Read(row, "channel.networkInfo"), ConnectionDetails.Read(component, "component.networkInfo"),
+                            ConnectionDetails.Read(server, "server.networkInfo", isServer: true));
+                        if (connections.TryGetValue(uuid, out var previousConnection) &&
+                            JsonSerializer.Serialize(previousConnection) != JsonSerializer.Serialize(connection))
+                            throw new DiagnosticException("CONFLICTING_CONNECTION_DETAILS");
+                        connections[uuid] = connection;
+                    }
                     report.cameraCount = cameras.Count;
                     report.unknownPtzCapCount = cameras.Values.Count(c => c.ptzCap is null);
                     report.configuredHeadingCount = metadata.Values.Count(c => c.configuredHeading is not null);
@@ -352,6 +367,14 @@ public sealed class SsmClient : IDisposable
                     report.unknownSubscriptionConditionsCount = metadata.Values.Count(c => c.xMapSubscriptionConditions is null);
                 }
             }
+        }
+        if (connectionTarget is not null)
+        {
+            if (connections.Count == 0) throw new DiagnosticException("CONNECTION_TARGET_NOT_FOUND");
+            if (connections.Count != 1) throw new DiagnosticException("CONNECTION_TARGET_AMBIGUOUS");
+            var selected = connections.Values.Single();
+            report.connectionDetailCameraCount = 1;
+            report.connectionDetailIssueCount = selected.camera.issues.Length + selected.component.issues.Length + selected.server.issues.Length;
         }
         report.result = "inventory-preview-ok";
         // The visible account/server scope is not proof of the entire installed inventory.

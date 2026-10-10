@@ -12,7 +12,7 @@ int exitCode = 0;
 string outputRoot = Path.Combine(AppContext.BaseDirectory, "diagnostics");
 try
 {
-    string? endpoint = null, pin = null;
+    string? endpoint = null, pin = null, connectionTarget = null;
     bool statusOnly = false;
     for (int i = 0; i < args.Length; i++)
     {
@@ -22,6 +22,7 @@ try
             case "--pin": pin = args[++i]; break;
             case "--output": outputRoot = Path.GetFullPath(args[++i]); break;
             case "--status-only": statusOnly = true; break;
+            case "--connection-camera": connectionTarget = args[++i].Trim(); break;
             default: throw new DiagnosticException("ARGUMENT_INVALID");
         }
     }
@@ -41,7 +42,10 @@ try
         try { await client.Login(id, secret, clientIp); }
         finally { secret = ""; id = ""; }
         Console.WriteLine("로그인 성공. 계정에서 조회 가능한 목록을 읽는 중...");
-        var cameras = await client.Inventory();
+        if (connectionTarget is null && Prompt("카메라 한 대의 등록 주소·포트도 추출하려면 Y 입력 (Enter: 기본 목록만): ").Equals("Y", StringComparison.OrdinalIgnoreCase))
+            connectionTarget = Prompt("대상 이름 일부 또는 UUID (예: 백운대): ");
+        if (connectionTarget is not null && string.IsNullOrWhiteSpace(connectionTarget)) throw new DiagnosticException("CONNECTION_TARGET_REQUIRED");
+        var cameras = await client.Inventory(connectionTarget);
         Directory.CreateDirectory(outputRoot);
         string folder = NewFolder(outputRoot);
         outputRoot = folder;
@@ -52,6 +56,16 @@ try
             schemaVersion = 1, complete = false, capturedAt = preview.capturedAt,
             provenance = "SSM configured metadata; heading meaning and current PTZ NOT VERIFIED", cameras = client.Metadata
         }, JsonOptions()));
+        if (client.SelectedConnection is { } selectedConnection)
+        {
+            await File.WriteAllTextAsync(Path.Combine(folder, "camera-connection.private.json"), JsonSerializer.Serialize(new {
+                schemaVersion = 1, complete = false, capturedAt = preview.capturedAt,
+                provenance = "SSM configured networkInfo; reachable route and ONVIF/SUNAPI service NOT VERIFIED",
+                routeVerified = false, connection = selectedConnection
+            }, JsonOptions()));
+            Console.WriteLine("선택한 한 대의 등록 주소·포트를 camera-connection.private.json에 저장했습니다. 주소는 화면/공유 보고서에 표시하지 않습니다.");
+            Console.WriteLine("카메라 자체 포트와 외부 전달 포트는 다를 수 있습니다. 이 값으로 자동 접속하거나 조회 경로를 만들지 않습니다.");
+        }
         Console.WriteLine($"서버 {report.serverCount} / 컴포넌트 {report.componentCount} / 카메라 {report.cameraCount} / PtzCap 미확인 {report.unknownPtzCapCount}");
         Console.WriteLine($"저장 heading 값 있음 {report.configuredHeadingCount} / 좌표 쌍 있음 {report.configuredCoordinateCount} / XMap 구독 조건 후보 {report.xMapSubscriptionCandidateCount}");
         Console.WriteLine("저장 heading은 현재 Pan 또는 북쪽 보정으로 확정한 값이 아닙니다. 계정 PTZ 권한도 별도 확인이 필요합니다.");

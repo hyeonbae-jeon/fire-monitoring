@@ -128,6 +128,10 @@ Git/.NET/Node.js 설치가 필요 없는 Windows x64 패키지는 Actions의 **S
 
 진단 v2는 동일 목록 조회에서 설치 형태·장치 capability·저장 좌표/heading을 추가로 읽고,
 운영 값은 camera-metadata.private.json에만 기록합니다. 현재 PTZ 또는 북쪽 보정으로 확정하지 않습니다.
+
+진단 v3는 선택한 한 대의 등록 주소·포트를 같은 목록 응답에서 추가 추출할 수 있습니다.
+운영 주소는 camera-connection.private.json에만 보관하며 카메라 계정/비밀번호는 제외합니다.
+주소창 없는 설정 화면의 접속 정보 대조에 사용하고, 추출값으로 다른 장비에 자동 접속하지 않습니다.
 [GoogleMapViewer 추가 분석과 설치 경로](docs/ssm-google-map-analysis.md).
 
 

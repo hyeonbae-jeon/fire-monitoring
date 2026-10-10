@@ -46,7 +46,8 @@ class Tests(unittest.TestCase):
     def tearDownClass(cls):
         cls.temp.cleanup()
 
-    def run_case(self, mode='ok', *, pin=None, endpoint_scheme='https', status_only=False):
+    def run_case(self, mode='ok', *, pin=None, endpoint_scheme='https', status_only=False, connection_target=None,
+                 interactive_connection_target=None):
         seen = []
         auth_errors = []
         outer = self
@@ -90,9 +91,14 @@ class Tests(unittest.TestCase):
                     if mode == 'malformed-servers':
                         return self.reply(body={'content': []})
                     # Unexpected sensitive fields must never reach diagnostic output.
-                    return self.reply(body=[{'guid': SERVER, 'ddnsPassword': 'SECRET-SERVER-FIELD'}])
+                    return self.reply(body=[{'guid': SERVER, 'ddnsPassword': 'SECRET-SERVER-FIELD',
+                        'serverPort': 9999, 'serverSslPort': 9991,
+                        'networkInfo': {'addressList': {'tcp': '192.0.2.10'}, 'portList': {'tcpPort': 8888},
+                                        'id': 'SECRET-NETWORK-ID', 'password': 'SECRET-NETWORK-PASSWORD'}}])
                 if self.path == f'/v3/servers/{SERVER}/components':
-                    return self.reply(body=[{'guid': COMPONENT}])
+                    return self.reply(body=[{'guid': COMPONENT, 'networkInfo': {'addressType': 1,
+                        'addressList': {'wan': 'recorder.example.test'}, 'portList': {'wanPort': 8080},
+                        'id': 'SECRET-NETWORK-ID', 'password': 'SECRET-NETWORK-PASSWORD'}}])
                 if self.path == f'/v3/components/{COMPONENT}/channels?serverGuid={SERVER}':
                     if mode == 'partial-failure':
                         return self.reply(403, {'password': 'SECRET-ERROR-BODY'})
@@ -118,6 +124,21 @@ class Tests(unittest.TestCase):
                         rows.append(dict(rows[0], extendedData=json.dumps({'heading': '90'})))
                     if mode == 'ineligible-metadata':
                         rows[0]['subType'] = 1
+                    if mode in ('connection-details', 'invalid-connection', 'connection-conflict'):
+                        rows[0]['networkInfo'] = {'addressType': 2, 'devProtocolType': 1, 'medProtocolType': 0,
+                            'addressList': {'tcp': '192.0.2.20', 'wan': 'camera.example.test', 'http': '192.0.2.20',
+                                            'https': '192.0.2.20', 'rtsp': ''},
+                            'portList': {'tcpPort': 0, 'wanPort': 18080, 'httpPort': 80, 'httpsPort': 443, 'rtspPort': 554},
+                            'id': 'SECRET-NETWORK-ID', 'password': 'SECRET-NETWORK-PASSWORD',
+                            'ddnsID': 'SECRET-DDNS-ID', 'extra': 'SECRET-NETWORK-EXTRA'}
+                    if mode == 'invalid-connection':
+                        network = rows[0]['networkInfo']
+                        network['addressList'].update(http='https://user:SECRET-URL-PASSWORD@camera.example.test/',
+                                                      https='https://camera.example.test/?token=SECRET-URL-TOKEN',
+                                                      tcp='camera.example.test/SECRET-PATH')
+                        network['portList'].update(httpPort=65536, httpsPort=-1, rtspPort='554')
+                    if mode == 'connection-conflict':
+                        rows.append(dict(rows[0], networkInfo=dict(rows[0]['networkInfo'], portList={'httpPort': 8080})))
                     return self.reply(body=rows)
                 return self.reply(404)
 
@@ -155,7 +176,12 @@ class Tests(unittest.TestCase):
                         '--pin', pin or self.pin, '--output', output]
                 if status_only:
                     args.append('--status-only')
-                result = subprocess.run(args, input='Y\nfake-user\n' + PASSWORD + '\n', text=True,
+                if connection_target is not None:
+                    args += ['--connection-camera', connection_target]
+                inputs = 'Y\nfake-user\n' + PASSWORD + '\n'
+                if interactive_connection_target is not None:
+                    inputs += 'Y\n' + interactive_connection_target + '\n'
+                result = subprocess.run(args, input=inputs, text=True,
                                         capture_output=True, timeout=35)
                 reports = list(Path(output).rglob('connection-report.json'))
                 self.assertEqual(len(reports), 1, result.stdout + result.stderr)
@@ -164,10 +190,16 @@ class Tests(unittest.TestCase):
                 preview = json.loads(previews[0].read_text()) if previews else None
                 metadata = list(Path(output).rglob('camera-metadata.private.json'))
                 self.last_metadata = json.loads(metadata[0].read_text()) if metadata else None
+                details = list(Path(output).rglob('camera-connection.private.json'))
+                self.last_connection = json.loads(details[0].read_text()) if details else None
                 all_output = result.stdout + result.stderr + ''.join(p.read_text() for p in Path(output).rglob('*.json'))
                 for secret in [PASSWORD, SESSION, 'SECRET-SERVER-FIELD', 'SECRET-TOKEN', 'SECRET-KEY', 'SECRET-IP',
-                               'SECRET-CAMERA-FIELD', 'SECRET-ERROR-BODY', 'SECRET-EXTENDED-DATA', 'SECRET-EXTENDED-IP']:
+                               'SECRET-CAMERA-FIELD', 'SECRET-ERROR-BODY', 'SECRET-EXTENDED-DATA', 'SECRET-EXTENDED-IP',
+                               'SECRET-NETWORK-ID', 'SECRET-NETWORK-PASSWORD', 'SECRET-DDNS-ID', 'SECRET-NETWORK-EXTRA',
+                               'SECRET-URL-PASSWORD', 'SECRET-URL-TOKEN', 'SECRET-PATH']:
                     self.assertNotIn(secret, all_output)
+                for address in ['192.0.2.10', '192.0.2.20', 'camera.example.test', 'recorder.example.test']:
+                    self.assertNotIn(address, result.stdout + result.stderr + reports[0].read_text())
                 self.assertEqual(auth_errors, [])
                 self.assertFalse(report['complete'])
                 return result, report, preview, seen
@@ -266,7 +298,7 @@ class Tests(unittest.TestCase):
     def test_configured_metadata_not_current_ptz_and_hex_capability_gate(self):
         result, report, preview, seen = self.run_case('metadata')
         self.assertEqual(result.returncode, 0)
-        self.assertEqual(report['toolVersion'], '2')
+        self.assertEqual(report['toolVersion'], '3')
         self.assertEqual(report['configuredHeadingCount'], 1)
         self.assertEqual(report['configuredCoordinateCount'], 1)
         self.assertEqual(report['xMapSubscriptionCandidateCount'], 1)
@@ -308,6 +340,92 @@ class Tests(unittest.TestCase):
         self.assertEqual(report['xMapSubscriptionCandidateCount'], 0)
         rows = {c['uuid']: c for c in self.last_metadata['cameras']}
         self.assertFalse(rows[CAMERA]['xMapSubscriptionConditions'])
+
+    def test_connection_details_opt_in_only_and_no_extra_requests(self):
+        result, report, _, seen = self.run_case('connection-details', connection_target='synthetic camera')
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(report['connectionDetailCameraCount'], 1)
+        self.assertEqual(report['connectionDetailIssueCount'], 0)
+        payload = self.last_connection
+        self.assertFalse(payload['routeVerified'])
+        self.assertFalse(payload['complete'])
+        c = payload['connection']
+        self.assertEqual(c['uuid'], CAMERA)
+        self.assertEqual(c['componentUuid'], COMPONENT)
+        self.assertEqual(c['serverUuid'], SERVER)
+        self.assertEqual(c['camera']['ports']['httpPort'], 80)
+        self.assertIsNone(c['camera']['ports']['tcpPort'])
+        self.assertEqual(c['component']['ports']['wanPort'], 8080)
+        self.assertEqual(c['server']['serverSslPort'], 9991)
+        self.assertEqual(c['camera']['addresses']['wan'], 'camera.example.test')
+        self.assertIsNone(c['camera']['addresses']['rtsp'])
+        self.assertEqual([m for m, _ in seen], ['GET', 'POST', 'GET', 'GET', 'GET', 'DELETE'])
+
+    def test_connection_details_not_written_without_opt_in(self):
+        result, report, _, _ = self.run_case('connection-details')
+        self.assertEqual(result.returncode, 0)
+        self.assertIsNone(self.last_connection)
+        self.assertEqual(report['connectionDetailCameraCount'], 0)
+
+    def test_interactive_camera_selection_after_login(self):
+        result, report, _, seen = self.run_case('connection-details', interactive_connection_target='synthetic camera')
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(report['connectionDetailCameraCount'], 1)
+        self.assertEqual(self.last_connection['connection']['uuid'], CAMERA)
+        self.assertEqual([m for m, _ in seen], ['GET', 'POST', 'GET', 'GET', 'GET', 'DELETE'])
+
+    def test_empty_interactive_selection_does_not_collect_other_cameras(self):
+        result, report, _, seen = self.run_case('connection-details', interactive_connection_target='')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(report['error'], 'CONNECTION_TARGET_REQUIRED')
+        self.assertEqual(seen, [('GET', '/V1/report/status'), ('POST', '/V1/Session'), ('DELETE', '/V1/Session')])
+        self.assertIsNone(self.last_connection)
+
+    def test_connection_uuid_selection(self):
+        result, _, _, _ = self.run_case('connection-details', connection_target=CAMERA.upper())
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(self.last_connection['connection']['uuid'], CAMERA)
+
+    def test_absent_network_fields_not_guessed(self):
+        result, _, _, _ = self.run_case(connection_target='synthetic camera')
+        self.assertEqual(result.returncode, 0)
+        c = self.last_connection['connection']['camera']
+        self.assertFalse(c['networkInfoPresent'])
+        self.assertTrue(all(value is None for value in c['ports'].values()))
+        self.assertTrue(all(value is None for value in c['addresses'].values()))
+
+    def test_invalid_ports_and_credential_urls_discarded(self):
+        result, report, _, _ = self.run_case('invalid-connection', connection_target=CAMERA)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(report['connectionDetailIssueCount'], 6)
+        c = self.last_connection['connection']['camera']
+        self.assertIsNone(c['ports']['httpPort'])
+        self.assertIsNone(c['ports']['httpsPort'])
+        self.assertIsNone(c['ports']['rtspPort'])
+        self.assertIsNone(c['addresses']['http'])
+        self.assertIsNone(c['addresses']['https'])
+        self.assertIsNone(c['addresses']['tcp'])
+
+    def test_ambiguous_connection_target_not_selected_automatically(self):
+        result, report, preview, _ = self.run_case('connection-details', connection_target='a')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(report['error'], 'CONNECTION_TARGET_AMBIGUOUS')
+        self.assertEqual(report['logout'], 'ok')
+        self.assertIsNone(preview)
+        self.assertIsNone(self.last_connection)
+
+    def test_missing_connection_target_no_file(self):
+        result, report, _, _ = self.run_case(connection_target='no matching camera')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(report['error'], 'CONNECTION_TARGET_NOT_FOUND')
+        self.assertIsNone(self.last_connection)
+
+    def test_conflicting_connection_details_rejected(self):
+        result, report, _, _ = self.run_case('connection-conflict', connection_target=CAMERA)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(report['error'], 'CONFLICTING_CONNECTION_DETAILS')
+        self.assertIsNone(self.last_connection)
+        self.assertEqual(report['logout'], 'ok')
 
 
 if __name__ == '__main__':

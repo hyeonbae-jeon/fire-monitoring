@@ -2,7 +2,7 @@
 
 Windows 10/11 x64용 별도 실행 파일입니다. Git/.NET/Node.js 또는 Wisenet 프로그램을 설치할 필요가 없습니다.
 SSM에 접근할 수 있는 회사 PC에서 실행하세요. 기존 지도/목록 데모 프로그램과 별개이며,
-기존 카메라 선택·보정 설정을 변경하지 않습니다. 원본 SSM DLL은 사용하지 않습니다. 현재 진단 버전은 2이며 connection-report.json의 toolVersion으로 확인합니다.
+기존 카메라 선택·보정 설정을 변경하지 않습니다. 원본 SSM DLL은 사용하지 않습니다. 현재 진단 버전은 3이며 connection-report.json의 toolVersion으로 확인합니다.
 
 ## 실행 순서
 
@@ -18,7 +18,10 @@ SSM에 접근할 수 있는 회사 PC에서 실행하세요. 기존 지도/목�
    정상 로그인 및 목록 조회까지 진행하려면 **Y**를 입력합니다.
 6. 허용된 SSM 계정 ID와 비밀번호를 회사 PC 콘솔에 입력합니다. 비밀번호는 화면에 표시하지 않고
    파일·로그·명령줄 인자로 저장하지 않습니다. 클라우드나 GitHub로 전송하지 않습니다.
-7. 결과를 확인한 뒤 Enter를 눌러 종료합니다. 테스트에서 만든 세션만 정상 로그아웃을 시도합니다.
+7. 로그인 성공 후 **‘카메라 한 대의 등록 주소·포트도 추출’** 안내에서 **Y**를 입력하고,
+   대상 이름 일부 **백운대** 또는 정확한 UUID를 입력할 수 있습니다. Enter는 기존 기본 목록만 수집합니다.
+   검색 결과가 0개/여러 개이면 대상을 자동 선택하지 않습니다. 선택 결과가 한 대일 때만 연결 정보 파일을 만듭니다.
+8. 결과를 확인한 뒤 Enter를 눌러 종료합니다. 테스트에서 만든 세션만 정상 로그아웃을 시도합니다.
 
 주소/지문을 입력할 때 Windows 터미널의 붙여넣기(Ctrl+V 또는 우클릭)를 사용할 수 있습니다.
 관리자 실행은 필요하지 않습니다. 종료 전 콘솔을 강제로 닫으면 세션 정리 요청이 생략될 수 있습니다.
@@ -50,6 +53,20 @@ HTTP 성공만으로 전체 목록을 확정하지 않습니다. 권한/연합 �
 실시간/설치 검증 수량이 아닙니다. xMapSubscriptionCandidateCount는 확인된 데이터 조건의 후보 수량이고
 계정 권한 또는 현재 PTZ 수신 성공이 아닙니다. unknownSubscriptionConditionsCount와
 metadataIssueCameraCount를 함께 확인하세요. 누락 값은 0으로 채우지 않습니다.
+
+- **camera-connection.private.json** (v3, 한 대 추출을 선택한 경우만): 선택 카메라와 조회한
+  component/server의 UUID, 검증된 networkInfo.addressList/portList 및 연결 방식 enum 숫자를 로컬 기록합니다.
+  source로 channel/component/server를 구분하고 serverPort/serverSslPort는 server 행에서만 읽습니다.
+  사용자 ID·장비/SSM 비밀번호·DDNS 비밀번호/ID·세션·토큰·원본 networkInfo는 저장하지 않습니다.
+  주소는 host/IP만 허용하고 자격 증명/경로/query를 포함한 URL은 버립니다. 포트 0/누락은 null,
+  범위 밖 값은 null+issues로 기록합니다. 이 파일에는 운영 주소/UUID가 있으므로 공개하지 않습니다.
+  connection-report.json에는 추출 대상 수와 문제 수만 추가하며 주소와 검색어는 넣지 않습니다.
+
+v3는 **같은 목록 GET 응답에서 필드를 추가 추출**하며 네트워크 요청을 추가하지 않습니다.
+이 등록 정보는 실제 도달 가능한 주소나 외부 포트 전달을 증명하지 않습니다. `routeVerified=false`를
+유지하고 다른 주소 필드/카메라 내부 포트를 조합해 URL을 만들지 않습니다. ONVIF 경로·SUNAPI 현재 위치
+명세가 확인된 것도 아닙니다. 카메라/녹화기/MediaGateway로 자동 접속하거나 PTZ 요청을 보내지 않습니다.
+주소창 없는 설정 화면에서 접속 정보를 좁힐 때 사용하며, 필드가 없으면 미확인으로 남깁니다.
 
 ## 연결·명령 범위
 

@@ -129,3 +129,10 @@
 - [x] PTZ 우선 검증과 영상/지형 보정으로 전환할 조건 문서화
 
 [시험 도구](docs/ptz-readonly-test.md) · [추가 조사와 전환 기준](docs/ptz-investigation-decision.md).
+
+## 주소창 없는 카메라 설정 화면의 접속 정보 조사
+- [x] 대상 MAC 일치 및 카메라 자체 HTTP 80/HTTPS 443/RTSP 554 확인; 외부 포트와 구분
+- [x] 원본 networkInfo 주소/포트 매핑 확인; 기존 목록 GET의 선택 한 대 추출을 진단 v3에 추가
+- [x] 합성 SSM 검증 28개 통과: 추가 네트워크 요청 없음, 명시적 선택, credential URL/범위 오류/비밀 필드 제외
+- [ ] 회사 PC에서 백운대 한 대의 camera-connection.private.json을 얻어 등록 접속 정보 대조
+- [ ] 실제 도달 경로·ONVIF 서비스 또는 공식 SUNAPI 현재 위치 계약 확인 후 단일 상태 응답 검증
