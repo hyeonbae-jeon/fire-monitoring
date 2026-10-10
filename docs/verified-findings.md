@@ -116,3 +116,10 @@ component TCP 4510과 server의 목록 REST 포트는 별도 필드로 반환됐
 SessionCenter.AddMediaGateway의 TCP/WAN 주소·TCP 포트 → ControlSession.SetConnectionInfo 전달도 확인했습니다.
 이는 등록값/정적 구현의 근거이며 장비 도달 여부·신원·CONTROL 인증·현재 PTZ 성공은 아닙니다.
 저장 heading/좌표 null 및 전체 XMap 조건 false가 재확인됐습니다. [현장 대조](ssm-live-inventory-validation.md).
+
+## 등록 포트의 회사 PC TCP 시험 결과
+
+사용자 camera-route-report.json에서 카메라 HTTP 80=true, HTTPS 443=false,
+SSM component TCP 4510=true를 확인했습니다. 역할/포트는 앞선 v3 등록 정보와 일치합니다.
+보고서에 주소/UUID/수집 시각은 없으며 TCP 연결만 시험했습니다. HTTP 장비 신원, CONTROL 인증/TLS,
+현재 PTZ 및 북쪽 보정은 계속 미검증입니다. [해석과 다음 단계](ssm-live-inventory-validation.md).

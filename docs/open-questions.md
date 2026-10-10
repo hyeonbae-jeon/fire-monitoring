@@ -100,8 +100,10 @@ ONVIF 서비스 주소로 대체하지 않습니다. 다음은 실제 카메라�
 
 카메라 자체 HTTP/HTTPS/RTSP 포트는 확인됐지만 설정 화면의 최종 URL과 외부 접속/전달 경로는 미확인입니다.
 SSM networkInfo의 정적 필드 매핑과 v3의 선택 한 대 현장 등록값을 확인했습니다.
-카메라 HTTP 80/HTTPS 443 및 component TCP 4510은 확인된 설정값이나 회사 PC 도달 여부·
-실제 장비 신원·서비스/TLS/인증은 미검증입니다. 카메라와 SSM CONTROL의 포트/계정을 구분합니다.
+카메라 HTTP 80/HTTPS 443 및 component TCP 4510은 확인된 설정값입니다.
+후속 TCP 시험에서는 HTTP 80과 component 4510 연결 성공, 카메라 HTTPS 443 연결 실패를 관측했습니다.
+실제 장비 신원·HTTP 서비스·CONTROL TLS/인증, 443 연결 실패 원인은 미확인입니다.
+카메라와 SSM CONTROL의 포트/계정을 구분합니다.
 ONVIF 서비스 URL/지원, 공식 SUNAPI 현재 위치 계약 및 독립 CONTROL 현재 위치 수신이 남아 있습니다.
 사용자는 주소창이 없다고 확인했으므로 주소창 재확인을 선행 조건으로 두지 않습니다.
 [v3 대조](ssm-live-inventory-validation.md) · [회사 PC TCP 확인](camera-route-check.md).
