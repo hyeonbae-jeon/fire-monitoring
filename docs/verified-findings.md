@@ -77,5 +77,13 @@ GET_POS_NORMALIZE 비트는 6개에서 관측됐으나 현재 PTZ 수신은 아�
 
 원본 C#/IL에서 headingAngle/current Pan/절대 위치 구독 직접 참조는 발견되지 않았습니다.
 외부 BaseViewerForm 이벤트 위임 및 SSMDataCenter 권한 조회 위임을 확인했습니다.
-같은 목록 GET의 설정 메타데이터만 추출하는 진단 v2를 구현했습니다. 회사 저장값은 아직 미확인입니다.
+같은 목록 GET의 설정 메타데이터만 추출하는 진단 v2를 구현했습니다. 회사 응답의 저장 필드는 아래 v2 현장 결과에서 확인했습니다.
 [근거와 경계](ssm-google-map-analysis.md).
+
+## 진단 v2 현장 메타데이터 확인 (2026-10-10)
+
+회사 PC에서 재조회한 146개의 목록/메타데이터 UUID 집합이 일치하고 모든 요청은 HTTP 200입니다.
+146개 모두 configuredHeading/Latitude/Longitude=null, subType=0, installType=2이며 추출 형식 문제는 없습니다.
+기존 XMap 전체 데이터 구독 조건은 146개 모두 false입니다. 선택 9대 중 위치 비트 후보 3개는 유지되나,
+subType 조건을 충족하지 않습니다. 권한 부족·실제 설치 형태·현재 PTZ 수신 가능성은 이 결과로 확정하지 않습니다.
+사용자 제공 위치를 유지합니다. [관측과 해석 범위](ssm-live-inventory-validation.md).

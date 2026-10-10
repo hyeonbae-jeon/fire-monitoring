@@ -113,6 +113,7 @@
 - [x] GoogleMapViewer 실행 없이 C#/IL 조사; heading/current Pan 직접 사용은 발견하지 못함
 - [x] 동일 목록 GET에서 capability/subType/installType 및 확장 좌표/heading만 추출하는 진단 v2 구현
 - [x] XMap 데이터 조건과 계정 권한/실수신 성공 구분
-- [ ] 회사 PC 진단 v2로 선택된 9대의 저장 메타데이터·heading 실제 값 확인
+- [x] 회사 PC 진단 v2 목록/메타데이터 146개 및 선택 9개 대조: heading/좌표 null, subType=0, installType=2
+- [ ] subType=0 원인 및 실제 설치/북쪽 보정 확인 (전체 XMap 데이터 조건 false와 실제 수신 가능성 구분)
 
 [분석](docs/ssm-google-map-analysis.md). 실제 방향 보정값 발견 또는 PTZ 수신 성공으로 처리하지 않습니다.
