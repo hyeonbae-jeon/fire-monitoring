@@ -9,5 +9,6 @@
   <ItemGroup>
     <ProjectReference Include="../../bridge/ScreenCapture.Core/ScreenCapture.Core.csproj" />
     <Compile Include="../../bridge/SsmScreenCapture/NativeWindows.cs" Link="NativeWindows.cs" />
+    <Compile Include="../../bridge/SsmScreenCapture/ScreenPixels.cs" Link="ScreenPixels.cs" />
   </ItemGroup>
 </Project>

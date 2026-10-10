@@ -82,9 +82,7 @@ internal sealed class CaptureForm : Form
         try
         {
             if (!NativeWindows.CanCapture(selection, out var region, out var reason)) { Pause(reason); return; }
-            using var bitmap = new Bitmap(region.Width, region.Height, PixelFormat.Format24bppRgb);
-            using (var graphics = Graphics.FromImage(bitmap))
-                graphics.CopyFromScreen(region.Location, Point.Empty, region.Size, CopyPixelOperation.SourceCopy | CopyPixelOperation.CaptureBlt);
+            using var bitmap = ScreenPixels.Read(region);
             if (!NativeWindows.CanCapture(selection, out var after, out reason) || after != region) { Pause(reason); return; }
             var sample = new byte[80 * 45];
             for (var y = 0; y < 45; y++) for (var x = 0; x < 80; x++)

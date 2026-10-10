@@ -30,9 +30,7 @@ internal static class Program
             var selection = NativeWindows.Select(initial);
             Check(selection.Window == target.Handle, "selection binds the synthetic allowlisted process/window");
             Check(NativeWindows.CanCapture(selection, out var region, out _) && region == initial, "unobscured client region is capturable");
-            using var bitmap = new Bitmap(region.Width, region.Height, PixelFormat.Format24bppRgb);
-            using (var graphics = Graphics.FromImage(bitmap)) graphics.CopyFromScreen(region.Location, Point.Empty, region.Size,
-                CopyPixelOperation.SourceCopy | CopyPixelOperation.CaptureBlt);
+            using var bitmap = ScreenPixels.Read(region);
             var pixel = bitmap.GetPixel(90, 60);
             Check(Math.Abs(pixel.B - Color.DodgerBlue.B) < 5 && Math.Abs(pixel.R - Color.DodgerBlue.R) < 5,
                 $"GDI reads the actual synthetic window color (observed RGB={pixel.R},{pixel.G},{pixel.B})");
