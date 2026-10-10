@@ -54,3 +54,13 @@ SystemService의 PTZ_CONTROL → MEDIA_MAN 요청 전달 및 지정된 화면 si
 CLIENT_SDK_MAN/일반 OnCallbackEvent가 이 PTZ 분기의 수신처라고 가정할 수 없습니다.
 LiveViewer의 ILiveInput, XScreen/Mediator 및 BaseViewerForm 이벤트 위임도 확인했습니다.
 MapTile 직접 연결과 실장비 수신은 미확인입니다. [상세 근거](ssm-routing-analysis.md).
+
+## 현장 상태 응답 및 연결 진단 (2026-10-10)
+
+사용자가 회사 PC에서 실행한 상태 GET 결과는 HTTP 200, serverstatus=START, ServerVersion=2.21.00,
+SSL 포트·PublicKey 존재입니다. HTTPS에서는 ERR_CERT_AUTHORITY_INVALID가 관측됐습니다.
+제공된 PEM의 자기 서명 및 2031-08-02까지 유효함을 확인했고 SAN이 없습니다.
+이 관측으로 운영 서버 인증서의 진위가 독립 확인된 것은 아닙니다.
+원본 WebServiceImplementation.LogInSessionRequest의 CLIENT_SDK wire service=12,
+비-SVM의 TSM 선택, LogOutRequest의 자기 세션 DELETE /V1/Session도 확인했습니다.
+[연결 진단 도구](ssm-connection-test.md)의 합성 서버 검증과 운영 로그인 성공은 구분합니다.

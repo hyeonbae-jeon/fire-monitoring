@@ -130,3 +130,12 @@ MapTile와 화면의 직접 연결은 미확인입니다. 일반 OnCallbackEvent
 아직 계정/주소/권한/실응답이 없으므로 이 단계들을 실행하지 않았습니다. MOVE_PTZ/SET_ABS_PTZ 금지는 유지합니다.
 중앙 PTZ Bridge + VWorld 브라우저 구조와 원본 DLL을 공개 배포하지 않는 원칙도 유지합니다.
 이번 변경은 분석 문서만이며 기존 실행 패키지는 변경하지 않습니다.
+
+## 후속 연결 진단 구현 (2026-10-10)
+
+위 문단은 최초 정적 분석 시점입니다. 이후 현장 상태 GET 응답으로 2.21.00/START/SSL 포트·공개키 존재가 확인됐습니다.
+추가 추적에서 WebServiceImplementation의 CLIENT_SDK 정상 로그인 service 값은 enum 순번 6이 아닌 **12**,
+비-SVM WebServiceStub의 bUser=true는 **TSM**, 자기 세션 LogOutRequest는 **DELETE /V1/Session**임을 확인했습니다.
+독립 [연결 진단 도구](ssm-connection-test.md)에 이 계약만 구현했습니다. 강제 접속/제어 요청은 없습니다.
+운영 HTTPS는 독립 검증되지 않은 최초 인증서를 사용자가 명시적으로 고정하는 시험이며,
+회사 PC에서의 정상 로그인·목록 수집 성공은 아직 확인되지 않았습니다.

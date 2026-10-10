@@ -85,3 +85,12 @@
 - [x] SystemService 중앙 PTZ 요청 전달 및 지정 sink 이벤트 배분 확인
 - [x] LiveViewer의 SYSTEM_MAN 입력 및 외부 BaseViewerForm/XScreen 위임 확인
 - [ ] MapTile와 화면의 직접 연결 (독립 목록 조회의 선행 조건 아님)
+
+## 인증서 고정 연결 진단
+- [x] 현장 HTTP 상태 GET: 200 / START / 2.21.00 / SSL 포트·공개키 존재 (사용자 실행 결과)
+- [x] 제공된 인증서를 정적으로 검사: 자기 서명, 유효기간 내, SAN 없음; 서버 진위 독립 확인은 미완료
+- [x] 독립 HTTPS 지문 고정, 상태 조회, 정상 로그인 1회 및 이름/UUID/PtzCap 미리보기 도구 구현
+- [x] CLIENT_SDK wire service=12 / TSM / 자기 세션 로그아웃 계약을 원본에서 추가 확인
+- [x] 합성 HTTPS 계약 테스트 14개 및 인증서 날짜/가용성 검사 4개 통과
+- [ ] 회사 PC에서 지문 고정 HTTPS 상태·로그인·목록 조회 실응답 확인
+- [ ] 계정/서버/연합의 전체 등록 범위 대조 후 목록 선택 설정에 반영

@@ -8,10 +8,12 @@ on:
       - feat/vworld-monitoring-prototype
     paths:
       - '.github/workflows/windows-demo.yml'
-      - 'bridge/**'
+      - 'bridge/WisenetPtzBridge/**'
       - 'web/**'
       - 'scripts/build-portable.py'
-      - 'tests/**'
+      - 'tests/test_inventory.py'
+      - 'tests/test_portable_demo.py'
+      - 'tests/serve_e2e.py'
       - 'config/inventory.example.json'
       - 'docs/windows-demo.md'
       - 'global.json'

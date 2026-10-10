@@ -20,3 +20,7 @@ config/cameras.demo.json
 
 # Operational report inputs and normalized previews stay local.
 config/imports/
+
+# Local connection diagnostics contain operational camera identifiers.
+diagnostics/
+*.private.json

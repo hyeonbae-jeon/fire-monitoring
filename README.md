@@ -114,3 +114,10 @@ Playwright Chromium이 필요하며, 시스템 Chromium은 `CHROMIUM_EXECUTABLE`
 
 추가 SystemService/LiveViewer에서 중앙 PTZ 요청·이벤트 라우터를 확인했습니다.
 일반 콜백의 수신과 실장비 연결은 미검증입니다. [라우팅 분석](docs/ssm-routing-analysis.md).
+
+## 회사 PC에서 실제 SSM 연결 시험
+
+별도 **SsmConnectionTest.exe**는 인증서 SHA-256 지문을 고정한 HTTPS 상태 조회와 선택적 정상 로그인·목록 조회를 제공합니다.
+Git/.NET/Node.js 설치가 필요 없는 Windows x64 패키지는 Actions의 **SSM connection test**에서 받습니다.
+카메라 이동/설정/영상 요청은 없으며 기존 지도 데모·선택 설정을 변경하지 않습니다.
+운영 서버 연결은 회사 PC에서 검증해야 합니다. [실행 및 결과 공유 방법](docs/ssm-connection-test.md).
