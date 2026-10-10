@@ -105,6 +105,19 @@ class Tests(unittest.TestCase):
                         rows[0]['ptzCap'] = -1
                     if mode == 'conflict':
                         rows.append(dict(rows[0], name='changed'))
+                    if mode in ('metadata', 'invalid-metadata', 'metadata-conflict', 'ineligible-metadata'):
+                        rows[0].update(capability='80', subType=4, installType=1,
+                            extendedData=json.dumps({'latitude': '37.5', 'longitude': '127.1', 'heading': '0',
+                                                     'password': 'SECRET-EXTENDED-DATA', 'ip': 'SECRET-EXTENDED-IP'}))
+                    if mode == 'invalid-metadata':
+                        rows[0].update(capability=128, subType='4', installType=-1,
+                                       extendedData='invalid SECRET-EXTENDED-DATA')
+                        rows[1]['extendedData'] = json.dumps({'latitude': 'NaN', 'longitude': '181',
+                                                            'heading': 'SECRET-EXTENDED-DATA'})
+                    if mode == 'metadata-conflict':
+                        rows.append(dict(rows[0], extendedData=json.dumps({'heading': '90'})))
+                    if mode == 'ineligible-metadata':
+                        rows[0]['subType'] = 1
                     return self.reply(body=rows)
                 return self.reply(404)
 
@@ -149,9 +162,11 @@ class Tests(unittest.TestCase):
                 report = json.loads(reports[0].read_text())
                 previews = list(Path(output).rglob('camera-preview.private.json'))
                 preview = json.loads(previews[0].read_text()) if previews else None
-                all_output = result.stdout + result.stderr + reports[0].read_text() + (previews[0].read_text() if previews else '')
+                metadata = list(Path(output).rglob('camera-metadata.private.json'))
+                self.last_metadata = json.loads(metadata[0].read_text()) if metadata else None
+                all_output = result.stdout + result.stderr + ''.join(p.read_text() for p in Path(output).rglob('*.json'))
                 for secret in [PASSWORD, SESSION, 'SECRET-SERVER-FIELD', 'SECRET-TOKEN', 'SECRET-KEY', 'SECRET-IP',
-                               'SECRET-CAMERA-FIELD', 'SECRET-ERROR-BODY']:
+                               'SECRET-CAMERA-FIELD', 'SECRET-ERROR-BODY', 'SECRET-EXTENDED-DATA', 'SECRET-EXTENDED-IP']:
                     self.assertNotIn(secret, all_output)
                 self.assertEqual(auth_errors, [])
                 self.assertFalse(report['complete'])
@@ -247,6 +262,52 @@ class Tests(unittest.TestCase):
         caps = {c['uuid']: c['ptzCap'] for c in preview['cameras']}
         self.assertEqual(caps[CAMERA], '0')
         self.assertIsNone(caps[OTHER])
+
+    def test_configured_metadata_not_current_ptz_and_hex_capability_gate(self):
+        result, report, preview, seen = self.run_case('metadata')
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(report['toolVersion'], '2')
+        self.assertEqual(report['configuredHeadingCount'], 1)
+        self.assertEqual(report['configuredCoordinateCount'], 1)
+        self.assertEqual(report['xMapSubscriptionCandidateCount'], 1)
+        self.assertEqual(report['unknownSubscriptionConditionsCount'], 1)
+        self.assertEqual(report['metadataIssueCameraCount'], 0)
+        rows = {c['uuid']: c for c in self.last_metadata['cameras']}
+        self.assertEqual(rows[CAMERA]['entityCapability'], '128')
+        self.assertEqual(rows[CAMERA]['configuredHeading'], '0')
+        self.assertEqual(rows[CAMERA]['configuredLatitude'], '37.5')
+        self.assertTrue(rows[CAMERA]['xMapSubscriptionConditions'])
+        self.assertIsNone(rows[OTHER]['xMapSubscriptionConditions'])
+        self.assertIsNone(rows[OTHER]['configuredHeading'])
+        self.assertFalse(self.last_metadata['complete'])
+        self.assertEqual([m for m, _ in seen], ['GET', 'POST', 'GET', 'GET', 'GET', 'DELETE'])
+
+    def test_optional_invalid_metadata_is_unknown_with_explicit_issues(self):
+        result, report, preview, seen = self.run_case('invalid-metadata')
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(report['metadataIssueCameraCount'], 2)
+        self.assertEqual(report['configuredHeadingCount'], 0)
+        self.assertEqual(report['configuredCoordinateCount'], 0)
+        self.assertEqual(report['xMapSubscriptionCandidateCount'], 0)
+        rows = {c['uuid']: c for c in self.last_metadata['cameras']}
+        self.assertIsNone(rows[CAMERA]['entityCapability'])
+        self.assertIn('CAPABILITY_FORMAT_INVALID', rows[CAMERA]['issues'])
+        self.assertIn('EXTENDED_DATA_JSON_INVALID', rows[CAMERA]['issues'])
+        self.assertIsNone(rows[OTHER]['configuredLatitude'])
+        self.assertIsNone(rows[OTHER]['configuredHeading'])
+
+    def test_duplicate_uuid_with_conflicting_metadata_rejected(self):
+        result, report, preview, seen = self.run_case('metadata-conflict')
+        self.assertEqual(report['error'], 'CONFLICTING_CAMERA_METADATA')
+        self.assertIsNone(preview)
+        self.assertIsNone(self.last_metadata)
+        self.assertEqual(report['logout'], 'ok')
+
+    def test_known_unsatisfied_subtype_does_not_become_position_candidate(self):
+        result, report, preview, seen = self.run_case('ineligible-metadata')
+        self.assertEqual(report['xMapSubscriptionCandidateCount'], 0)
+        rows = {c['uuid']: c for c in self.last_metadata['cameras']}
+        self.assertFalse(rows[CAMERA]['xMapSubscriptionConditions'])
 
 
 if __name__ == '__main__':

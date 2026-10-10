@@ -48,9 +48,16 @@ try
         var preview = new { schemaVersion = 1, complete = false, totalCount = cameras.Count, capturedAt = DateTimeOffset.UtcNow,
             provenance = "SSM HTTPS diagnostic; account-visible scope; full coverage NOT VERIFIED", cameras };
         await File.WriteAllTextAsync(Path.Combine(folder, "camera-preview.private.json"), JsonSerializer.Serialize(preview, JsonOptions()));
+        await File.WriteAllTextAsync(Path.Combine(folder, "camera-metadata.private.json"), JsonSerializer.Serialize(new {
+            schemaVersion = 1, complete = false, capturedAt = preview.capturedAt,
+            provenance = "SSM configured metadata; heading meaning and current PTZ NOT VERIFIED", cameras = client.Metadata
+        }, JsonOptions()));
         Console.WriteLine($"서버 {report.serverCount} / 컴포넌트 {report.componentCount} / 카메라 {report.cameraCount} / PtzCap 미확인 {report.unknownPtzCapCount}");
+        Console.WriteLine($"저장 heading 값 있음 {report.configuredHeadingCount} / 좌표 쌍 있음 {report.configuredCoordinateCount} / XMap 구독 조건 후보 {report.xMapSubscriptionCandidateCount}");
+        Console.WriteLine("저장 heading은 현재 Pan 또는 북쪽 보정으로 확정한 값이 아닙니다. 계정 PTZ 권한도 별도 확인이 필요합니다.");
         Console.WriteLine("목록은 전체 범위 미확인 미리보기입니다. 기존 선택/설정은 변경하지 않았습니다.");
         Console.WriteLine("camera-preview.private.json에는 카메라 이름/UUID가 있습니다. 외부에 공유하지 마세요.");
+        Console.WriteLine("camera-metadata.private.json에는 UUID/설정 좌표·heading이 있습니다. 회사 PC에 보관하세요.");
     }
 }
 catch (Exception e)

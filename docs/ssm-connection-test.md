@@ -2,7 +2,7 @@
 
 Windows 10/11 x64용 별도 실행 파일입니다. Git/.NET/Node.js 또는 Wisenet 프로그램을 설치할 필요가 없습니다.
 SSM에 접근할 수 있는 회사 PC에서 실행하세요. 기존 지도/목록 데모 프로그램과 별개이며,
-기존 카메라 선택·보정 설정을 변경하지 않습니다. 원본 SSM DLL은 사용하지 않습니다.
+기존 카메라 선택·보정 설정을 변경하지 않습니다. 원본 SSM DLL은 사용하지 않습니다. 현재 진단 버전은 2이며 connection-report.json의 toolVersion으로 확인합니다.
 
 ## 실행 순서
 
@@ -39,6 +39,17 @@ SSM에 접근할 수 있는 회사 PC에서 실행하세요. 기존 지도/목�
 카메라 UUID 중복은 같은 값이면 합치고 불일치면 중단합니다. 부분 실패, 응답 구조 오류 및
 HTTP 성공만으로 전체 목록을 확정하지 않습니다. 권한/연합 범위, 현장 등록 수와 목록 변경은 추가 대조가 필요합니다.
 서버 화면의 수량과 보고서 수량이 다를 수 있으므로 코드에 기대 수량을 고정하지 않습니다.
+
+- **camera-metadata.private.json** (v2): 이름/UUID, entityCapability(10진 문자열), subType/installType,
+  설정 latitude/longitude/heading 및 XMap 데이터 조건을 로컬 기록합니다. 설치값과 실시간 PTZ를 구분합니다.
+  원본 extendedData 전체·장치 비밀번호/IP 등은 저장하지 않습니다. 형식 오류는 null과 issues로 표시합니다.
+  숫자 heading=0은 누락과 구분하지만 기본값인지, 북쪽 보정인지, 어떤 단위인지는 아직 미확인입니다.
+  이 파일의 설정 위치가 기존 지도 좌표를 자동 변경하지 않습니다. 운영 데이터가 있으므로 공개 게시하지 않습니다.
+
+공유용 보고서의 configuredHeadingCount/configuredCoordinateCount는 저장된 수치의 존재 수량이며
+실시간/설치 검증 수량이 아닙니다. xMapSubscriptionCandidateCount는 확인된 데이터 조건의 후보 수량이고
+계정 권한 또는 현재 PTZ 수신 성공이 아닙니다. unknownSubscriptionConditionsCount와
+metadataIssueCameraCount를 함께 확인하세요. 누락 값은 0으로 채우지 않습니다.
 
 ## 연결·명령 범위
 

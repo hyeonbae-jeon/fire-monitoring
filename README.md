@@ -125,3 +125,7 @@ Git/.NET/Node.js 설치가 필요 없는 Windows x64 패키지는 Actions의 **S
 회사 PC에서 지문 고정 HTTPS 로그인·목록 조회·로그아웃이 성공했고 고유 UUID 146개를 확인했습니다.
 이전 보고서의 140개가 모두 포함됩니다. 전체 범위 및 현재 PTZ는 계속 미확인입니다.
 [현장 검증 결과](docs/ssm-live-inventory-validation.md).
+
+진단 v2는 동일 목록 조회에서 설치 형태·장치 capability·저장 좌표/heading을 추가로 읽고,
+운영 값은 camera-metadata.private.json에만 기록합니다. 현재 PTZ 또는 북쪽 보정으로 확정하지 않습니다.
+[GoogleMapViewer 추가 분석과 설치 경로](docs/ssm-google-map-analysis.md).

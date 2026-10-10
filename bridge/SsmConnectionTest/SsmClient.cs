@@ -9,9 +9,13 @@ using System.Text.Json;
 namespace SsmConnectionTest;
 
 public sealed record CameraPreview(string uuid, string name, string? channel, string? device, string? ptzCap);
+public sealed record CameraMetadata(string uuid, string name, string? entityCapability, long? subType,
+    long? installType, string? configuredLatitude, string? configuredLongitude, string? configuredHeading,
+    bool? xMapSubscriptionConditions, string[] issues);
 public sealed record RequestResult(string stage, int httpStatus);
 public sealed class DiagnosticReport
 {
+    public string toolVersion { get; } = "2";
     public DateTimeOffset capturedAt { get; set; } = DateTimeOffset.UtcNow;
     public string result { get; set; } = "not-started";
     public string? serverStatus { get; set; }
@@ -23,6 +27,11 @@ public sealed class DiagnosticReport
     public int componentCount { get; set; }
     public int cameraCount { get; set; }
     public int unknownPtzCapCount { get; set; }
+    public int configuredHeadingCount { get; set; }
+    public int configuredCoordinateCount { get; set; }
+    public int metadataIssueCameraCount { get; set; }
+    public int xMapSubscriptionCandidateCount { get; set; }
+    public int unknownSubscriptionConditionsCount { get; set; }
     public bool complete { get; set; } = false;
     public List<RequestResult> requests { get; } = [];
     public string? error { get; set; }
@@ -44,6 +53,8 @@ public sealed class SsmClient : IDisposable
     private string? publicKey;
     private bool loginAttempted;
     private int requestCount;
+    private readonly Dictionary<Guid, CameraMetadata> metadata = [];
+    public IReadOnlyList<CameraMetadata> Metadata => metadata.Values.OrderBy(c => c.uuid, StringComparer.Ordinal).ToList();
 
     public SsmClient(string endpoint, string fingerprint, DiagnosticReport report)
     {
@@ -228,6 +239,71 @@ public sealed class SsmClient : IDisposable
         return json;
     }
 
+    private static CameraMetadata ReadMetadata(JsonElement row, CameraPreview camera)
+    {
+        var issues = new List<string>();
+        string? entityCapability = null;
+        if (row.TryGetProperty("capability", out var capability) && capability.ValueKind != JsonValueKind.Null)
+        {
+            if (capability.ValueKind == JsonValueKind.String && string.IsNullOrWhiteSpace(capability.GetString())) { }
+            else if (capability.ValueKind == JsonValueKind.String &&
+                ulong.TryParse(capability.GetString(), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var bits))
+                entityCapability = bits.ToString(CultureInfo.InvariantCulture);
+            else issues.Add("CAPABILITY_FORMAT_INVALID");
+        }
+        long? OptionalInteger(string key)
+        {
+            if (!row.TryGetProperty(key, out var field) || field.ValueKind == JsonValueKind.Null) return null;
+            if (field.ValueKind == JsonValueKind.Number && field.TryGetInt64(out var value) && value >= 0) return value;
+            issues.Add(key == "subType" ? "SUBTYPE_FORMAT_INVALID" : "INSTALL_TYPE_FORMAT_INVALID");
+            return null;
+        }
+        var subType = OptionalInteger("subType");
+        var installType = OptionalInteger("installType");
+        string? latitude = null, longitude = null, heading = null;
+        if (row.TryGetProperty("extendedData", out var extra) && extra.ValueKind != JsonValueKind.Null)
+        {
+            if (extra.ValueKind != JsonValueKind.String) issues.Add("EXTENDED_DATA_FORMAT_INVALID");
+            else if (!string.IsNullOrWhiteSpace(extra.GetString()))
+            {
+                try
+                {
+                    using var document = JsonDocument.Parse(extra.GetString()!);
+                    if (document.RootElement.ValueKind != JsonValueKind.Object) issues.Add("EXTENDED_DATA_FORMAT_INVALID");
+                    else
+                    {
+                        string? ConfiguredNumber(string key, double? min = null, double? max = null)
+                        {
+                            if (!document.RootElement.TryGetProperty(key, out var value) || value.ValueKind == JsonValueKind.Null) return null;
+                            // Preserve numeric text without interpreting heading units, origin, or sign.
+                            var text = value.ValueKind == JsonValueKind.String ? value.GetString() :
+                                value.ValueKind == JsonValueKind.Number ? value.GetRawText() : null;
+                            if (text is not null && string.IsNullOrWhiteSpace(text)) return null;
+                            if (text is not null && text.Length <= 64 && double.TryParse(text, NumberStyles.Float,
+                                CultureInfo.InvariantCulture, out var number) && double.IsFinite(number) &&
+                                (min is null || number >= min) && (max is null || number <= max)) return text;
+                            issues.Add("CONFIGURED_" + key.ToUpperInvariant() + "_FORMAT_INVALID");
+                            return null;
+                        }
+                        latitude = ConfiguredNumber("latitude", -90, 90);
+                        longitude = ConfiguredNumber("longitude", -180, 180);
+                        heading = ConfiguredNumber("heading");
+                    }
+                }
+                catch (JsonException) { issues.Add("EXTENDED_DATA_JSON_INVALID"); }
+            }
+        }
+        bool? conditions = null;
+        // Mirror the verified XMap data gates only; these are NOT account permissions or live success.
+        bool? capabilityGate = entityCapability is null ? null : (ulong.Parse(entityCapability, CultureInfo.InvariantCulture) & 128UL) != 0;
+        bool? subtypeGate = subType is null ? null : subType is 4 or 8;
+        bool? positionGate = camera.ptzCap is null ? null : (ulong.Parse(camera.ptzCap, CultureInfo.InvariantCulture) & 268435456UL) != 0;
+        if (capabilityGate == false || subtypeGate == false || positionGate == false) conditions = false;
+        else if (capabilityGate == true && subtypeGate == true && positionGate == true) conditions = true;
+        return new(camera.uuid, camera.name, entityCapability, subType, installType,
+            latitude, longitude, heading, conditions, issues.ToArray());
+    }
+
     public async Task<List<CameraPreview>> Inventory()
     {
         var cameras = new Dictionary<Guid, CameraPreview>();
@@ -261,9 +337,19 @@ public sealed class SsmClient : IDisposable
                     }
                     var camera = new CameraPreview(uuid.ToString("D"), name, null, null, cap);
                     if (cameras.TryGetValue(uuid, out var previous) && previous != camera) throw new DiagnosticException("CONFLICTING_CAMERA");
+                    var detail = ReadMetadata(row, camera);
+                    if (metadata.TryGetValue(uuid, out var previousDetail) &&
+                        JsonSerializer.Serialize(previousDetail) != JsonSerializer.Serialize(detail))
+                        throw new DiagnosticException("CONFLICTING_CAMERA_METADATA");
                     cameras[uuid] = camera;
+                    metadata[uuid] = detail;
                     report.cameraCount = cameras.Count;
                     report.unknownPtzCapCount = cameras.Values.Count(c => c.ptzCap is null);
+                    report.configuredHeadingCount = metadata.Values.Count(c => c.configuredHeading is not null);
+                    report.configuredCoordinateCount = metadata.Values.Count(c => c.configuredLatitude is not null && c.configuredLongitude is not null);
+                    report.metadataIssueCameraCount = metadata.Values.Count(c => c.issues.Length != 0);
+                    report.xMapSubscriptionCandidateCount = metadata.Values.Count(c => c.xMapSubscriptionConditions == true);
+                    report.unknownSubscriptionConditionsCount = metadata.Values.Count(c => c.xMapSubscriptionConditions is null);
                 }
             }
         }

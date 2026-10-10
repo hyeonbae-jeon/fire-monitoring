@@ -71,3 +71,9 @@ HTTPS 지문 고정·정상 로그인·목록 GET·자기 세션 로그아웃은
 [146개 목록 대조](ssm-live-inventory-validation.md)에서 이전 보고서 140개 전체 포함을 확인했습니다.
 전체 서버/권한/연합 범위, 130대 라이선스 화면과의 범위 차이, 신규 6개의 추가 원인·시점은 미확인입니다.
 위치 구독 후보 6개의 ENTITY_CAPABILITY/subType, 독립 CONTROL 세션/이벤트와 물리 방향 보정은 남아 있습니다.
+
+## GoogleMapViewer 조사 이후
+
+추가 모듈에서도 heading 사용/북쪽 보정 구현은 직접 확인되지 않았습니다. 모든 설치 모듈에
+없다고 판단하지 않습니다. 다음은 [진단 v2](ssm-connection-test.md)로 실제 채널의 capability/subType/installType와
+extendedData.heading 존재·값을 확인하는 단계입니다. 계정 PTZ 권한과 실제 상태 구독은 별도 미확인입니다.

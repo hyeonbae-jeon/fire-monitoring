@@ -107,3 +107,12 @@
 - [ ] 실제 현재 PTZ 수신 및 설치 방향 보정 확인
 
 [사무소별 선택 기준](docs/office-selection-policy.md). 운영 이름/UUID와 선택 미리보기는 로컬에만 보관합니다.
+
+## GoogleMapViewer 및 저장 heading 조사
+- [x] 사용자 제공 Console 설치 경로 기록
+- [x] GoogleMapViewer 실행 없이 C#/IL 조사; heading/current Pan 직접 사용은 발견하지 못함
+- [x] 동일 목록 GET에서 capability/subType/installType 및 확장 좌표/heading만 추출하는 진단 v2 구현
+- [x] XMap 데이터 조건과 계정 권한/실수신 성공 구분
+- [ ] 회사 PC 진단 v2로 선택된 9대의 저장 메타데이터·heading 실제 값 확인
+
+[분석](docs/ssm-google-map-analysis.md). 실제 방향 보정값 발견 또는 PTZ 수신 성공으로 처리하지 않습니다.

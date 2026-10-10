@@ -72,3 +72,10 @@ SSL 포트·PublicKey 존재입니다. HTTPS에서는 ERR_CERT_AUTHORITY_INVALID
 이전 보고서의 140개는 이름/UUID가 모두 일치하며 이번에만 있는 6개가 있습니다.
 GET_POS_NORMALIZE 비트는 6개에서 관측됐으나 현재 PTZ 수신은 아직 미검증입니다.
 전체 범위는 미확인이므로 complete=false입니다. [현장 검증과 대조](ssm-live-inventory-validation.md).
+
+## GoogleMapViewer 원본 추가 조사
+
+원본 C#/IL에서 headingAngle/current Pan/절대 위치 구독 직접 참조는 발견되지 않았습니다.
+외부 BaseViewerForm 이벤트 위임 및 SSMDataCenter 권한 조회 위임을 확인했습니다.
+같은 목록 GET의 설정 메타데이터만 추출하는 진단 v2를 구현했습니다. 회사 저장값은 아직 미확인입니다.
+[근거와 경계](ssm-google-map-analysis.md).
