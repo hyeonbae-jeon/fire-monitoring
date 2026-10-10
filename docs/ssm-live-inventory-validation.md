@@ -73,12 +73,46 @@ installType=2는 물리 설치와 북쪽 방향 보정을 증명하지 않으므
 원본과 선택 9대 메타데이터 대조 파일은 Git 제외 경로에 보관합니다.
 전체 등록 범위는 여전히 미확인으로 `complete=false`를 유지합니다.
 
+## 진단 v3 현장 등록 접속 정보 대조 (2026-10-10 22:15:12 한국 시간)
+
+사용자가 v3의 네 결과 파일을 제공했습니다. 10개 요청 모두 HTTP 200이며 정상 로그인·목록 조회·
+자기 세션 로그아웃이 성공했습니다. 고유 UUID 146개와 목록/메타데이터 UUID 집합 일치를 재확인했고,
+이전 리포트 140개 및 선택 9대의 이름/UUID/PtzCap도 그대로입니다. 저장 heading/좌표는 모두 null,
+subType=0, installType=2, XMap 전체 데이터 조건 false이며 파싱 문제는 없습니다.
+
+선택한 한 대의 연결 정보는 목록과 동일한 UUID/이름에 대응합니다. 등록 접속 정보 추출 문제는 0개입니다.
+운영 주소/UUID는 Git 제외 원본 및 대조 파일에만 보관합니다.
+
+| 조회 계층 | 이번에 확인한 등록값 | 판단 범위 |
+| --- | --- | --- |
+| 카메라 channel.networkInfo | HTTP 80, HTTPS 443; 두 주소는 같은 외부 IP | 이전 포트 화면과 일치; 회사 PC에서 접근 성공은 미검증 |
+| 카메라 연결 방식 | addressType=4, devProtocolType=1, medProtocolType=3 | 원본 enum에서는 각각 HTTPS, SUNAPI, HTTP; ONVIF 지원을 뜻하지 않음 |
+| 카메라 tcp/wan | 두 포트 모두 554 | 등록 필드 관측; 이 값을 SSM CONTROL 포트로 사용하지 않음 |
+| 카메라 rtsp | 주소 0.0.0.0, 포트 null | 실제 RTSP 서비스 주소·포트로 사용하지 않음 |
+| component.networkInfo | TCP 4510, devProtocolType=2, medProtocolType=1 | 원본 enum에서는 SVNP/TCP; 독립 CONTROL 연결 조사 자료 |
+| server.networkInfo | TCP/WAN 4510, HTTP 4514, HTTPS 4518, RTSP 558 | 반환된 등록 포트; 실제 서비스/인증서를 시험한 결과가 아님 |
+| server 행 | serverPort=9999, serverSslPort=9991 | 이미 성공한 SSM 목록 REST의 포트와 구분 |
+
+enum 근거는 제공된 DataStructure의 ADDRESS_TYPE, DEVICE_PROTOCOL_TYPE, MEDIA_PROTOCOL_TYPE입니다.
+addressType=4와 화면의 Wisenet DDNS 표시는 서로 다른 설정 항목이므로 표시 불일치만으로 장애를 판단하지 않습니다.
+원본 SessionCenter.AddMediaGateway는 MediaGateway의 TCP/WAN 주소 및 TCP 포트를 ControlSession.SetConnectionInfo에
+전달합니다. 따라서 이번 component의 TCP 4510은 CONTROL 조사 후보이나 인증·TLS 전환·위치 이벤트 성공은 미확인입니다.
+component에 반환된 loopback 주소는 별도 접속용 PC에서 원격 서버 주소로 사용하지 않습니다.
+
+등록된 외부 IP와 카메라 내부 IP가 다르므로 실제 포트 전달이나 내장 설정 화면의 경로가 입증됐다고
+해석하지 않습니다. `routeVerified=false`, `complete=false`를 유지합니다. 장비 인증서·계정·공식 SUNAPI
+현재 위치 조회 계약 또는 ONVIF 서비스 URL·지원, 현재 Pan/Tilt/Zoom 및 북쪽 보정은 아직 미확인입니다.
+
+다음은 [회사 PC의 제한된 TCP 연결 확인](camera-route-check.md)입니다. 카메라 계정/비밀번호를 보내지 않고,
+카메라의 등록 HTTP/HTTPS 포트와 component의 등록 TCP 포트만 확인합니다. 클라우드에서 운영 장비에
+접속하지 않았으며 원본 파일을 GitHub에 게시하거나 선택/지도 설정을 변경하지 않았습니다.
+
 ## 다음 단계
 
 1. 조회 계정의 전체 서버/권한 범위와 등록 수량 대조
 2. 전체 범위 확인 후 목록을 Camera Inventory에 반영하고 필요한 UUID 선택·설정 저장
-3. 반환된 subType=0과 클라이언트 유형 처리 차이 및 독립 MediaGateway CONTROL 계약 확인
-4. 한 카메라에서 허용된 읽기 전용 위치 구독과 이벤트 UUID/값/수신 시각 검증
+3. 등록 주소·포트의 회사 PC 도달 여부와 카메라 신원·서비스 계약 확인; 별도로 subType/CONTROL 인증·TLS 조사
+4. 확인된 경로에서 한 카메라의 허용된 읽기 전용 현재 위치 응답과 UUID/값/수신 시각 검증
 
 MOVE_PTZ / SET_ABS_PTZ 금지를 유지합니다. 이번 검토는 결과 대조 및 문서 반영만 수행했으며
 카메라 제어, 운영 서버 재접속, 전체 목록 확정 및 기존 선택 설정 변경은 하지 않았습니다.

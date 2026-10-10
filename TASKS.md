@@ -134,5 +134,6 @@
 - [x] 대상 MAC 일치 및 카메라 자체 HTTP 80/HTTPS 443/RTSP 554 확인; 외부 포트와 구분
 - [x] 원본 networkInfo 주소/포트 매핑 확인; 기존 목록 GET의 선택 한 대 추출을 진단 v3에 추가
 - [x] 합성 SSM 검증 28개 통과: 추가 네트워크 요청 없음, 명시적 선택, credential URL/범위 오류/비밀 필드 제외
-- [ ] 회사 PC에서 백운대 한 대의 camera-connection.private.json을 얻어 등록 접속 정보 대조
+- [x] 회사 PC v3에서 선택 한 대의 연결 정보·동일 UUID 대조; 카메라 HTTP/HTTPS 포트 화면 일치 및 component TCP 4510 확인
+- [ ] 회사 PC에서 확인된 카메라 HTTP/HTTPS 및 component TCP 포트의 도달 여부 확인 (등록값과 실제 서비스 구분)
 - [ ] 실제 도달 경로·ONVIF 서비스 또는 공식 SUNAPI 현재 위치 계약 확인 후 단일 상태 응답 검증

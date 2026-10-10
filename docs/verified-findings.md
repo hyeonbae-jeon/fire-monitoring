@@ -103,5 +103,16 @@ ONVIF 서비스 URL과 실제 위치 응답은 사진으로 확인되지 않았�
 카메라 내부 포트와 실제 외부 접속 포트는 구분합니다. 원본 Stub 모델과 ObjConverter에서
 networkInfo 주소/포트·연결 방식의 매핑을 확인하여 같은 목록 GET에서 선택 한 대의 연결 정보를
 추출하는 진단 v3를 추가했습니다. 계정/비밀 필드는 제외하고 운영 주소는 private 파일에만 저장합니다.
-설정 화면의 최종 URL 생성은 찾지 못했으며, 운영 networkInfo 실값과 접근 경로는 다음 회사 실행에서 확인합니다.
+설정 화면의 최종 URL 생성은 찾지 못했습니다. 운영 networkInfo 실값은 아래 v3 결과에서 확인했고,
+접근 경로는 계속 미검증입니다.
 [근거와 다음 확인](ptz-investigation-decision.md).
+
+## 진단 v3 현장 등록값 확인 (2026-10-10)
+
+회사 PC 실행 결과에서 10개 요청 모두 HTTP 200, 고유 UUID 146개 및 선택 9대의 이름/UUID/PtzCap 유지,
+선택 한 대의 연결 정보 추출 성공을 확인했습니다. 카메라 등록 HTTP 80/HTTPS 443은 포트 화면과 일치합니다.
+원본 enum에 따라 devProtocolType=1은 SUNAPI, medProtocolType=3은 HTTP, addressType=4는 HTTPS입니다.
+component TCP 4510과 server의 목록 REST 포트는 별도 필드로 반환됐습니다.
+SessionCenter.AddMediaGateway의 TCP/WAN 주소·TCP 포트 → ControlSession.SetConnectionInfo 전달도 확인했습니다.
+이는 등록값/정적 구현의 근거이며 장비 도달 여부·신원·CONTROL 인증·현재 PTZ 성공은 아닙니다.
+저장 heading/좌표 null 및 전체 XMap 조건 false가 재확인됐습니다. [현장 대조](ssm-live-inventory-validation.md).
