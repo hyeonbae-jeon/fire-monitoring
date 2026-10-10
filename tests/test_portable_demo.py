@@ -33,7 +33,7 @@ class PortableDemoTests(unittest.TestCase):
             untouched.write_text('{"cameras":[]}')
             env = os.environ.copy()
             env.update(INVENTORY_FILE=str(work / 'nonexistent-operational-inventory.json'),
-                       CAMERA_CONFIG_FILE=str(untouched), INVENTORY_WRITE_KEY='unusable-operational-placeholder',
+                       CAMERA_CONFIG_FILE=str(untouched), MAP_CONFIG_FILE=str(untouched), INVENTORY_WRITE_KEY='unusable-operational-placeholder',
                        ASPNETCORE_URLS='http://0.0.0.0:1')
             env['ASPNETCORE_ENVIRONMENT'] = 'Production'
 
@@ -78,12 +78,21 @@ class PortableDemoTests(unittest.TestCase):
                 self.assertEqual(saved['configuration']['cameras'][0]['uuid'], selected)
                 self.assertEqual(untouched.read_text(), '{"cameras":[]}')
                 self.assertTrue((package / 'data/cameras.demo.json').is_file())
+                map_snapshot = json.loads(request(base, '/api/map-configuration'))
+                map_doc = {'schemaVersion': 1, 'crs': 'EPSG:4326', 'positions': [
+                    {'id': 'portable-test', 'name': 'synthetic map point', 'lat': 37.5, 'lon': 127.1,
+                     'ssmUuid': None, 'positionSource': 'operator', 'orientation': None}]}
+                map_saved = json.loads(request(base, '/api/map-configuration',
+                    {'configurationRevision': map_snapshot['revision'], 'configuration': map_doc}))
+                self.assertTrue((package / 'data/map.demo.json').is_file())
+                self.assertEqual(untouched.read_text(), '{"cameras":[]}')
             finally:
                 process.terminate(); process.wait(timeout=5); log.close()
             process, log, base = start()
             try:
                 persisted = json.loads(request(base, '/api/cameras'))
                 self.assertEqual(persisted, saved)
+                self.assertEqual(json.loads(request(base, '/api/map-configuration')), map_saved)
             finally:
                 process.terminate(); process.wait(timeout=5); log.close()
 

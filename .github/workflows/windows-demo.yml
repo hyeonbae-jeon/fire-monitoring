@@ -16,6 +16,9 @@ on:
       - 'tests/serve_e2e.py'
       - 'config/inventory.example.json'
       - 'docs/windows-demo.md'
+      - 'docs/terrain-calibration.md'
+      - 'docs/vworld-monitoring.md'
+      - 'docs/video-direction-feasibility.md'
       - 'global.json'
 
 permissions:
@@ -49,7 +52,7 @@ jobs:
         run: |
           python3 tests/test_inventory.py
           python3 tests/test_portable_demo.py
-      - name: Test browser inventory and map (mock SDK)
+      - name: Test browser inventory, map and terrain calibration (mock SDK)
         run: |
           cd web
           npx playwright install --with-deps chromium
@@ -74,3 +77,4 @@ jobs:
           echo "Download: $ARTIFACT_URL" >> "$GITHUB_STEP_SUMMARY"
           echo "Extract the artifact ZIP, then the package ZIP. Double-click WisenetPtzBridge.exe." >> "$GITHUB_STEP_SUMMARY"
           echo "SSM is not connected. Uses synthetic cameras only. Demo save key: local-demo-only." >> "$GITHUB_STEP_SUMMARY"
+          echo "Manual image/terrain calibration and map settings persistence are included. Direction accuracy and live VWorld terrain remain unverified." >> "$GITHUB_STEP_SUMMARY"

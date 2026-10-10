@@ -19,11 +19,13 @@ if (desktopDemo)
     // Always isolate demo input/output, even if the PC has operational environment variables.
     builder.Configuration["INVENTORY_FILE"] = Path.Combine(AppContext.BaseDirectory, "demo", "inventory.json");
     builder.Configuration["CAMERA_CONFIG_FILE"] = Path.Combine(AppContext.BaseDirectory, "data", "cameras.demo.json");
+    builder.Configuration["MAP_CONFIG_FILE"] = Path.Combine(AppContext.BaseDirectory, "data", "map.demo.json");
     builder.Configuration["INVENTORY_WRITE_KEY"] = "local-demo-only";
 }
 builder.Services.AddSingleton<FileCameraInventorySource>();
 builder.Services.AddSingleton<ICameraInventorySource>(services => services.GetRequiredService<FileCameraInventorySource>());
 builder.Services.AddSingleton<CameraConfiguration>();
+builder.Services.AddSingleton<MapConfiguration>();
 builder.WebHost.ConfigureKestrel(options =>
 {
     options.Limits.MaxRequestBodySize = 1024 * 1024;
@@ -52,6 +54,20 @@ app.MapGet("/api/inventory", async (ICameraInventorySource source, CancellationT
     Results.Ok(await source.ReadAsync(ct)));
 app.MapGet("/api/cameras", async (CameraConfiguration registry, CancellationToken ct) =>
     Results.Ok(await registry.ReadAsync(ct)));
+app.MapGet("/api/map-configuration", async (MapConfiguration registry, CancellationToken ct) =>
+    Results.Ok(await registry.ReadAsync(ct)));
+app.MapPut("/api/map-configuration", async (HttpContext context, MapSaveRequest request,
+    MapConfiguration registry, IConfiguration config, CancellationToken ct) =>
+{
+    var expected = config["INVENTORY_WRITE_KEY"];
+    if (string.IsNullOrWhiteSpace(expected))
+        return Results.Json(new { error = "Map writes are disabled. Configure INVENTORY_WRITE_KEY." }, statusCode: 503);
+    var provided = context.Request.Headers["X-Inventory-Write-Key"].ToString();
+    if (!CryptographicOperations.FixedTimeEquals(SHA256.HashData(Encoding.UTF8.GetBytes(expected)),
+        SHA256.HashData(Encoding.UTF8.GetBytes(provided))))
+        return Results.Json(new { error = "A valid configuration write key is required." }, statusCode: 401);
+    return Results.Ok(await registry.SaveAsync(request, ct));
+});
 app.MapPut("/api/cameras", async (HttpContext context, SelectionRequest request,
     CameraConfiguration registry, IConfiguration config, CancellationToken ct) =>
 {

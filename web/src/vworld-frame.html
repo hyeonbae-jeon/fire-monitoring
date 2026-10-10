@@ -1,7 +1,43 @@
 <!doctype html><html lang="ko"><head><meta charset="utf-8"><style>html,body,#map{margin:0;width:100%;height:100%;overflow:hidden;background:#112b3c;color:white}</style><script src="__SDK_URL__"></script></head><body><div id="map"></div><script>
 'use strict';
-const appOrigin=__APP_ORIGIN__;const session='__SESSION__';let viewer,latest,owned=[];
+const appOrigin=__APP_ORIGIN__;const session='__SESSION__';let viewer,latest,owned=[],originalFrustum=null;
 function report(type,message){parent.postMessage({scope:'vworld-prototype',session,type,message},appOrigin);}
+function endCalibration(){
+ if(!viewer)return;
+ if(viewer.scene.screenSpaceCameraController)viewer.scene.screenSpaceCameraController.enableInputs=true;
+ if(originalFrustum){viewer.camera.frustum.fov=originalFrustum.fov;viewer.camera.frustum.aspectRatio=originalFrustum.aspectRatio;originalFrustum=null;}
+}
+function calibrate(data){
+ const answer=(type,values)=>parent.postMessage({scope:'vworld-prototype',session,type,requestId:data.requestId,...values},appOrigin);
+ try{
+  const p=data.position,pose=data.pose,aspect=data.aspectRatio;
+  const within=(n,low,high)=>Number.isFinite(n)&&n>=low&&n<=high;
+  if(!viewer||typeof viewer.camera.setView!=='function'||!('fov' in viewer.camera.frustum))throw new Error('현재 지도 SDK의 가상 시점 보정 기능을 확인할 수 없습니다.');
+  if(!p||!within(p.lat,-90,90)||!within(p.lon,-180,180)||!pose||!within(pose.headingDeg,0,359.999999)||!within(pose.pitchDeg,-80,80)||!within(pose.horizontalFovDeg,5,120)||!within(pose.cameraHeightM,.5,100)||!within(aspect,.1,10))throw new Error('가상 시점의 좌표·각도·높이·영상 비율을 확인하세요.');
+  let ground=data.groundElevationM,source='operator';
+  if(ground===null){
+   source='map-terrain';ground=undefined;
+   if(typeof viewer.scene.clampToHeight==='function'&&typeof Cesium.Cartographic.fromCartesian==='function'){
+    try{const surface=viewer.scene.clampToHeight(Cesium.Cartesian3.fromDegrees(p.lon,p.lat,9000),owned);if(surface)ground=Cesium.Cartographic.fromCartesian(surface).height;}catch(_){/* Missing rendered terrain remains unknown. */}
+   }
+   if(!Number.isFinite(ground)&&typeof viewer.scene.globe?.getHeight==='function'){
+    const flat=typeof Cesium.EllipsoidTerrainProvider==='function'&&viewer.terrainProvider instanceof Cesium.EllipsoidTerrainProvider;
+    if(!flat)ground=viewer.scene.globe.getHeight(Cesium.Cartographic.fromDegrees(p.lon,p.lat));
+   }
+   if(!Number.isFinite(ground))throw new Error('해당 위치의 지도 지형 높이를 아직 읽지 못했습니다. 지형 로딩 후 다시 적용하거나 지도 기준 지면 높이를 입력하세요.');
+  }
+  if(!within(ground,-500,9000))throw new Error('지도 지면 높이는 -500~9000m 범위여야 합니다.');
+  if(!originalFrustum)originalFrustum={fov:viewer.camera.frustum.fov,aspectRatio:viewer.camera.frustum.aspectRatio};
+  // Cesium PerspectiveFrustum.fov is horizontal for a landscape viewport,
+  // vertical for a portrait viewport. Keep the reference image's aspect ratio.
+  const horizontal=Cesium.Math.toRadians(pose.horizontalFovDeg);
+  viewer.camera.frustum.aspectRatio=aspect;
+  viewer.camera.frustum.fov=aspect>=1?horizontal:2*Math.atan(Math.tan(horizontal/2)/aspect);
+  viewer.camera.setView({destination:Cesium.Cartesian3.fromDegrees(p.lon,p.lat,ground+pose.cameraHeightM),orientation:{heading:Cesium.Math.toRadians(pose.headingDeg),pitch:Cesium.Math.toRadians(pose.pitchDeg),roll:0}});
+  if(viewer.scene.screenSpaceCameraController)viewer.scene.screenSpaceCameraController.enableInputs=false;
+  answer('calibration-ready',{groundElevationM:ground,groundElevationSource:source});
+ }catch(e){endCalibration();answer('calibration-error',{message:e.message});}
+}
 function draw(data){
  if(!viewer){latest=data;return;}owned.forEach(e=>viewer.entities.remove(e));owned=[];
  data.positions.forEach(p=>{
@@ -10,9 +46,9 @@ function draw(data){
  owned.push(viewer.entities.add({position,point:{pixelSize:p.id===data.selected?16:10,color:Cesium.Color.CYAN,outlineColor:Cesium.Color.WHITE,outlineWidth:2,heightReference,disableDepthTestDistance:Infinity},label:{text:p.name+(p.positionSource==='synthetic'?' [시험]':''),font:'14px sans-serif',pixelOffset:new Cesium.Cartesian2(0,-25),heightReference,disableDepthTestDistance:Infinity,showBackground:true}}));
  });
  if(data.sector)owned.push(viewer.entities.add({polygon:{hierarchy:Cesium.Cartesian3.fromDegreesArray(data.sector.flat()),material:Cesium.Color.ORANGE.withAlpha(.3)}}));
- if(data.flyTo){const p=data.positions.find(p=>p.id===data.selected);if(p)viewer.camera.flyTo({destination:Cesium.Cartesian3.fromDegrees(p.lon,p.lat,4500),orientation:{heading:0,pitch:Cesium.Math.toRadians(-75),roll:0}});}
+ if(data.flyTo){endCalibration();const p=data.positions.find(p=>p.id===data.selected);if(p)viewer.camera.flyTo({destination:Cesium.Cartesian3.fromDegrees(p.lon,p.lat,4500),orientation:{heading:0,pitch:Cesium.Math.toRadians(-75),roll:0}});}
 }
-addEventListener('message',e=>{if(e.source!==parent||e.origin!==appOrigin||e.data?.session!==session||e.data?.scope!=='vworld-prototype')return;if(e.data.type==='draw')draw(e.data);});
+addEventListener('message',e=>{if(e.source!==parent||e.origin!==appOrigin||e.data?.session!==session||e.data?.scope!=='vworld-prototype')return;if(e.data.type==='draw')draw(e.data);if(e.data.type==='calibrate')calibrate(e.data);if(e.data.type==='end-calibration')endCalibration();});
 try{
  if(typeof vw==='undefined')throw new Error('VWorld SDK를 불러오지 못했습니다. 키의 등록 주소와 네트워크를 확인하세요.');
  // v3 API matches the user's bukhansan-weather site. Register callback before start.

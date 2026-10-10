@@ -1,6 +1,16 @@
 # Wisenet CCTV 3D Wildfire Monitoring
 
-Wisenet SSM/NVR에 연결된 산불감시 CCTV의 실시간 PTZ 상태를 받아 국립공원별 VWorld 3D 지도에서 현재 감시방향과 가시영역을 표시하는 프로젝트.
+Wisenet SSM/NVR에 연결된 산불감시 CCTV의 위치와 방향을 국립공원별 VWorld 3D 지도에서 표시하는 프로젝트.
+최종 목표는 중앙 PTZ Bridge + 여러 PC의 브라우저입니다. 현재 라이브 PTZ/가시영역은 미구현입니다.
+
+## 현재 우선 작업 — 영상·지형 보정
+
+사용자 요청(2026-10-10)에 따라 PTZ 인증 조사를 보류하고 백운대 한 대의 영상·지형 수동 보정을 먼저 진행합니다.
+실제 설치 위치 확인을 받았으며 운영 좌표/UUID는 private 자료에 보관합니다. 단독 주간 원본 화면과 촬영 시각은 아직 필요합니다.
+참조 이미지를 브라우저에서 표시하고 가상 방위각·기울기·화각·높이를 맞춰 추정 설정을 저장하는 화면을 구현했습니다.
+이미지는 업로드하지 않으며 촬영 시각/해시/기준점 메타데이터와 가상 시점만 저장합니다.
+결과는 정확도 미검증 추정입니다. 실제 VWorld 인증/지형·영상 정합과 자동 방향 추적은 미검증/미구현입니다.
+[보정 사용방법](docs/terrain-calibration.md) · [Windows 패키지](docs/windows-demo.md).
 
 ## 현재 구현 — Phase 1
 
@@ -9,9 +19,9 @@ Wisenet SSM/NVR에 연결된 산불감시 CCTV의 실시간 PTZ 상태를 받아
 `config/cameras.json`에 저장됩니다. 사용자 PC에는 브라우저만 필요합니다.
 대상 수는 제한하거나 9대로 고정하지 않습니다.
 
-**실제 SSM 전체 조회는 아직 미구현입니다.** 첨부 문서에서도 외부 조회 인터페이스는 UNKNOWN이며,
-사용자도 미확인 상태라고 답했습니다. `/v3/channels`의 존재만으로 인증, 필드, 페이지 처리 등을
-추정하지 않습니다. 현재 `ICameraInventorySource`의 파일 어댑터로 조회 이후 흐름을 검증합니다.
+**웹앱의 라이브 SSM 목록 어댑터는 아직 미구현입니다.** 별도 현장 진단에서 정상 인증·목록·로그아웃과
+고유 UUID 146개를 확인했습니다. 계정/서버의 전체 등록 범위와 현재 PTZ는 계속 미확인입니다.
+현재 `ICameraInventorySource`의 파일 어댑터로 조회 이후 흐름을 검증합니다.
 입력 파일은 Bridge가 정의한 형식이며 SSM의 원본 응답 형식이 아닙니다.
 `config/inventory.example.json`의 카메라는 모두 합성 데이터입니다.
 
@@ -19,7 +29,8 @@ Wisenet SSM/NVR에 연결된 산불감시 CCTV의 실시간 PTZ 상태를 받아
 - 현재 선택 설정: `GET /api/cameras` (`revision`, `configuration`)
 - 선택 저장: `PUT /api/cameras` (`X-Inventory-Write-Key` 필수)
 - 프로세스 상태: `GET /health` (SSM 연결이나 데이터 준비 상태를 보증하지 않음)
-- PTZ 명령 전송, 구독, WebSocket, VWorld 지도는 구현하지 않았습니다.
+- 지도 설정: `GET/PUT /api/map-configuration` (별도 파일, 저장 키와 revision 충돌 검사)
+- VWorld 연결/가상 시점 시안은 구현했으며 PTZ 전송, 구독, WebSocket은 미구현입니다.
 
 접근 설계와 UNKNOWN 확인 목록은 [Camera Inventory 설계](docs/camera-inventory.md)를 참조하세요.
 추가 PTZ 코드 추적 문서의 기존/신규 비교와 반영 범위는 [추가 handoff 비교](docs/ptz-trace-review.md)에 정리했습니다.
@@ -52,6 +63,7 @@ Bridge 실행 전 환경변수를 설정하세요. 루트 `.env.example`은 참�
 | --- | --- |
 | `INVENTORY_FILE` | Bridge 형식으로 검증·정규화된 전체 목록 JSON의 절대 경로 |
 | `CAMERA_CONFIG_FILE` | 중앙 선택 설정의 절대 경로, 예: 저장소의 `config/cameras.json` |
+| `MAP_CONFIG_FILE` | 중앙 위치·영상 보정 설정의 별도 절대 경로 |
 | `INVENTORY_WRITE_KEY` | 운영자가 안전하게 관리하는 설정 저장 키. 미설정 시 쓰기 비활성 |
 | `ASPNETCORE_URLS` | 개발 기본값 `http://127.0.0.1:5080`; 중앙 배포 시 프록시/네트워크에 맞춰 지정 |
 
@@ -80,7 +92,7 @@ Playwright Chromium이 필요하며, 시스템 Chromium은 `CHROMIUM_EXECUTABLE`
 2. `TASKS.md` 읽기
 3. `docs/verified-findings.md` / `docs/open-questions.md` 읽기
 4. **Camera Inventory**부터 구현
-5. 이후 선택 카메라 PTZ 구독 → Bridge API → VWorld 3D
+5. 현재 사용자 결정: 영상·지형 수동 보정 한 대 → 실제 정합 확인 → 확장. 현재 PTZ 조회 조사는 보류.
 
 ## 폴더
 - `bridge/` : SSM/NVR 연동, PTZ 상태 API
@@ -106,11 +118,11 @@ Playwright Chromium이 필요하며, 시스템 Chromium은 `CHROMIUM_EXECUTABLE`
 ## 원본 DLL 조사
 
 제공된 6개 SSM DLL을 실행 없이 분석해 카메라 모델 변환, 로그인/목록 Stub 호출과 PTZ 경로를 확인했습니다.
-실제 연결은 미검증이며 원본/전체 디컴파일 소스는 공개 저장소와 패키지에 포함하지 않습니다.
+원본/전체 디컴파일 소스는 공개 저장소와 패키지에 포함하지 않습니다. 현재 PTZ 수신은 미검증입니다.
 [확인된 사실과 다음 파일](docs/ssm-dll-analysis.md).
 
 추가 WebServiceStub/ControllerService에서 실제 인증·목록 조회 계약과 페이지/배치를 정적으로 확인했습니다.
-실제 접속/현재 PTZ는 미검증입니다. [추가 분석 및 현장 확인 순서](docs/ssm-web-controller-analysis.md).
+인증/목록 현장 접속은 아래 결과로 확인했고 현재 PTZ는 미검증입니다. [추가 분석 및 현장 확인 순서](docs/ssm-web-controller-analysis.md).
 
 추가 SystemService/LiveViewer에서 중앙 PTZ 요청·이벤트 라우터를 확인했습니다.
 일반 콜백의 수신과 실장비 연결은 미검증입니다. [라우팅 분석](docs/ssm-routing-analysis.md).
@@ -136,7 +148,7 @@ Git/.NET/Node.js 설치가 필요 없는 Windows x64 패키지는 Actions의 **S
 component 4510 성공, 카메라 HTTPS 443 실패입니다. 후속 화면에서 Hanwha Vision WebViewer와
 인증 요구와 후속 WWW-Authenticate=Digest 답변을 관측했습니다. [인증 응답 확인 기록](docs/camera-web-auth-check.md).
 고유 장비 매핑과 현재 PTZ 수신은 아직 미검증입니다.
-카메라 장비 계정이 미확인이어서 SSM 계정 기반 CONTROL 경로를 우선 조사합니다.
+카메라 장비 계정은 미확인입니다. 아래 CONTROL 조사와 진단 v5 현장 실행은 현재 사용자 요청으로 보류합니다.
 진단 v4의 현장 결과에서 한 대의 컴포넌트/MediaGateway 참조 일치와 로그인 키/UID 존재를 확인했습니다.
 진단 v5는 한 대 선택 후 현재 로컬 도메인 GET을 한 번 선택 실행하여 인증 도메인 후보를 대조합니다.
 운영 값은 private 파일에 보관하며 CONTROL 접속·PTZ 요청은 아직 추가하지 않습니다.

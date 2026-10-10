@@ -1,4 +1,5 @@
-export type Position = {id:string;name:string;lat:number;lon:number;ssmUuid:string|null;positionSource:'synthetic'|'operator';orientation:null};
+import {parseOrientation,type ManualOrientation} from './calibration-model';
+export type Position = {id:string;name:string;lat:number;lon:number;ssmUuid:string|null;positionSource:'synthetic'|'operator';orientation:ManualOrientation|null};
 export type MapConfiguration = {schemaVersion:1;crs:'EPSG:4326';positions:Position[]};
 export const sample:MapConfiguration={schemaVersion:1,crs:'EPSG:4326',positions:[
 {id:'demo-1',name:'북한산 시험 A',lat:37.6585,lon:126.977,ssmUuid:null,positionSource:'synthetic',orientation:null},
@@ -8,10 +9,10 @@ export function parseConfiguration(text:string):MapConfiguration {
  if(text.length>1024*1024)throw new Error('좌표 파일은 1MB 이하여야 합니다.');
  const v=JSON.parse(text);
  if(v?.schemaVersion!==1||v.crs!=='EPSG:4326'||!Array.isArray(v.positions)||v.positions.length>1000)throw new Error('schemaVersion: 1, crs: EPSG:4326, positions 배열(최대 1000개)이 필요합니다.');
- const ids=new Set<string>();
+ const ids=new Set<string>(),uuids=new Set<string>();
  const positions:Position[]=v.positions.map((p:Position)=>{
- if(!p||typeof p.id!=='string'||!p.id.trim()||p.id.length>100||ids.has(p.id)||typeof p.name!=='string'||!p.name.trim()||p.name.length>200||!Number.isFinite(p.lat)||p.lat< -90||p.lat>90||!Number.isFinite(p.lon)||p.lon< -180||p.lon>180||!['synthetic','operator'].includes(p.positionSource)||p.orientation!==null||!(p.ssmUuid===null||(typeof p.ssmUuid==='string'&&/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(p.ssmUuid))))throw new Error('중복 ID, 이름, 위도/경도, 출처, UUID 또는 orientation(null)을 확인하세요.');
- ids.add(p.id);return {id:p.id,name:p.name,lat:p.lat,lon:p.lon,ssmUuid:p.ssmUuid,positionSource:p.positionSource,orientation:null};});
+ if(!p||typeof p.id!=='string'||!p.id.trim()||p.id.length>100||ids.has(p.id)||typeof p.name!=='string'||!p.name.trim()||p.name.length>200||!Number.isFinite(p.lat)||p.lat< -90||p.lat>90||!Number.isFinite(p.lon)||p.lon< -180||p.lon>180||!['synthetic','operator'].includes(p.positionSource)||!(p.ssmUuid===null||(typeof p.ssmUuid==='string'&&/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(p.ssmUuid)&&!/^0{8}(-0{4}){3}-0{12}$/.test(p.ssmUuid)&&!uuids.has(p.ssmUuid.toLowerCase()))))throw new Error('중복 ID/UUID, 이름, 위도/경도 또는 출처를 확인하세요.');
+ ids.add(p.id);if(p.ssmUuid)uuids.add(p.ssmUuid.toLowerCase());return {id:p.id,name:p.name,lat:p.lat,lon:p.lon,ssmUuid:p.ssmUuid,positionSource:p.positionSource,orientation:parseOrientation(p.orientation,p)};});
  return {schemaVersion:1,crs:'EPSG:4326',positions};
 }
 // Illustrative horizontal sector, no terrain visibility calculation.
