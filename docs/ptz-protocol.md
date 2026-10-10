@@ -74,3 +74,12 @@ MapTile 화면 연결 조사 후보인 CustomControl.ViewForm/XScreenControl11�
 카메라 Pan 원점과 지리적 북쪽은 같다고 가정하지 않습니다. 보정은 등록 설치 방향 또는
 시각이 일치하는 현재 영상·PTZ 관측·식별 가능한 지형 기준점을 대조하고 단위/부호를 확인해 산출합니다.
 설정/북쪽 지정/프리셋 이동은 하지 않으며 MOVE_PTZ / SET_ABS_PTZ 금지는 유지합니다.
+
+## 저장 메타데이터 이후와 단일 상태 조회 시험
+
+진단 v2 현장에서 146개의 정규화 heading/좌표는 null, subType=0, installType=2였습니다.
+현재 PTZ 관측은 별도 미확인입니다. 추가 두 대상 설정 사진은 SUNAPI 등록과 카메라 유형 없음/천장 표시를 확인합니다.
+CONTROL 로그인 digest·사용자 ID 암호화·TLS 전환도 더 조사했으나 현장 세션은 미검증입니다.
+[추가 조사와 전환 기준](ptz-investigation-decision.md),
+[공식 ONVIF 계약에 한정한 대안 시험 도구](ptz-readonly-test.md)를 참조합니다.
+SUNAPI 현재 위치 계약은 아직 미확인으로 추측한 HTTP 경로를 시험하지 않습니다.

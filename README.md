@@ -129,3 +129,11 @@ Git/.NET/Node.js 설치가 필요 없는 Windows x64 패키지는 Actions의 **S
 진단 v2는 동일 목록 조회에서 설치 형태·장치 capability·저장 좌표/heading을 추가로 읽고,
 운영 값은 camera-metadata.private.json에만 기록합니다. 현재 PTZ 또는 북쪽 보정으로 확정하지 않습니다.
 [GoogleMapViewer 추가 분석과 설치 경로](docs/ssm-google-map-analysis.md).
+
+
+## 단일 카메라의 현재 PTZ 읽기 시험
+
+대상 설정 사진은 SUNAPI 등록 방식입니다. 공식 현재 위치 명세와 실제 서비스 정보를 우선 확인합니다.
+ONVIF 서비스가 별도 확인되면 설치 없는 Windows `PtzReadOnlyTest.exe`로 대상 프로파일의
+GetStatus를 1회 읽을 수 있습니다. 합성 장비 시험과 운영 카메라 상태 수신은 구분하며 이동·설정 명령은 없습니다.
+[실행 방법](docs/ptz-readonly-test.md) · [남은 조사와 영상 보정 전환 기준](docs/ptz-investigation-decision.md).

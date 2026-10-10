@@ -87,3 +87,12 @@ GET_POS_NORMALIZE 비트는 6개에서 관측됐으나 현재 PTZ 수신은 아�
 기존 XMap 전체 데이터 구독 조건은 146개 모두 false입니다. 선택 9대 중 위치 비트 후보 3개는 유지되나,
 subType 조건을 충족하지 않습니다. 권한 부족·실제 설치 형태·현재 PTZ 수신 가능성은 이 결과로 확정하지 않습니다.
 사용자 제공 위치를 유지합니다. [관측과 해석 범위](ssm-live-inventory-validation.md).
+
+## 단일 현재 상태 조회 준비 및 대상 설정 사진
+
+두 대상의 사용자 설정 사진에서 XNP-6550RH/SUNAPI 등록과 유형 없음/천장 설정 표시를 확인했습니다.
+ONVIF 서비스 URL과 실제 위치 응답은 사진으로 확인되지 않았습니다. 독립 CONTROL의 로그인 digest,
+사용자 ID 암호화 및 성공 응답에 따른 TLS 전환을 추가 정적 확인했습니다.
+공식 ONVIF WSDL의 GetStatus 등 네 읽기 작업에 한정한 독립 시험 도구를 준비합니다.
+표준 계약/합성 장비 검증과 운영 장비의 지원·수신 성공은 구분합니다.
+[추가 조사](ptz-investigation-decision.md) · [시험 방법](ptz-readonly-test.md).

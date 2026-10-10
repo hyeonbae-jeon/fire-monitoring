@@ -117,3 +117,15 @@
 - [ ] subType=0 원인 및 실제 설치/북쪽 보정 확인 (전체 XMap 데이터 조건 false와 실제 수신 가능성 구분)
 
 [분석](docs/ssm-google-map-analysis.md). 실제 방향 보정값 발견 또는 PTZ 수신 성공으로 처리하지 않습니다.
+
+## 단일 현재 PTZ 검증과 영상 보정 전환
+- [x] 두 대상 설정 사진: XNP-6550RH/SUNAPI, 유형 없음/천장 표시 확인
+- [x] CONTROL login digest·사용자 ID 암호화·TLS 전환 추가 정적 조사
+- [x] 공식 ONVIF WSDL 확인 및 단일 GetStatus 읽기 도구 구현
+- [x] 합성 ONVIF 실행 검증 22개 통과 (운영 연결과 구분)
+- [ ] 대상의 서비스 URL/포트·장비 계정 및 공식 SUNAPI 현재 위치 명세 확인
+- [ ] 한 대의 현재 위치 수신·space/시각/SSM UUID 매핑 검증
+- [ ] 위치 갱신/좌표계 및 북쪽 기준·Zoom/FOV 별도 검증
+- [x] PTZ 우선 검증과 영상/지형 보정으로 전환할 조건 문서화
+
+[시험 도구](docs/ptz-readonly-test.md) · [추가 조사와 전환 기준](docs/ptz-investigation-decision.md).

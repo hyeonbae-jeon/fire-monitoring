@@ -1,0 +1,53 @@
+name: PTZ read-only test
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/vworld-monitoring-prototype]
+    paths:
+      - '.github/workflows/ptz-readonly-test.yml'
+      - 'bridge/PtzReadOnlyTest/**'
+      - 'tests/test_ptz_readonly.py'
+      - 'scripts/build-ptz-diagnostic.py'
+      - 'docs/ptz-readonly-test.md'
+      - 'global.json'
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.425'
+      - name: Build and exercise read-only probe against synthetic ONVIF
+        run: |
+          dotnet build bridge/PtzReadOnlyTest -c Release --nologo
+          python3 tests/test_ptz_readonly.py
+      - name: Build Windows x64 package
+        run: python3 scripts/build-ptz-diagnostic.py
+      - name: Register downloadable diagnostic
+        id: artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PTZ-ReadOnly-Test-Windows
+          path: |
+            artifacts/PTZ-ReadOnly-Test-win-x64.zip
+            artifacts/PTZ-ReadOnly-Test-win-x64.zip.sha256
+          if-no-files-found: error
+          retention-days: 30
+      - name: Download instructions
+        env:
+          ARTIFACT_URL: ${{ steps.artifact.outputs.artifact-url }}
+        run: |
+          echo "## Single-camera read-only ONVIF PTZ test" >> "$GITHUB_STEP_SUMMARY"
+          echo "Download: $ARTIFACT_URL" >> "$GITHUB_STEP_SUMMARY"
+          echo "Extract both ZIPs, then run PtzReadOnlyTest.exe after confirming the device service URL." >> "$GITHUB_STEP_SUMMARY"
+          echo "No movement/settings/stream requests. Share ptz-check-report.json; keep ptz-status.private.json local." >> "$GITHUB_STEP_SUMMARY"
