@@ -9,7 +9,7 @@ public sealed record ConfigurationSnapshot(string Revision, JsonObject Configura
 
 public sealed class CameraConfiguration(IConfiguration config, ICameraInventorySource inventory)
 {
-    private readonly SemaphoreSlim gate = new(1, 1);
+    private readonly SemaphoreSlim gate = FileCameraInventorySource.MutationGate;
     private string ConfigPath
     {
         get
@@ -103,6 +103,8 @@ public sealed class CameraConfiguration(IConfiguration config, ICameraInventoryS
                 camera["channel"] = observed.Channel;
                 camera["device"] = observed.Device;
                 camera["ptzCap"] = observed.PtzCap;
+                if (observed.Model is not null) camera["model"] = observed.Model;
+                camera["reportedPtzSupported"] = observed.ReportedPtzSupported;
                 camera["enabled"] = true;
                 if (camera["ptz"] is not null && camera["ptz"] is not JsonObject)
                     throw new InventoryException(422, "Existing ptz metadata is invalid; refusing to overwrite it.");

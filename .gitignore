@@ -15,3 +15,12 @@ wwwroot/
 playwright-report/
 test-results/
 __pycache__/
+artifacts/
+config/cameras.demo.json
+
+# Operational report inputs and normalized previews stay local.
+config/imports/
+
+# Local connection diagnostics contain operational camera identifiers.
+diagnostics/
+*.private.json

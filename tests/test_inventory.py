@@ -29,6 +29,7 @@ class BridgeTests(unittest.TestCase):
         cls.work = Path(cls.temp.name)
         cls.inventory_path = cls.work / 'inventory.json'
         cls.config_path = cls.work / 'cameras.json'
+        cls.map_path = cls.work / 'map.json'
         cls.key = secrets.token_urlsafe(32)
         cls.fixture = json.loads((ROOT / 'config/inventory.example.json').read_text())
         cls.dotnet = os.environ.get('DOTNET_EXECUTABLE') or shutil.which('dotnet')
@@ -39,18 +40,19 @@ class BridgeTests(unittest.TestCase):
         cls.start()
 
     @classmethod
-    def start(cls, *, write_key=True, inventory=True, configuration=True):
+    def start(cls, *, write_key=True, inventory=True, configuration=True, map_configuration=True, map_alias=None):
         with socket.socket() as s:
             s.bind(('127.0.0.1', 0))
             port = s.getsockname()[1]
         cls.base = f'http://127.0.0.1:{port}'
         env = os.environ.copy()
-        for name in ['INVENTORY_FILE', 'CAMERA_CONFIG_FILE', 'INVENTORY_WRITE_KEY']:
+        for name in ['INVENTORY_FILE', 'CAMERA_CONFIG_FILE', 'MAP_CONFIG_FILE', 'INVENTORY_WRITE_KEY']:
             env.pop(name, None)
         env['ASPNETCORE_URLS'] = cls.base
         env['ASPNETCORE_ENVIRONMENT'] = 'Production'
         if inventory: env['INVENTORY_FILE'] = str(cls.inventory_path)
         if configuration: env['CAMERA_CONFIG_FILE'] = str(cls.config_path)
+        if map_configuration: env['MAP_CONFIG_FILE'] = str(map_alias or cls.map_path)
         if write_key: env['INVENTORY_WRITE_KEY'] = cls.key
         cls.log = open(cls.work / 'bridge.log', 'ab')
         cls.process = subprocess.Popen([cls.dotnet, str(DLL)], cwd=PROJECT,
@@ -80,6 +82,7 @@ class BridgeTests(unittest.TestCase):
     def setUp(self):
         self.inventory_path.write_text(json.dumps(self.fixture))
         self.config_path.unlink(missing_ok=True)
+        self.map_path.unlink(missing_ok=True)
 
     def request(self, path, method='GET', body=None, key=None):
         headers = {'Content-Type': 'application/json'}
@@ -240,6 +243,170 @@ class BridgeTests(unittest.TestCase):
         finally:
             self.stop(); self.start()
 
+    def test_report_import_auth_revision_validation_and_metadata(self):
+        import_body = {'document': copy.deepcopy(self.fixture), 'inventoryVersion': self.request('/api/inventory')[1]['version']}
+        camera = import_body['document']['cameras'][0]
+        camera.update(ptzCap=None, model='SYNTHETIC-MODEL', reportedPtzSupported=True)
+        original = self.inventory_path.read_bytes()
+        self.assertEqual(self.request('/api/inventory', 'POST', import_body)[0], 401)
+        invalid = copy.deepcopy(import_body)
+        invalid['document']['complete'] = False
+        self.assertEqual(self.request('/api/inventory', 'POST', invalid, self.key)[0], 422)
+        invalid = copy.deepcopy(import_body)
+        invalid['document']['cameras'].append(copy.deepcopy(camera))
+        invalid['document']['totalCount'] += 1
+        self.assertEqual(self.request('/api/inventory', 'POST', invalid, self.key)[0], 422)
+        self.assertEqual(self.inventory_path.read_bytes(), original)
+        status, result = self.request('/api/inventory', 'POST', import_body, self.key)
+        self.assertEqual(status, 200)
+        self.assertIsNone(result['cameras'][0]['getPosNormalize'])
+        self.assertTrue(result['cameras'][0]['reportedPtzSupported'])
+        self.assertFalse(result['liveSsmConnected'])
+        self.assertEqual(self.request('/api/inventory', 'POST', import_body, self.key)[0], 409)
+        self.assertEqual(self.request('/api/cameras', 'PUT', self.selection(), self.key)[0], 200)
+        selected = self.request('/api/cameras')[1]['configuration']['cameras'][0]
+        self.assertEqual(selected['model'], 'SYNTHETIC-MODEL')
+        self.assertTrue(selected['reportedPtzSupported'])
+        self.assertIsNone(selected['ptz']['getPosNormalize'])
+
+    def test_report_import_initial_missing_file_preserves_configuration(self):
+        self.inventory_path.unlink()
+        body = {'document': copy.deepcopy(self.fixture), 'inventoryVersion': None}
+        self.assertEqual(self.request('/api/inventory', 'POST', body, self.key)[0], 200)
+        self.assertEqual(self.request('/api/inventory')[1]['totalCount'], 3)
+        selection = self.selection()
+        self.assertEqual(self.request('/api/cameras', 'PUT', selection, self.key)[0], 200)
+        previous = self.config_path.read_bytes()
+        body['inventoryVersion'] = self.request('/api/inventory')[1]['version']
+        self.assertEqual(self.request('/api/inventory', 'POST', body, self.key)[0], 200)
+        self.assertEqual(self.config_path.read_bytes(), previous)
+
+
+    def map_document(self, orientation=False):
+        doc = {'schemaVersion': 1, 'crs': 'EPSG:4326', 'positions': [
+            {'id': 'test-position', 'name': 'synthetic installation', 'lat': 37.5, 'lon': 127.1,
+             'ssmUuid': A, 'positionSource': 'operator', 'orientation': None}]}
+        if orientation:
+            doc['positions'][0]['orientation'] = {
+                'source': 'manual-calibration', 'status': 'estimate', 'confidence': 'unvalidated',
+                'headingDeg': 0, 'pitchDeg': 0, 'horizontalFovDeg': 60, 'cameraHeightM': 5,
+                'groundElevationM': 0, 'groundElevationSource': 'map-terrain',
+                'positionAtCalibration': {'lat': 37.5, 'lon': 127.1},
+                'calibratedAt': '2026-10-10T10:00:00Z',
+                'reference': {'sha256': 'a' * 64, 'capturedAt': '2026-10-10T09:00:00Z', 'width': 1920, 'height': 1080},
+                'landmarks': [{'label': 'test ridge', 'x': .25, 'y': .4}, {'label': 'test peak', 'x': .75, 'y': .3}]}
+        return doc
+
+    def save_map(self, doc, revision='none', key=None):
+        return self.request('/api/map-configuration', 'PUT',
+            {'configurationRevision': revision, 'configuration': doc}, self.key if key is None else key)
+
+    def test_map_shared_storage_and_estimate_persist_on_restart(self):
+        status, empty = self.request('/api/map-configuration')
+        self.assertEqual(status, 200)
+        self.assertEqual(empty['configuration']['positions'], [])
+        doc = self.map_document(orientation=True)
+        status, saved = self.save_map(doc)
+        self.assertEqual(status, 200)
+        # DateTimeOffset serializes UTC as +00:00; the instant and evidence are unchanged.
+        doc['positions'][0]['orientation']['calibratedAt'] = '2026-10-10T10:00:00+00:00'
+        doc['positions'][0]['orientation']['reference']['capturedAt'] = '2026-10-10T09:00:00+00:00'
+        self.assertEqual(saved['configuration'], doc)
+        self.assertEqual(self.request('/api/map-configuration')[1], saved)
+        self.assertFalse(self.config_path.exists())
+        self.assertEqual(json.loads(self.inventory_path.read_text()), self.fixture)
+        self.stop(); self.start()
+        self.assertEqual(self.request('/api/map-configuration')[1], saved)
+
+    def test_map_write_key_required(self):
+        body = {'configurationRevision': 'none', 'configuration': self.map_document()}
+        for key in [None, 'wrong']:
+            self.assertEqual(self.request('/api/map-configuration', 'PUT', body, key)[0], 401)
+        self.assertFalse(self.map_path.exists())
+
+    def test_map_concurrent_edit_conflict_preserves_winner(self):
+        docs = [self.map_document(), self.map_document(orientation=True)]
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            results = list(pool.map(self.save_map, docs))
+        self.assertEqual(sorted(status for status, _ in results), [200, 409])
+        winner = next(saved for status, saved in results if status == 200)
+        self.assertEqual(self.request('/api/map-configuration')[1], winner)
+        self.assertEqual(list(self.work.glob('map.json.*.tmp')), [])
+
+    def test_map_stale_orientation_explicit_and_unknown_distinct_from_zero(self):
+        doc = self.map_document(orientation=True)
+        doc['positions'][0]['orientation']['status'] = 'stale'
+        status, stale = self.save_map(doc)
+        self.assertEqual(status, 200)
+        o = stale['configuration']['positions'][0]['orientation']
+        self.assertEqual((o['status'], o['headingDeg'], o['groundElevationM']), ('stale', 0, 0))
+        doc['positions'][0]['orientation'] = None
+        status, unknown = self.save_map(doc, stale['revision'])
+        self.assertEqual(status, 200)
+        self.assertIsNone(unknown['configuration']['positions'][0]['orientation'])
+
+    def test_map_invalid_evidence_cannot_overwrite_previous_file(self):
+        _, saved = self.save_map(self.map_document())
+        before = self.map_path.read_bytes()
+        variants = []
+        for key, value in [('source', 'ssm'), ('confidence', 'verified'), ('status', 'live'), ('headingDeg', -1),
+                           ('pitchDeg', 81), ('horizontalFovDeg', 0), ('cameraHeightM', 0),
+                           ('groundElevationM', 10000), ('groundElevationSource', 'guessed'),
+                           ('landmarks', [{'label': 'one', 'x': .5, 'y': .5}]),
+                           ('positionAtCalibration', {'lat': 37.6, 'lon': 127.1})]:
+            doc = self.map_document(orientation=True); doc['positions'][0]['orientation'][key] = value; variants.append(doc)
+        doc = self.map_document(orientation=True); doc['positions'][0]['positionSource'] = 'synthetic'; variants.append(doc)
+        doc = self.map_document(); doc['positions'][0]['lat'] = 91; variants.append(doc)
+        doc = self.map_document(); doc['positions'].append(copy.deepcopy(doc['positions'][0])); variants.append(doc)
+        doc = self.map_document(orientation=True); doc['positions'][0]['orientation']['reference']['sha256'] = 'not-hash'; variants.append(doc)
+        doc = self.map_document(orientation=True); doc['positions'][0]['orientation']['reference']['capturedAt'] = None; variants.append(doc)
+        doc = self.map_document(orientation=True); doc['positions'][0]['orientation']['landmarks'][0]['x'] = 1.1; variants.append(doc)
+        for index, doc in enumerate(variants):
+            with self.subTest(index=index):
+                self.assertIn(self.save_map(doc, saved['revision'])[0], [400, 422])
+                self.assertEqual(self.map_path.read_bytes(), before)
+
+    def test_map_missing_fields_or_image_credentials_never_persist(self):
+        variants = []
+        doc = self.map_document(); del doc['positions'][0]['lat']; variants.append(doc)
+        doc = self.map_document(orientation=True); del doc['positions'][0]['orientation']['headingDeg']; variants.append(doc)
+        doc = self.map_document(); doc['apiKey'] = 'SECRET-TEST-KEY'; variants.append(doc)
+        doc = self.map_document(orientation=True); doc['positions'][0]['orientation']['reference']['imageData'] = 'data:image/png;base64,FAKE'; variants.append(doc)
+        for doc in variants:
+            self.assertEqual(self.save_map(doc)[0], 400)
+            self.assertFalse(self.map_path.exists())
+
+    def test_map_corrupt_configuration_not_silently_reset(self):
+        self.map_path.write_text('{"broken":true}')
+        before = self.map_path.read_bytes()
+        self.assertEqual(self.request('/api/map-configuration')[0], 422)
+        self.assertEqual(self.save_map(self.map_document())[0], 422)
+        self.assertEqual(self.map_path.read_bytes(), before)
+
+    def test_map_alias_with_inventory_or_selection_blocked(self):
+        self.config_path.write_text('{"cameras":[]}')
+        for path in [self.inventory_path, self.config_path]:
+            before = path.read_bytes()
+            self.stop(); self.start(map_alias=path)
+            try:
+                self.assertEqual(self.request('/api/map-configuration')[0], 503)
+                self.assertEqual(self.save_map(self.map_document())[0], 503)
+                self.assertEqual(path.read_bytes(), before)
+            finally:
+                self.stop(); self.start()
+
+    def test_map_unconfigured_or_key_disabled_fails_closed(self):
+        self.stop(); self.start(map_configuration=False)
+        try:
+            self.assertEqual(self.request('/api/map-configuration')[0], 503)
+            self.assertEqual(self.save_map(self.map_document())[0], 503)
+        finally:
+            self.stop(); self.start(write_key=False)
+        try:
+            self.assertEqual(self.save_map(self.map_document())[0], 503)
+            self.assertFalse(self.map_path.exists())
+        finally:
+            self.stop(); self.start()
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
