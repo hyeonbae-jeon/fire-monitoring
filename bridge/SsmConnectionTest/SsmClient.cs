@@ -15,7 +15,7 @@ public sealed record CameraMetadata(string uuid, string name, string? entityCapa
 public sealed record RequestResult(string stage, int httpStatus);
 public sealed class DiagnosticReport
 {
-    public string toolVersion { get; } = "3";
+    public string toolVersion { get; } = "4";
     public DateTimeOffset capturedAt { get; set; } = DateTimeOffset.UtcNow;
     public string result { get; set; } = "not-started";
     public string? serverStatus { get; set; }
@@ -34,6 +34,9 @@ public sealed class DiagnosticReport
     public int unknownSubscriptionConditionsCount { get; set; }
     public int connectionDetailCameraCount { get; set; }
     public int connectionDetailIssueCount { get; set; }
+    public int controlRoutingIssueCount { get; set; }
+    public bool? controlSecretKeyPresent { get; set; }
+    public bool? loginUserUuidPresent { get; set; }
     public bool complete { get; set; } = false;
     public List<RequestResult> requests { get; } = [];
     public string? error { get; set; }
@@ -217,6 +220,11 @@ public sealed class SsmClient : IDisposable
             throw new DiagnosticException("SESSION_FORMAT_INVALID");
         session = value;
         password = secret;
+        // Inspect availability only. Never persist a login UID, secretKey, token or session.
+        if (json.RootElement.TryGetProperty("secretKey", out var key) && key.ValueKind != JsonValueKind.Null)
+            report.controlSecretKeyPresent = key.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(key.GetString());
+        if (json.RootElement.TryGetProperty("UID", out var uid) && uid.ValueKind != JsonValueKind.Null)
+            report.loginUserUuidPresent = uid.ValueKind == JsonValueKind.String && Guid.TryParse(uid.GetString(), out var userId) && userId != Guid.Empty;
         report.result = "login-ok";
     }
 
@@ -352,7 +360,8 @@ public sealed class SsmClient : IDisposable
                     {
                         var connection = new CameraConnectionDetail(camera.uuid, camera.name, serverId.ToString("D"), componentId.ToString("D"),
                             ConnectionDetails.Read(row, "channel.networkInfo"), ConnectionDetails.Read(component, "component.networkInfo"),
-                            ConnectionDetails.Read(server, "server.networkInfo", isServer: true));
+                            ConnectionDetails.Read(server, "server.networkInfo", isServer: true),
+                            RoutingDetails.Read(row, component, server));
                         if (connections.TryGetValue(uuid, out var previousConnection) &&
                             JsonSerializer.Serialize(previousConnection) != JsonSerializer.Serialize(connection))
                             throw new DiagnosticException("CONFLICTING_CONNECTION_DETAILS");
@@ -375,6 +384,7 @@ public sealed class SsmClient : IDisposable
             var selected = connections.Values.Single();
             report.connectionDetailCameraCount = 1;
             report.connectionDetailIssueCount = selected.camera.issues.Length + selected.component.issues.Length + selected.server.issues.Length;
+            report.controlRoutingIssueCount = selected.routing.camera.issues.Length + selected.routing.component.issues.Length + selected.routing.server.issues.Length;
         }
         report.result = "inventory-preview-ok";
         // The visible account/server scope is not proof of the entire installed inventory.

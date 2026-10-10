@@ -19,6 +19,9 @@ SERVER = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 COMPONENT = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
 CAMERA = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
 OTHER = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+DOMAIN = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'
+CURRENT_DOMAIN = 'ffffffff-ffff-4fff-8fff-ffffffffffff'
+USER = '11111111-1111-4111-8111-111111111111'
 PASSWORD = 'fake-password-한글'
 SESSION = 'fake-session-123'
 
@@ -91,14 +94,32 @@ class Tests(unittest.TestCase):
                     if mode == 'malformed-servers':
                         return self.reply(body={'content': []})
                     # Unexpected sensitive fields must never reach diagnostic output.
-                    return self.reply(body=[{'guid': SERVER, 'ddnsPassword': 'SECRET-SERVER-FIELD',
+                    row = {'guid': SERVER, 'ddnsPassword': 'SECRET-SERVER-FIELD',
                         'serverPort': 9999, 'serverSslPort': 9991,
                         'networkInfo': {'addressList': {'tcp': '192.0.2.10'}, 'portList': {'tcpPort': 8888},
-                                        'id': 'SECRET-NETWORK-ID', 'password': 'SECRET-NETWORK-PASSWORD'}}])
+                                        'id': 'SECRET-NETWORK-ID', 'password': 'SECRET-NETWORK-PASSWORD'}}
+                    if mode.startswith('routing'):
+                        row.update(type=4097, parentGuid=CURRENT_DOMAIN, domainGuid=DOMAIN,
+                                   currentDomainGuid=CURRENT_DOMAIN, serverGuid=SERVER,
+                                   serverVersion='2.21.00_260514', useDdns=False, useSSL=True)
+                    if mode == 'routing-non-gateway':
+                        row['type'] = 4100
+                    if mode == 'routing-invalid':
+                        row.update(type='4097', domainGuid='SECRET-ROUTING-FIELD', serverVersion='SECRET-ROUTING-FIELD', useSSL='true')
+                    return self.reply(body=[row])
                 if self.path == f'/v3/servers/{SERVER}/components':
-                    return self.reply(body=[{'guid': COMPONENT, 'networkInfo': {'addressType': 1,
+                    row = {'guid': COMPONENT, 'networkInfo': {'addressType': 1,
                         'addressList': {'wan': 'recorder.example.test'}, 'portList': {'wanPort': 8080},
-                        'id': 'SECRET-NETWORK-ID', 'password': 'SECRET-NETWORK-PASSWORD'}}])
+                        'id': 'SECRET-NETWORK-ID', 'password': 'SECRET-NETWORK-PASSWORD'}}
+                    if mode.startswith('routing'):
+                        row.update(type=4104, parentGuid=SERVER, serverGuid=SERVER,
+                                   domainGuid=DOMAIN, currentDomainGuid=CURRENT_DOMAIN,
+                                   userAuthorityKey='SECRET-AUTHORITY-KEY')
+                    if mode == 'routing-mismatch':
+                        row['serverGuid'] = OTHER
+                    if mode == 'routing-invalid':
+                        row.update(domainGuid=42, parentGuid='SECRET-ROUTING-FIELD')
+                    return self.reply(body=[row])
                 if self.path == f'/v3/components/{COMPONENT}/channels?serverGuid={SERVER}':
                     if mode == 'partial-failure':
                         return self.reply(403, {'password': 'SECRET-ERROR-BODY'})
@@ -139,6 +160,15 @@ class Tests(unittest.TestCase):
                         network['portList'].update(httpPort=65536, httpsPort=-1, rtspPort='554')
                     if mode == 'connection-conflict':
                         rows.append(dict(rows[0], networkInfo=dict(rows[0]['networkInfo'], portList={'httpPort': 8080})))
+                    if mode.startswith('routing'):
+                        rows[0].update(parentGuid=COMPONENT, componentGuid=COMPONENT, siteGuid=DOMAIN,
+                                       deviceId='SECRET-DEVICE-ID', serialNumber='SECRET-SERIAL-NUMBER')
+                    if mode == 'routing-mismatch':
+                        rows[0]['componentGuid'] = OTHER
+                    if mode == 'routing-invalid':
+                        rows[0].update(parentGuid=42, componentGuid='SECRET-ROUTING-FIELD', siteGuid=42)
+                    if mode == 'routing-conflict':
+                        rows.append(dict(rows[0], siteGuid=OTHER))
                     return self.reply(body=rows)
                 return self.reply(404)
 
@@ -156,7 +186,14 @@ class Tests(unittest.TestCase):
                     auth_errors.append('bad login metadata')
                 if mode == 'login-denied':
                     return self.reply(409, {'Token': 'SECRET-ERROR-BODY'})
-                return self.reply(body={'SessionId': SESSION, 'Token': 'SECRET-TOKEN', 'secretKey': 'SECRET-KEY'})
+                response = {'SessionId': SESSION, 'Token': 'SECRET-TOKEN', 'secretKey': 'SECRET-KEY'}
+                if mode.startswith('routing'):
+                    response['UID'] = USER
+                if mode == 'routing-missing-login-fields':
+                    del response['UID']; del response['secretKey']
+                if mode == 'routing-invalid-login-fields':
+                    response.update(UID='SECRET-ROUTING-FIELD', secretKey={'password': 'SECRET-KEY'})
+                return self.reply(body=response)
 
             def do_DELETE(self):
                 seen.append(('DELETE', self.path))
@@ -196,7 +233,8 @@ class Tests(unittest.TestCase):
                 for secret in [PASSWORD, SESSION, 'SECRET-SERVER-FIELD', 'SECRET-TOKEN', 'SECRET-KEY', 'SECRET-IP',
                                'SECRET-CAMERA-FIELD', 'SECRET-ERROR-BODY', 'SECRET-EXTENDED-DATA', 'SECRET-EXTENDED-IP',
                                'SECRET-NETWORK-ID', 'SECRET-NETWORK-PASSWORD', 'SECRET-DDNS-ID', 'SECRET-NETWORK-EXTRA',
-                               'SECRET-URL-PASSWORD', 'SECRET-URL-TOKEN', 'SECRET-PATH']:
+                               'SECRET-URL-PASSWORD', 'SECRET-URL-TOKEN', 'SECRET-PATH', 'SECRET-ROUTING-FIELD',
+                               'SECRET-DEVICE-ID', 'SECRET-SERIAL-NUMBER', 'SECRET-AUTHORITY-KEY', USER]:
                     self.assertNotIn(secret, all_output)
                 for address in ['192.0.2.10', '192.0.2.20', 'camera.example.test', 'recorder.example.test']:
                     self.assertNotIn(address, result.stdout + result.stderr + reports[0].read_text())
@@ -298,7 +336,7 @@ class Tests(unittest.TestCase):
     def test_configured_metadata_not_current_ptz_and_hex_capability_gate(self):
         result, report, preview, seen = self.run_case('metadata')
         self.assertEqual(result.returncode, 0)
-        self.assertEqual(report['toolVersion'], '3')
+        self.assertEqual(report['toolVersion'], '4')
         self.assertEqual(report['configuredHeadingCount'], 1)
         self.assertEqual(report['configuredCoordinateCount'], 1)
         self.assertEqual(report['xMapSubscriptionCandidateCount'], 1)
@@ -426,6 +464,89 @@ class Tests(unittest.TestCase):
         self.assertEqual(report['error'], 'CONFLICTING_CONNECTION_DETAILS')
         self.assertIsNone(self.last_connection)
         self.assertEqual(report['logout'], 'ok')
+
+    def test_routing_gateway_comes_from_server_and_references_are_preserved(self):
+        result, report, _, seen = self.run_case('routing', connection_target=CAMERA)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(report['toolVersion'], '4')
+        self.assertTrue(report['controlSecretKeyPresent'])
+        self.assertTrue(report['loginUserUuidPresent'])
+        self.assertEqual(report['controlRoutingIssueCount'], 0)
+        self.assertEqual(self.last_connection['schemaVersion'], 2)
+        r = self.last_connection['connection']['routing']
+        self.assertEqual(r['mediaGatewayCandidateUuid'], SERVER)
+        self.assertNotEqual(r['mediaGatewayCandidateUuid'], COMPONENT)
+        self.assertEqual(r['server']['domainUuid'], DOMAIN)
+        self.assertEqual(r['server']['currentDomainUuid'], CURRENT_DOMAIN)
+        self.assertEqual(r['server']['serverVersion'], '2.21.00_260514')
+        self.assertFalse(r['server']['useDdns'])
+        self.assertTrue(r['server']['useSSL'])
+        self.assertEqual(r['camera']['parentUuid'], COMPONENT)
+        self.assertEqual(r['camera']['siteUuid'], DOMAIN)
+        self.assertTrue(r['cameraComponentMatches'])
+        self.assertTrue(r['componentServerMatches'])
+        self.assertFalse(r['liveControlValidated'])
+        self.assertEqual([m for m, _ in seen], ['GET', 'POST', 'GET', 'GET', 'GET', 'DELETE'])
+
+    def test_non_gateway_server_never_uses_component_as_gateway(self):
+        result, _, _, _ = self.run_case('routing-non-gateway', connection_target=CAMERA)
+        self.assertEqual(result.returncode, 0)
+        r = self.last_connection['connection']['routing']
+        self.assertIsNone(r['mediaGatewayCandidateUuid'])
+        self.assertEqual(r['server']['type'], 4100)
+
+    def test_reference_mismatch_is_not_silently_reparented(self):
+        result, _, _, _ = self.run_case('routing-mismatch', connection_target=CAMERA)
+        self.assertEqual(result.returncode, 0)
+        r = self.last_connection['connection']['routing']
+        self.assertFalse(r['cameraComponentMatches'])
+        self.assertFalse(r['componentServerMatches'])
+        self.assertEqual(r['camera']['componentUuid'], OTHER)
+        self.assertEqual(r['component']['serverUuid'], OTHER)
+
+    def test_absent_routing_fields_remain_unknown(self):
+        result, _, _, _ = self.run_case(connection_target=CAMERA)
+        self.assertEqual(result.returncode, 0)
+        r = self.last_connection['connection']['routing']
+        self.assertIsNone(r['mediaGatewayCandidateUuid'])
+        self.assertIsNone(r['server']['domainUuid'])
+        self.assertIsNone(r['server']['useSSL'])
+        self.assertIsNone(r['cameraComponentMatches'])
+        self.assertIsNone(r['componentServerMatches'])
+
+    def test_invalid_routing_dropped_without_losing_inventory(self):
+        result, report, preview, _ = self.run_case('routing-invalid', connection_target=CAMERA)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(len(preview['cameras']), 2)
+        self.assertEqual(report['controlRoutingIssueCount'], 9)
+        r = self.last_connection['connection']['routing']
+        self.assertIsNone(r['mediaGatewayCandidateUuid'])
+        self.assertIsNone(r['server']['domainUuid'])
+        self.assertIsNone(r['server']['serverVersion'])
+        self.assertIsNone(r['server']['useSSL'])
+        self.assertIsNone(r['camera']['parentUuid'])
+        self.assertIsNone(r['camera']['componentUuid'])
+        self.assertIsNone(r['cameraComponentMatches'])
+
+    def test_conflicting_routing_rejected_and_own_session_logged_out(self):
+        result, report, preview, _ = self.run_case('routing-conflict', connection_target=CAMERA)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(report['error'], 'CONFLICTING_CONNECTION_DETAILS')
+        self.assertIsNone(preview)
+        self.assertIsNone(self.last_connection)
+        self.assertEqual(report['logout'], 'ok')
+
+    def test_missing_control_login_fields_are_unknown(self):
+        result, report, _, _ = self.run_case('routing-missing-login-fields', connection_target=CAMERA)
+        self.assertEqual(result.returncode, 0)
+        self.assertIsNone(report['controlSecretKeyPresent'])
+        self.assertIsNone(report['loginUserUuidPresent'])
+
+    def test_invalid_control_login_fields_are_not_exposed(self):
+        result, report, _, _ = self.run_case('routing-invalid-login-fields', connection_target=CAMERA)
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(report['controlSecretKeyPresent'])
+        self.assertFalse(report['loginUserUuidPresent'])
 
 
 if __name__ == '__main__':

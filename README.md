@@ -136,6 +136,9 @@ Git/.NET/Node.js 설치가 필요 없는 Windows x64 패키지는 Actions의 **S
 component 4510 성공, 카메라 HTTPS 443 실패입니다. 후속 화면에서 Hanwha Vision WebViewer와
 인증 요구를 관측했습니다. 다음은 [로그인 전 인증 응답 확인](docs/camera-web-auth-check.md)이며
 고유 장비 매핑과 현재 PTZ 수신은 아직 미검증입니다.
+카메라 장비 계정이 미확인이어서 SSM 계정 기반 CONTROL 경로를 우선 조사합니다.
+진단 v4는 같은 목록 응답에서 한 대의 도메인/MediaGateway 관계와 로그인 키/UID 가용성만 확인합니다.
+운영 값은 private 파일에 보관하며 CONTROL 접속·PTZ 요청은 아직 추가하지 않습니다.
 [GoogleMapViewer 추가 분석과 설치 경로](docs/ssm-google-map-analysis.md).
 
 

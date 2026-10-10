@@ -111,3 +111,12 @@ ONVIF 서비스 URL/지원, 공식 SUNAPI 현재 위치 계약 및 독립 CONTRO
 사용자는 주소창이 없다고 확인했으므로 주소창 재확인을 선행 조건으로 두지 않습니다.
 [v3 대조](ssm-live-inventory-validation.md) · [회사 PC TCP 확인](camera-route-check.md).
 [로그인 전 인증 방식 확인](camera-web-auth-check.md).
+
+## 카메라 장비 계정 미확인 이후
+
+사용자는 장비 계정을 모른다고 답했습니다. 직접 SUNAPI/ONVIF 인증은 계정 확보를 기다립니다.
+일반 CONTROL 인증이 SSM User/ServerSessionID를 사용하는 정적 경로를 확인했으나 운영 CONTROL의
+CLIENT_SDK 허용·권한·TLS/현재 위치 수신은 미검증입니다. REST service=12와 CONTROL ClientType=4096을 구분합니다.
+ServerStub → MediaGateway(type=4097)와 Recorder/component는 별도 계층입니다.
+v3에는 타입/도메인/명시적 부모 관계가 없어 현재 componentUuid를 CONTROL 대상으로 확정할 수 없습니다.
+같은 GET의 이 필드를 추출하는 [진단 v4](ssm-connection-test.md)로 현장 관계를 대조한 뒤 진행합니다.

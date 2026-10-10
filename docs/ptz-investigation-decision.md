@@ -81,25 +81,51 @@ IP/포트·서비스 정보이며, 설정 변경·저장·자동 재등록·PTZ 
 후속 [TCP 확인](camera-route-check.md)에서 카메라 HTTP 80과 component TCP 4510은 연결됐고,
 카메라 HTTPS 443은 연결되지 않았습니다. 인증·SOAP·SUNAPI·CONTROL 명령을 시험한 결과는 아닙니다.
 후속 사용자 화면에서 Hanwha Vision WebViewer 제목과 브라우저 인증 창을 관측했습니다.
-모델/고유 식별정보와 Basic/Digest는 사진으로 확인되지 않아, 다음은 [로그인 전 인증 응답 확인](camera-web-auth-check.md)입니다.
+모델/고유 식별정보와 Basic/Digest는 사진으로 확인되지 않아 [로그인 전 인증 응답 확인](camera-web-auth-check.md)을 준비했습니다.
+후속 장비 계정 미확인에 따른 현재 우선순위는 아래 SSM CONTROL 조사입니다.
 장비 매핑과 공식 상태 조회 계약은 계속 검증 대상으로 남깁니다.
 CONTROL 경로는 인증/TLS/현재 위치 수신의 추가 검증 대상으로 유지합니다. 443 실패 원인은 미확인입니다.
 성공/실패 모두 현재 PTZ 지원·권한 또는 영상 보정 전환 여부를 직접 증명하지 않습니다.
 
+## 장비 계정 미확인 이후: SSM CONTROL 우선 조사
+
+사용자는 대상 카메라 자체의 로그인 계정을 모른다고 답했습니다. 직접 SUNAPI/ONVIF 인증 시험은
+계정 확보를 기다리고, 이미 목록 로그인이 성공한 **SSM 계정 기반 CONTROL 경로를 우선 조사**합니다.
+위 F12 인증 방식 확인은 계정 없이 가능한 보조 조사이며 현재 진행의 선행 조건으로 요구하지 않습니다.
+
+이번에 원본에서 다음을 구체적으로 대조했습니다.
+
+- ControlSession.OnConnected와 MediaService.RequestDigestAuthentication의 일반 계정 분기는
+  DataCenter.UserUuid의 User.Name/비밀번호 및 ServerSessionID를 사용합니다. 카메라 networkInfo의 계정을
+  입력받는 분기가 아닙니다. 연합/LDAP 분기는 별도이며 일반 분기로 대신하지 않습니다.
+- ObjConverter.convert(ServerStubModel)는 server.guid → MediaGateway.Uuid,
+  domainGuid → SystemUuid, currentDomainGuid → ParentUuid를 매핑합니다.
+  DataManager는 서버 type=4097인 행을 MediaGateway로 변환합니다. 컴포넌트는 별도 Recorder 계층일 수 있어
+  componentUuid를 그대로 CONTROL 대상 UUID로 쓰면 안 됩니다.
+- DataManager의 일부 카메라 조회 경로는 camera.ParentUuid를 channel.componentGuid로 보완합니다.
+  따라서 원본 parentGuid와 명시적 componentGuid/serverGuid를 따로 읽어 실제 관계를 대조해야 합니다.
+- REST CLIENT_SDK wire service=12와 CONTROL의 MODEL_TYPE.CLIENT_SDK=4096은 서로 다른 enum입니다.
+  STREAM_TYPE.CONTROL=1도 별도입니다. 운영 CONTROL에서 이 클라이언트 유형이 허용되는지는 미검증입니다.
+
+[SSM 진단 v4](ssm-connection-test.md)는 기존 요청을 추가하지 않고 선택 한 대의 이 관계·도메인·타입을
+추출합니다. REST 로그인 응답의 secretKey/UID 존재 여부만 기록하며 값은 파일/로그에 쓰지 않습니다.
+CONTROL 로그인·TLS 전환·위치 구독을 아직 보내지 않습니다. type/참조가 없거나 불일치하면 UNKNOWN 또는
+false로 기록하고 추측으로 부모 UUID·도메인·포트를 보완하지 않습니다. 카메라 장비 계정은 입력할 필요가 없습니다.
+
+v4 현장 결과로 MediaGateway/도메인 관계를 확인한 뒤 정상 CONTROL 인증·TLS 및 한 대의 위치 수신을
+별도 검증해야 합니다. 이 조사와 4510 TCP 성공을 현재 PTZ 조회 성공으로 처리하지 않습니다.
+
 ## 현장 검증 순서
 
-1. 확인된 WebViewer의 인증 요청을 네트워크 탭에서 관찰하고 WWW-Authenticate 방식 이름만 확인합니다.
-   계정 입력·설정 변경·PTZ 조작 없이 진행하며 고유 장비 신원과 다른 호스트/HTTPS 이동은 별도 대조합니다.
-   이후 카메라 인증서와 실제 서비스 정보를 확인합니다.
-   공식 SUNAPI 현재 위치 계약을 우선 조사하고, ONVIF 서비스가 이미 제공된다면 해당 전체 URL을 확인합니다.
-   이미 설정된 읽기 인터페이스만 사용하며 계정과 비밀번호는 현장 PC에 입력합니다.
-   주소창이 없다면 SSM 진단 v3의 한 대 연결 정보 추출로 등록 주소/포트를 먼저 대조합니다.
-2. ONVIF Device 서비스 URL과 대상 매핑이 확인된 경우 표준 계약으로 준비한 [단일 GetStatus 도구](ptz-readonly-test.md)를 실행합니다.
-   대상 프로파일을 직접 고르고 응답 값·space·장비 시각·수신 시각을 확인합니다.
+1. 진단 v4에서 기존 SSM 계정으로 정상 로그인하고 한 대를 선택해 MediaGateway/도메인/명시적 참조를 대조합니다.
+   카메라 계정·설정 변경은 필요하지 않으며 새 CONTROL 인증이나 PTZ 요청은 보내지 않습니다.
+2. 실제 관계가 확인되면 정상 CONTROL 인증·TLS 전환 및 한 대의 읽기 전용 위치 구독 도구를 별도로 구현·검증합니다.
+   TLS 응답/인증서를 확인하고 지정한 대상만 허용합니다. 타입/권한/인증 실패 시 임의 보완·강제 접속하지 않습니다.
 3. 대응하는 SSM UUID와 영상의 일치를 확인합니다. 정규화 좌표/각도 단위와 부호, 북쪽 원점 및
    Zoom/FOV는 별도 자료로 확인합니다. 수신값만으로 지리적 방향을 확정하지 않습니다.
-4. ONVIF가 미지원/접근 불가라면 이미 허용된 SSM CONTROL 경로 또는 해당 모델의 공식 SUNAPI
-   현재 위치 조회 명세가 확보되는지 확인합니다. 알 수 없는 경로를 시험하거나 권한/설정을 변경하지 않습니다.
+4. 장비 계정과 공식 SUNAPI 현재 위치 계약 또는 실제 ONVIF 서비스 URL/지원이 확보되면 직접 조회도 검토합니다.
+   ONVIF 대상 매핑이 확인된 경우에만 [단일 GetStatus 도구](ptz-readonly-test.md)의 프로파일을 직접 선택해 시험합니다.
+   알 수 없는 경로를 시험하거나 권한/설정을 변경하지 않습니다.
 
 ## 영상 기반 보정으로 넘어가는 시점
 

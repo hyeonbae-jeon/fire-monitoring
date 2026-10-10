@@ -2,7 +2,7 @@
 
 Windows 10/11 x64용 별도 실행 파일입니다. Git/.NET/Node.js 또는 Wisenet 프로그램을 설치할 필요가 없습니다.
 SSM에 접근할 수 있는 회사 PC에서 실행하세요. 기존 지도/목록 데모 프로그램과 별개이며,
-기존 카메라 선택·보정 설정을 변경하지 않습니다. 원본 SSM DLL은 사용하지 않습니다. 현재 진단 버전은 3이며 connection-report.json의 toolVersion으로 확인합니다.
+기존 카메라 선택·보정 설정을 변경하지 않습니다. 원본 SSM DLL은 사용하지 않습니다. 현재 진단 버전은 4이며 connection-report.json의 toolVersion으로 확인합니다.
 
 ## 실행 순서
 
@@ -67,6 +67,40 @@ v3는 **같은 목록 GET 응답에서 필드를 추가 추출**하며 네트워
 유지하고 다른 주소 필드/카메라 내부 포트를 조합해 URL을 만들지 않습니다. ONVIF 경로·SUNAPI 현재 위치
 명세가 확인된 것도 아닙니다. 카메라/녹화기/MediaGateway로 자동 접속하거나 PTZ 요청을 보내지 않습니다.
 주소창 없는 설정 화면에서 접속 정보를 좁힐 때 사용하며, 필드가 없으면 미확인으로 남깁니다.
+
+## v4: 카메라 계정 없이 SSM CONTROL 경로 조사
+
+사용자는 대상 카메라의 장비 계정을 모른다고 답했습니다. 설치 코드의 일반 CONTROL 로그인은
+SSM User/서버 세션을 사용하므로 이 경로를 우선 조사합니다. SSM 계정 값은 기존과 같이 회사 PC에만
+입력하며 카메라 계정 입력은 필요하지 않습니다. 이 진단은 CONTROL 로그인이나 PTZ를 요청하지 않습니다.
+
+실행 순서는 그대로입니다. 정상 SSM 로그인 후 한 대 추출에서 **Y → 백운대**를 입력하세요.
+동일한 서버/컴포넌트/채널 GET에서 다음 허용 필드를 추가 추출합니다.
+
+- `camera-connection.private.json`의 schemaVersion=2, `connection.routing`: 각 행의 source,
+  guid/parentGuid/type, 해당 Stub에 존재하는 domainGuid/currentDomainGuid/serverGuid/componentGuid/siteGuid,
+  서버의 serverVersion/useDdns/useSSL을 정규화합니다. 운영 UUID는 이 private 파일에만 기록합니다.
+- 원본 ServerStub → MediaGateway 변환과 type=4097 조건에 따라 `mediaGatewayCandidateUuid`를 기록합니다.
+  조회 컴포넌트 UUID를 MediaGateway UUID로 대신 쓰지 않습니다. 타입 누락/다른 타입이면 후보는 null입니다.
+- `cameraComponentMatches`와 `componentServerMatches`는 명시적 참조 UUID의 일치 비교입니다.
+  누락은 null, 불일치는 false로 유지하며 다른 필드를 이용해 부모를 임의 교체하지 않습니다.
+- GUID/enum/bool/version 형식 문제는 null+issues로 기록합니다. 무효 GUID나 서버 문자열을 원문으로
+  보관하지 않습니다. `controlRoutingIssueCount`가 해당 문제 수입니다.
+- `controlSecretKeyPresent`와 `loginUserUuidPresent`는 정상 REST 로그인 응답의 secretKey/UID 가용성만
+  boolean으로 기록합니다. 누락/null은 null, 빈 값/형식 오류는 false입니다. true는 CONTROL 인증 성공 또는
+  암호화 키 형식 검증을 뜻하지 않습니다. 키/로그인 UID/세션/토큰 값은 파일과 화면에 기록하지 않습니다.
+
+server의 설정 useSSL은 CONTROL 응답의 UseSSL/SSLPort/HostName을 대신하지 않습니다.
+도메인 값도 실제 CONTROL 인증 도메인으로 자동 확정하지 않습니다. `liveControlValidated=false`,
+`routeVerified=false`, `complete=false`를 유지합니다. 포트 탐색, 장비 접속, 비밀번호 추출·변경,
+SSM 조작권 요청 또는 PTZ 명령은 추가하지 않습니다. 기존 포트 확인용 PowerShell은 기존 필드를 그대로 읽을 수 있습니다.
+
+이번 실행에서는 **connection-report.json과 camera-connection.private.json 두 파일**을 대조하면 됩니다.
+후자는 운영 주소/UUID가 있으므로 이 비공개 대화에서 검토하고 공개 GitHub에는 게시하지 않습니다.
+기존 미리보기/메타데이터도 생성되지만 추가 자료로 다시 공유할 필요는 없습니다.
+
+다음 단계는 확인된 MediaGateway/도메인 관계를 바탕으로 단일 정상 CONTROL 인증과 장비별
+위치 구독을 별도 구현·검증하는 것입니다. 목록/키 가용성 또는 TCP 연결만으로 PTZ 수신 성공을 판단하지 않습니다.
 
 ## 연결·명령 범위
 

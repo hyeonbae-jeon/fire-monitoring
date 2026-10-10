@@ -144,11 +144,15 @@ Basic/Digest나 계정 오류를 판단하지 않습니다. 주소의 fragment�
 다음은 [로그인 없이 해당 응답의 인증 방식 확인](camera-web-auth-check.md)입니다.
 장비 계정 보유 여부는 값 없이 사용자에게 확인하며, 원본 주소가 포함된 화면 관측은 private 기록으로만 보관합니다.
 
+후속 답변에서 사용자는 카메라 장비 계정을 모른다고 확인했습니다. 직접 카메라 로그인 시험 대신
+[SSM 계정 기반 CONTROL 조사](ptz-investigation-decision.md)를 우선합니다. v4는 같은 GET에서
+MediaGateway/도메인 관계를 추가 기록하며 운영 결과는 다음 회사 실행에서 대조해야 합니다.
+
 ## 다음 단계
 
 1. 조회 계정의 전체 서버/권한 범위와 등록 수량 대조
 2. 전체 범위 확인 후 목록을 Camera Inventory에 반영하고 필요한 UUID 선택·설정 저장
-3. WebViewer 인증 응답의 방식과 고유 장비 매핑·서비스 계약 확인; 별도로 subType/CONTROL 인증·TLS 조사
+3. v4의 실제 MediaGateway/도메인/참조 관계 확인 후 SSM CONTROL 인증·TLS·한 대 위치 수신 검증
 4. 확인된 경로에서 한 카메라의 허용된 읽기 전용 현재 위치 응답과 UUID/값/수신 시각 검증
 
 MOVE_PTZ / SET_ABS_PTZ 금지를 유지합니다. 이번 검토는 결과 대조 및 문서 반영만 수행했으며

@@ -9,7 +9,8 @@ public sealed record ConfiguredConnection(string source, bool networkInfoPresent
     long? devProtocolType, long? medProtocolType, ConfiguredAddresses addresses, ConfiguredPorts ports,
     int? serverPort, int? serverSslPort, string[] issues);
 public sealed record CameraConnectionDetail(string uuid, string name, string serverUuid, string componentUuid,
-    ConfiguredConnection camera, ConfiguredConnection component, ConfiguredConnection server);
+    ConfiguredConnection camera, ConfiguredConnection component, ConfiguredConnection server,
+    ConfiguredRoutingEvidence routing);
 
 // Read only the verified networkInfo fields. No ID/password, DDNS password, token,
 // raw objects or guessed service URLs are persisted. These are configured values, not tested routes.

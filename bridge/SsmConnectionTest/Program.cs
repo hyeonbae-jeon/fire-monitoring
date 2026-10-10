@@ -59,12 +59,13 @@ try
         if (client.SelectedConnection is { } selectedConnection)
         {
             await File.WriteAllTextAsync(Path.Combine(folder, "camera-connection.private.json"), JsonSerializer.Serialize(new {
-                schemaVersion = 1, complete = false, capturedAt = preview.capturedAt,
+                schemaVersion = 2, complete = false, capturedAt = preview.capturedAt,
                 provenance = "SSM configured networkInfo; reachable route and ONVIF/SUNAPI service NOT VERIFIED",
                 routeVerified = false, connection = selectedConnection
             }, JsonOptions()));
             Console.WriteLine("선택한 한 대의 등록 주소·포트를 camera-connection.private.json에 저장했습니다. 주소는 화면/공유 보고서에 표시하지 않습니다.");
             Console.WriteLine("카메라 자체 포트와 외부 전달 포트는 다를 수 있습니다. 이 값으로 자동 접속하거나 조회 경로를 만들지 않습니다.");
+            Console.WriteLine("v4: 도메인/부모/서버/컴포넌트 관계도 같은 응답에서 기록했습니다. CONTROL 연결이나 PTZ 요청은 아직 보내지 않습니다.");
         }
         Console.WriteLine($"서버 {report.serverCount} / 컴포넌트 {report.componentCount} / 카메라 {report.cameraCount} / PtzCap 미확인 {report.unknownPtzCapCount}");
         Console.WriteLine($"저장 heading 값 있음 {report.configuredHeadingCount} / 좌표 쌍 있음 {report.configuredCoordinateCount} / XMap 구독 조건 후보 {report.xMapSubscriptionCandidateCount}");

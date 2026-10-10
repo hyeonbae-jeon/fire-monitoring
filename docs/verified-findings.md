@@ -130,3 +130,12 @@ SSM component TCP 4510=true를 확인했습니다. 역할/포트는 앞선 v3 �
 `/wmf/index.html#/login` 및 브라우저 인증 창을 관측했습니다. 모델/고유 장비 식별정보와
 HTTP 상태·인증 방식은 사진에서 확인되지 않았습니다. Basic/Digest나 백운대 UUID 매핑을 추정하지 않습니다.
 [인증 응답 확인](camera-web-auth-check.md).
+
+## SSM 계정 기반 CONTROL 추가 정적 확인
+
+일반 ControlSession/RequestDigestAuthentication은 현재 SSM User 및 서버 세션을 이용합니다.
+ServerStub의 guid/type=4097 → MediaGateway, domainGuid/currentDomainGuid 매핑과
+DataManager의 camera.ParentUuid 보완(componentGuid)을 확인했습니다. componentUuid를 MediaGateway로
+대체하지 않습니다. CONTROL ClientType=MODEL_TYPE.CLIENT_SDK(4096)와 REST service=12는 별도입니다.
+이는 제공된 원본의 구현 확인이며 운영 CONTROL 인증/PTZ 수신의 증거가 아닙니다.
+사용자 장비 계정 미확인에 따라 [SSM 경로 조사](ptz-investigation-decision.md)를 우선합니다.
