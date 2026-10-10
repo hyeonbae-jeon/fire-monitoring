@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import "./style.css";
 import { ReportImport } from "./ReportImport";
 import { MonitoringMap } from "./MonitoringMap";
+import { LiveCapture } from "./LiveCapture";
 
 type Camera = {
   uuid: string; name: string; channel: string | null; device: string | null;
@@ -28,7 +29,7 @@ async function api<T>(url: string, options?: RequestInit): Promise<T> {
 const flag = (value: boolean | null) => value === null ? "UNKNOWN" : value ? "있음" : "없음";
 
 function App() {
-  const [tab, setTab] = useState<"inventory" | "map">("inventory");
+  const [tab, setTab] = useState<"inventory" | "map" | "capture">("inventory");
   const [inventory, setInventory] = useState<Inventory | null>(null);
   const [configuration, setConfiguration] = useState<Configuration | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -87,14 +88,16 @@ function App() {
   return <div className="app">
     <header><p className="eyebrow">중앙 PTZ Bridge · Camera Inventory</p><h1>산불감시 모니터링</h1>
       <p>카메라 목록을 확인하고 사용할 대상을 UUID 기준으로 저장합니다.</p></header>
-    <nav className="tabs" aria-label="기능 선택"><button aria-pressed={tab === "inventory"} onClick={() => setTab("inventory")}>카메라 목록</button><button aria-pressed={tab === "map"} onClick={() => setTab("map")}>지도 모니터링</button></nav>
+    <nav className="tabs" aria-label="기능 선택"><button aria-pressed={tab === "inventory"} onClick={() => setTab("inventory")}>카메라 목록</button><button aria-pressed={tab === "map"} onClick={() => setTab("map")}>지도 모니터링</button><button aria-pressed={tab === "capture"} onClick={() => setTab("capture")}>실시간 화면 시험</button></nav>
     <div hidden={tab !== "map"}><MonitoringMap /></div>
+    <div hidden={tab !== "capture"}><LiveCapture active={tab==='capture'} desktopDemo={desktopDemo}/></div>
     <main hidden={tab !== "inventory"}>
       <ReportImport version={inventory?.version ?? null} writeKey={writeKey} dirty={dirty} onImported={async () => { setWriteKey(""); await load(); }} />
       <section className="notice" aria-label="연결 상태">
         <strong>파일 입력 모드 · 실제 SSM 미연결</strong>
         <p>SSM 전체 조회 인터페이스는 UNKNOWN입니다. 전체 목록 여부는 입력 작성자의 선언이며 자동 검증되지 않습니다.
           CCTV에는 명령을 보내지 않습니다. PTZ 구독은 미구현입니다. 지도 모니터링 탭에서 별도 시험 좌표를 확인할 수 있습니다.</p>
+        <p>실시간 화면 시험 탭에서는 별도 수집 도구가 읽은 SSM 영상 영역을 확인할 수 있습니다.</p>
         {inventory && <p>입력: {inventory.provenance} · 수집 시각: {new Date(inventory.capturedAt).toLocaleString()}</p>}
       </section>
       <div className="toolbar">

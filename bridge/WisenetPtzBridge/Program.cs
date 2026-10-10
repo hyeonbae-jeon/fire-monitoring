@@ -21,11 +21,14 @@ if (desktopDemo)
     builder.Configuration["CAMERA_CONFIG_FILE"] = Path.Combine(AppContext.BaseDirectory, "data", "cameras.demo.json");
     builder.Configuration["MAP_CONFIG_FILE"] = Path.Combine(AppContext.BaseDirectory, "data", "map.demo.json");
     builder.Configuration["INVENTORY_WRITE_KEY"] = "local-demo-only";
+    builder.Configuration["CAPTURE_SOURCE_DIR"] = Path.Combine(AppContext.BaseDirectory, "data", "capture.private");
+    builder.Configuration["CAPTURE_READ_KEY"] = "local-demo-only";
 }
 builder.Services.AddSingleton<FileCameraInventorySource>();
 builder.Services.AddSingleton<ICameraInventorySource>(services => services.GetRequiredService<FileCameraInventorySource>());
 builder.Services.AddSingleton<CameraConfiguration>();
 builder.Services.AddSingleton<MapConfiguration>();
+builder.Services.AddSingleton<ScreenFrameSource>();
 builder.WebHost.ConfigureKestrel(options =>
 {
     options.Limits.MaxRequestBodySize = 1024 * 1024;
@@ -56,6 +59,30 @@ app.MapGet("/api/cameras", async (CameraConfiguration registry, CancellationToke
     Results.Ok(await registry.ReadAsync(ct)));
 app.MapGet("/api/map-configuration", async (MapConfiguration registry, CancellationToken ct) =>
     Results.Ok(await registry.ReadAsync(ct)));
+IResult? CaptureAccess(HttpContext context, ScreenFrameSource source, IConfiguration config)
+{
+    context.Response.Headers["Cross-Origin-Resource-Policy"] = "same-origin";
+    if (!source.Configured) return null;
+    var expected = config["CAPTURE_READ_KEY"];
+    if (string.IsNullOrWhiteSpace(expected))
+        return Results.Json(new { error = "Capture reads are disabled. Configure CAPTURE_READ_KEY." }, statusCode: 503);
+    var provided = context.Request.Headers["X-Capture-Read-Key"].ToString();
+    if (!CryptographicOperations.FixedTimeEquals(SHA256.HashData(Encoding.UTF8.GetBytes(expected)),
+        SHA256.HashData(Encoding.UTF8.GetBytes(provided))))
+        return Results.Json(new { error = "A valid capture read key is required." }, statusCode: 401);
+    return null;
+}
+app.MapGet("/api/screen-capture/status", (HttpContext context, ScreenFrameSource source, IConfiguration config) =>
+    CaptureAccess(context, source, config) ?? Results.Ok(source.Status()));
+app.MapGet("/api/screen-capture/frame", (HttpContext context, string sessionId, long sequence,
+    ScreenFrameSource source, IConfiguration config) =>
+{
+    var rejected = CaptureAccess(context, source, config);
+    if (rejected is not null) return rejected;
+    var jpeg = source.Frame(sessionId, sequence);
+    return jpeg is null ? Results.Json(new { error = "The requested frame is unavailable or no longer current." }, statusCode: 409)
+        : Results.File(jpeg, "image/jpeg");
+});
 app.MapPut("/api/map-configuration", async (HttpContext context, MapSaveRequest request,
     MapConfiguration registry, IConfiguration config, CancellationToken ct) =>
 {

@@ -1,0 +1,6 @@
+.live-capture{max-width:1320px;margin:24px auto;padding:0 24px}
+.live-capture .notice label{max-width:400px;margin-bottom:16px}
+.live-observation{background:white;border:1px solid #c8d4df;border-radius:8px;padding:18px;margin-top:18px}
+.live-observation img{display:block;max-width:100%;max-height:70vh;margin:auto;background:#101820}
+.live-observation p{line-height:1.7}
+.capture-download{display:inline-block;margin-top:12px;padding:10px 14px;background:#07334a;color:white;border-radius:5px;text-decoration:none}

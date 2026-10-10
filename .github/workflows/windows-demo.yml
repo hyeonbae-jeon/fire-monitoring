@@ -9,23 +9,45 @@ on:
     paths:
       - '.github/workflows/windows-demo.yml'
       - 'bridge/WisenetPtzBridge/**'
+      - 'bridge/ScreenCapture.Core/**'
+      - 'bridge/SsmScreenCapture/**'
       - 'web/**'
       - 'scripts/build-portable.py'
       - 'tests/test_inventory.py'
       - 'tests/test_portable_demo.py'
       - 'tests/serve_e2e.py'
+      - 'tests/test_screen_capture.py'
+      - 'tests/ScreenCaptureChecks/**'
+      - 'tests/WindowsCaptureSmoke/**'
       - 'config/inventory.example.json'
       - 'docs/windows-demo.md'
       - 'docs/terrain-calibration.md'
       - 'docs/vworld-monitoring.md'
       - 'docs/video-direction-feasibility.md'
+      - 'docs/screen-capture.md'
       - 'global.json'
 
 permissions:
   contents: read
 
 jobs:
+  windows-capture-check:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.425'
+      - name: Synthetic Windows window, pixel capture and occlusion checks
+        shell: pwsh
+        run: |
+          dotnet publish tests/WindowsCaptureSmoke -c Release -r win-x64 --self-contained false -o artifacts/windows-smoke --nologo
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & ./artifacts/windows-smoke/ConsoleStudio2.exe
+          exit $LASTEXITCODE
   package:
+    needs: windows-capture-check
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -50,6 +72,8 @@ jobs:
           dotnet build bridge/WisenetPtzBridge -c Release --nologo
       - name: Test synthetic inventory and portable startup
         run: |
+          dotnet run --project tests/ScreenCaptureChecks -c Release
+          python3 tests/test_screen_capture.py
           python3 tests/test_inventory.py
           python3 tests/test_portable_demo.py
       - name: Test browser inventory, map and terrain calibration (mock SDK)
@@ -78,3 +102,4 @@ jobs:
           echo "Extract the artifact ZIP, then the package ZIP. Double-click WisenetPtzBridge.exe." >> "$GITHUB_STEP_SUMMARY"
           echo "SSM is not connected. Uses synthetic cameras only. Demo save key: local-demo-only." >> "$GITHUB_STEP_SUMMARY"
           echo "Manual image/terrain calibration and map settings persistence are included. Direction accuracy and live VWorld terrain remain unverified." >> "$GITHUB_STEP_SUMMARY"
+          echo "On the SSM display PC, run 화면캡처.cmd and select a single video region, then open 실시간 화면 시험 in the browser. Direction tracking is not implemented." >> "$GITHUB_STEP_SUMMARY"

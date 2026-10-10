@@ -34,8 +34,12 @@ class PortableDemoTests(unittest.TestCase):
             env = os.environ.copy()
             env.update(INVENTORY_FILE=str(work / 'nonexistent-operational-inventory.json'),
                        CAMERA_CONFIG_FILE=str(untouched), MAP_CONFIG_FILE=str(untouched), INVENTORY_WRITE_KEY='unusable-operational-placeholder',
+                       CAPTURE_SOURCE_DIR=str(work / 'operational-screen-input'), CAPTURE_READ_KEY='unusable-operational-read-placeholder',
                        ASPNETCORE_URLS='http://0.0.0.0:1')
             env['ASPNETCORE_ENVIRONMENT'] = 'Production'
+            operational_screen = work / 'operational-screen-input'
+            operational_screen.mkdir()
+            (operational_screen / 'capture-source.json').write_text('{"unexpected":"synthetic operational input"}')
 
             def start():
                 log_path = work / 'demo.log'
@@ -67,6 +71,13 @@ class PortableDemoTests(unittest.TestCase):
                 self.assertTrue(health['localDesktopDemo'])
                 self.assertFalse(health['liveSsmConnected'])
                 self.assertFalse(health['ptzCommandsEnabled'])
+                capture_request = urllib.request.Request(base + '/api/screen-capture/status',
+                    headers={'X-Capture-Read-Key': 'local-demo-only'})
+                with urllib.request.urlopen(capture_request, timeout=5) as capture_response:
+                    capture_status = json.load(capture_response)
+                self.assertTrue(capture_status['configured'])
+                self.assertEqual(capture_status['status'], 'waiting')
+                self.assertFalse(capture_status['liveFrameAvailable'])
                 self.assertIn(b'<div id="root">', request(base, '/'))
                 inv = json.loads(request(base, '/api/inventory'))
                 self.assertEqual(inv['totalCount'], 3)

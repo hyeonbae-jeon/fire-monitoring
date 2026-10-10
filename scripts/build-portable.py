@@ -32,15 +32,21 @@ with tempfile.TemporaryDirectory() as temporary:
                     '-o', str(package), '--nologo'], cwd=ROOT, check=True)
     if not (package / 'WisenetPtzBridge.exe').is_file() or not (package / 'wwwroot/index.html').is_file():
         raise RuntimeError('Missing Windows executable or bundled web app.')
+    subprocess.run([dotnet, 'publish', str(ROOT / 'bridge/SsmScreenCapture'), '-c', 'Release',
+                    '-r', 'win-x64', '--self-contained', 'true', '-p:PublishTrimmed=false',
+                    '-o', str(package / 'capture'), '--nologo'], cwd=ROOT, check=True)
+    if not (package / 'capture/SsmScreenCapture.exe').is_file():
+        raise RuntimeError('Missing Windows screen capture tool.')
     (package / 'demo').mkdir()
     (package / 'data').mkdir()
     shutil.copyfile(ROOT / 'config/inventory.example.json', package / 'demo/inventory.json')
     (package / 'portable-demo.json').write_text(json.dumps({'mode': 'synthetic-demo'}), encoding='utf-8')
     (package / '사용방법.txt').write_text((ROOT / 'docs/windows-demo.md').read_text(encoding='utf-8'), encoding='utf-8-sig')
     (package / 'docs').mkdir()
-    for name in ['vworld-monitoring.md', 'terrain-calibration.md', 'video-direction-feasibility.md', 'ssm-report-import.md']:
+    for name in ['vworld-monitoring.md', 'terrain-calibration.md', 'video-direction-feasibility.md', 'ssm-report-import.md', 'screen-capture.md']:
         shutil.copyfile(ROOT / 'docs' / name, package / 'docs' / name)
     (package / '문제진단.cmd').write_bytes(b'@echo off\r\ncd /d "%~dp0"\r\nWisenetPtzBridge.exe --no-browser\r\npause\r\n')
+    (package / '화면캡처.cmd').write_bytes(b'@echo off\r\ncd /d "%~dp0"\r\nstart "" "capture\\SsmScreenCapture.exe" --output-dir "%~dp0data\\capture.private"\r\n')
     # Ship the runtime's notices and application dependency license information.
     shutil.copyfile(ROOT / 'web/package-lock.json', package / 'web-package-lock.json')
     notices = package / 'licenses'
@@ -60,6 +66,8 @@ with tempfile.TemporaryDirectory() as temporary:
         names = archive.namelist()
         if any('/data/' in name and not name.endswith('/') for name in names):
             raise RuntimeError('Do not package saved camera configuration.')
+        if any('capture.private' in name or name.lower().endswith(('.jpg', '.jpeg', '.png', '.private.json')) for name in names):
+            raise RuntimeError('Do not package operational frames or private observations.')
 digest = hashlib.file_digest(zip_path.open('rb'), 'sha256').hexdigest()
 zip_path.with_suffix('.zip.sha256').write_text(digest + '  ' + zip_path.name + '\n', encoding='ascii')
 print('Windows demo archive: ' + str(zip_path))
