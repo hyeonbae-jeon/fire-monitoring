@@ -1,5 +1,6 @@
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
+using System.Diagnostics;
 using ScreenCapture.Core;
 using SsmScreenCapture;
 
@@ -10,11 +11,18 @@ internal static class Program
     private static int Main()
     {
         var passed = 0;
-        void Check(bool result, string name) { if (!result) throw new Exception(name); passed++; Console.WriteLine("PASS " + name); }
+        string Escape(string value) => value.Replace("%", "%25").Replace("\r", "%0D").Replace("\n", "%0A");
+        void Check(bool result, string name)
+        {
+            if (!result) throw new Exception(name);
+            passed++; Console.WriteLine("PASS " + name);
+            Console.WriteLine("::notice title=Windows synthetic capture::" + Escape(name));
+        }
         try
         {
             Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
             Application.EnableVisualStyles(); Application.SetCompatibleTextRenderingDefault(false);
+            Console.WriteLine("::notice title=Windows test environment::" + Escape($"process={Process.GetCurrentProcess().ProcessName}; interactive={Environment.UserInteractive}; screen={SystemInformation.VirtualScreen}"));
             using var target = new Form { Text = "SYNTHETIC capture target", StartPosition = FormStartPosition.Manual,
                 Location = new(60, 70), ClientSize = new(500, 300), BackColor = Color.DodgerBlue, TopMost = true };
             target.Show(); target.Activate(); target.Refresh(); Application.DoEvents(); DwmFlush();
@@ -27,7 +35,7 @@ internal static class Program
                 CopyPixelOperation.SourceCopy | CopyPixelOperation.CaptureBlt);
             var pixel = bitmap.GetPixel(90, 60);
             Check(Math.Abs(pixel.B - Color.DodgerBlue.B) < 5 && Math.Abs(pixel.R - Color.DodgerBlue.R) < 5,
-                "GDI reads the actual synthetic window color");
+                $"GDI reads the actual synthetic window color (observed RGB={pixel.R},{pixel.G},{pixel.B})");
             using var memory = new MemoryStream(); bitmap.Save(memory, ImageFormat.Jpeg);
             Check(JpegHeader.HasDimensions(memory.ToArray(), 180, 120), "Windows encoded JPEG matches selected region");
             using (var obstruction = new Form { StartPosition = FormStartPosition.Manual,
@@ -52,6 +60,11 @@ internal static class Program
             Console.WriteLine($"{passed} Windows synthetic capture checks passed. No Wisenet installation or CCTV connection used.");
             return 0;
         }
-        catch (Exception error) { Console.Error.WriteLine(error); return 1; }
+        catch (Exception error)
+        {
+            Console.Error.WriteLine(error);
+            Console.WriteLine("::error title=Windows synthetic capture failed::" + Escape(error.Message));
+            return 1;
+        }
     }
 }
