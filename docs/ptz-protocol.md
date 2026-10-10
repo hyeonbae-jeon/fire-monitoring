@@ -48,3 +48,29 @@ SSM XMap 표시 로직임. 북쪽 기준 방위각, 실제 설치 방향, Tilt �
 
 장비별 SUNAPI/ONVIF 조회로 대체하는 경우에도 지원 여부·명세를 먼저 확인하고,
 장비 ID/ProfileToken/채널 ID를 SSM camera UUID와 동일하다고 취급하지 않음.
+
+## 현재 위치·북쪽 보정의 다음 조사 범위 (2026-10-10)
+
+현재 연결 진단은 목록 조회만 수행하고 PTZ 상태 요청은 수행하지 않습니다.
+목록 로그인 성공은 PTZ 권한 승인이나 거절을 증명하지 않습니다.
+설치 DLL의 CHANNEL_PERMISSION.PTZ_CONTROL 및 USER_PERMISSION.PTZ_CONFIG enum은 확인됐지만,
+실제 계정에서 해당 권한이 부여됐는지 또는 상태 구독에 어떤 권한이 필요한지는 미확인입니다.
+장치 ENTITY_CAPABILITY.PTZ_CONTROL과 계정 CHANNEL_PERMISSION.PTZ_CONTROL을 혼동하지 않습니다.
+PTZ_AUTHORITY 요청도 존재하지만 조회 허용 여부 확인을 대신해 조작권 요청을 보내지 않습니다.
+
+ObjConverter는 ChannelStubModel의 extendedData JSON 문자열에서 heading을 읽어 Camera.headingAngle에 저장합니다.
+이후 SystemService도 headingAngle을 갱신합니다. 그러나 현재 진단 미리보기는 이 필드를 저장하지 않습니다.
+다음 읽기 진단의 우선 항목은 선택된 UUID의 capability/subType/installType 및
+extendedData 안의 latitude/longitude/heading 존재·값입니다. 전체 extendedData나 장치 접속 정보를 공유 로그에 복사하지 않습니다.
+설정 heading이 실시간 Pan이거나 북쪽 보정값이라는 뜻은 아직 입증되지 않았습니다.
+
+heading 사용처를 더 찾을 설치 목록의 후보는 HTW.SSM.ConsoleStudio.Views.GoogleMapViewer.dll입니다.
+MapTile 화면 연결 조사 후보인 CustomControl.ViewForm/XScreenControl11과 용도가 다릅니다.
+추가 파일에 북쪽 보정 구현이 있다고 확정하거나 제공된 기존 DLL에 개별 현장 설정값이 있다고 가정하지 않습니다.
+
+운영 설정값/권한 범위는 회사 SSM 실응답 및 사용자 그룹의 대상 카메라 권한에서 확인합니다.
+현재 PTZ는 별도 MediaGateway CONTROL 세션의 허용된 위치 구독을 구현·검증해야 합니다.
+대안 SUNAPI/ONVIF GetStatus는 카메라별 공식 API 명세와 실제 지원·자격 증명·UUID 매핑을 확인한 뒤 검토합니다.
+카메라 Pan 원점과 지리적 북쪽은 같다고 가정하지 않습니다. 보정은 등록 설치 방향 또는
+시각이 일치하는 현재 영상·PTZ 관측·식별 가능한 지형 기준점을 대조하고 단위/부호를 확인해 산출합니다.
+설정/북쪽 지정/프리셋 이동은 하지 않으며 MOVE_PTZ / SET_ABS_PTZ 금지는 유지합니다.
