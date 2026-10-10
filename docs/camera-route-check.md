@@ -85,3 +85,7 @@ TCP 시험은 완료됐으므로 같은 확인을 다시 할 필요는 없습니
 이 관측으로 HTTP 서비스의 신원을 좁힌 뒤 공식 SUNAPI 현재 위치 계약 또는 실제 ONVIF 서비스 정보를
 확인합니다. CONTROL 4510 연결도 조사 경로로 남지만 정상 인증·TLS 전환·PTZ 수신은 별도 검증입니다.
 [전체 현장 근거](ssm-live-inventory-validation.md).
+
+후속 사용자 화면에서 Hanwha Vision WebViewer 및 인증 팝업을 확인했습니다. 같은 화면을 다시 열어
+보내는 단계는 완료됐습니다. 다음은 [로그인 없이 인증 방식 확인](camera-web-auth-check.md)이며,
+사진에 없는 모델/고유 장비 식별정보·현재 PTZ는 미확인으로 유지합니다.

@@ -136,5 +136,7 @@
 - [x] 합성 SSM 검증 28개 통과: 추가 네트워크 요청 없음, 명시적 선택, credential URL/범위 오류/비밀 필드 제외
 - [x] 회사 PC v3에서 선택 한 대의 연결 정보·동일 UUID 대조; 카메라 HTTP/HTTPS 포트 화면 일치 및 component TCP 4510 확인
 - [x] 회사 PC TCP 결과 대조: 카메라 HTTP 80=true/HTTPS 443=false, component TCP 4510=true (신원·인증·PTZ와 구분)
-- [ ] 등록 HTTP origin의 로그인 전 카메라 신원 확인 및 443 실패 원인 조사; CONTROL 인증/TLS는 별도 검증
+- [x] 등록 HTTP origin의 사용자 화면에서 Hanwha Vision WebViewer 제목 및 브라우저 인증 요구 관측
+- [ ] 로그인 전 WWW-Authenticate 방식·장비 계정 보유 여부 및 모델/MAC 등 고유 장비 매핑 확인
+- [ ] 카메라 443 실패 원인 조사 및 CONTROL 인증/TLS 별도 검증
 - [ ] 실제 도달 경로·ONVIF 서비스 또는 공식 SUNAPI 현재 위치 계약 확인 후 단일 상태 응답 검증

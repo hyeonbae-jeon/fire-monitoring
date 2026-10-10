@@ -133,8 +133,9 @@ Git/.NET/Node.js 설치가 필요 없는 Windows x64 패키지는 Actions의 **S
 운영 주소는 camera-connection.private.json에만 보관하며 카메라 계정/비밀번호는 제외합니다.
 주소창 없는 설정 화면의 접속 정보 대조에 사용하고, 추출값으로 다른 장비에 자동 접속하지 않습니다.
 회사 PC v3에서 선택 한 대의 등록 접속 정보를 확인했습니다. 후속 TCP 시험은 카메라 HTTP 80과
-component 4510 성공, 카메라 HTTPS 443 실패입니다. 다음은
-[등록 HTTP 주소의 로그인 전 화면 확인](docs/camera-route-check.md)이며 현재 PTZ 수신은 아직 미검증입니다.
+component 4510 성공, 카메라 HTTPS 443 실패입니다. 후속 화면에서 Hanwha Vision WebViewer와
+인증 요구를 관측했습니다. 다음은 [로그인 전 인증 응답 확인](docs/camera-web-auth-check.md)이며
+고유 장비 매핑과 현재 PTZ 수신은 아직 미검증입니다.
 [GoogleMapViewer 추가 분석과 설치 경로](docs/ssm-google-map-analysis.md).
 
 

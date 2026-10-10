@@ -123,3 +123,10 @@ SessionCenter.AddMediaGateway의 TCP/WAN 주소·TCP 포트 → ControlSession.S
 SSM component TCP 4510=true를 확인했습니다. 역할/포트는 앞선 v3 등록 정보와 일치합니다.
 보고서에 주소/UUID/수집 시각은 없으며 TCP 연결만 시험했습니다. HTTP 장비 신원, CONTROL 인증/TLS,
 현재 PTZ 및 북쪽 보정은 계속 미검증입니다. [해석과 다음 단계](ssm-live-inventory-validation.md).
+
+## 로그인 전 WebViewer 사용자 화면
+
+회사 PC의 InPrivate 화면에서 등록 HTTP origin, Hanwha Vision WebViewer 제목,
+`/wmf/index.html#/login` 및 브라우저 인증 창을 관측했습니다. 모델/고유 장비 식별정보와
+HTTP 상태·인증 방식은 사진에서 확인되지 않았습니다. Basic/Digest나 백운대 UUID 매핑을 추정하지 않습니다.
+[인증 응답 확인](camera-web-auth-check.md).
