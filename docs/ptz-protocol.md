@@ -83,3 +83,9 @@ CONTROL 로그인 digest·사용자 ID 암호화·TLS 전환도 더 조사했으
 [추가 조사와 전환 기준](ptz-investigation-decision.md),
 [공식 ONVIF 계약에 한정한 대안 시험 도구](ptz-readonly-test.md)를 참조합니다.
 SUNAPI 현재 위치 계약은 아직 미확인으로 추측한 HTTP 경로를 시험하지 않습니다.
+
+후속 v4에서 선택 한 대의 카메라/컴포넌트/MediaGateway 참조, 등록 도메인 및 로그인 키/UID 존재를
+확인했습니다. 사용자 관측의 카메라 HTTP WWW-Authenticate=Digest는 별도 HTTP 인증이며
+이 바이너리 CONTROL 로그인 검증이 아닙니다. GET_DOMAIN→DEFAULT_MGMT_UID 갱신 경로를 확인하여
+진단 v5에 로컬 도메인 GET을 선택 실행으로 추가했습니다. 실제 CONTROL 인증/TLS와 위치 수신은
+계속 미검증입니다. [현장 결과](ssm-live-inventory-validation.md).

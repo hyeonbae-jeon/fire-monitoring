@@ -87,5 +87,5 @@ TCP 시험은 완료됐으므로 같은 확인을 다시 할 필요는 없습니
 [전체 현장 근거](ssm-live-inventory-validation.md).
 
 후속 사용자 화면에서 Hanwha Vision WebViewer 및 인증 팝업을 확인했습니다. 같은 화면을 다시 열어
-보내는 단계는 완료됐습니다. 다음은 [로그인 없이 인증 방식 확인](camera-web-auth-check.md)이며,
+보내는 단계는 완료됐습니다. 이후 [로그인 없이 인증 방식 확인](camera-web-auth-check.md)에서 사용자 Digest 관측을 받았으며,
 사진에 없는 모델/고유 장비 식별정보·현재 PTZ는 미확인으로 유지합니다.

@@ -53,4 +53,4 @@ jobs:
           echo "Download: $ARTIFACT_URL" >> "$GITHUB_STEP_SUMMARY"
           echo "Extract both ZIPs, then run SsmConnectionTest.exe. Enter your HTTPS origin and SHA-256 pin locally." >> "$GITHUB_STEP_SUMMARY"
           echo "No PTZ commands. Keep camera-preview.private.json local; share connection-report.json only." >> "$GITHUB_STEP_SUMMARY"
-          echo "Version 4: after login choose Y for one camera, then enter its name or UUID. Adds routing/domain fields from the same GETs; no CONTROL or PTZ requests. Keep camera-connection.private.json local." >> "$GITHUB_STEP_SUMMARY"
+          echo "Version 5: select one camera, then choose Y for local Domain. Adds one signed GET /V1/Domain?type=local to compare configured domains; no CONTROL or PTZ requests. Keep camera-control-routing.private.json private." >> "$GITHUB_STEP_SUMMARY"

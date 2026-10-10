@@ -139,3 +139,18 @@ DataManager의 camera.ParentUuid 보완(componentGuid)을 확인했습니다. co
 대체하지 않습니다. CONTROL ClientType=MODEL_TYPE.CLIENT_SDK(4096)와 REST service=12는 별도입니다.
 이는 제공된 원본의 구현 확인이며 운영 CONTROL 인증/PTZ 수신의 증거가 아닙니다.
 사용자 장비 계정 미확인에 따라 [SSM 경로 조사](ptz-investigation-decision.md)를 우선합니다.
+
+## 진단 v4 현장 관계와 HTTP Digest 확인
+
+후속 v4 회사 실행에서 146대 이름/UUID/PtzCap 및 선택 9대가 유지됐고 10개 HTTP 요청/자기 세션 로그아웃이
+성공했습니다. 선택 한 대의 camera.componentGuid→component.guid 및 component.serverGuid→server.guid가
+일치하며 서버 type=4097, 컴포넌트 type=4104입니다. 서버 domainGuid/currentDomainGuid/parentGuid 및
+컴포넌트 domainGuid도 일치합니다. 로그인 secretKey/UID의 존재와 추출 문제 0을 확인했습니다.
+이는 등록 관계·로그인 가용성 확인이며 CONTROL 세션/현재 PTZ 수신 성공으로 승격하지 않습니다.
+
+사용자가 카메라 웹 응답 WWW-Authenticate 선두를 Digest로 확인했습니다. 해당 응답의 HTTP Digest 제공
+관측이며 장비 신원·계정·공식 현재 위치 조회 계약이나 SSM CONTROL 인증은 확인되지 않았습니다.
+
+원본 WebServiceStub.GET_DOMAIN의 GET /V1/Domain?type=local 및 converterManagementServer의 guid/version,
+DataManager의 DEFAULT_MGMT_UID 갱신을 정적 확인했습니다. 따라서 초기 기본 상수나 서버 domainGuid를
+현재 로컬 인증 도메인으로 임의 사용하지 않습니다. [v5 조회](ssm-connection-test.md)의 현장 응답은 아직 대기 중입니다.

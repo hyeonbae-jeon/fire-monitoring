@@ -134,10 +134,11 @@ Git/.NET/Node.js 설치가 필요 없는 Windows x64 패키지는 Actions의 **S
 주소창 없는 설정 화면의 접속 정보 대조에 사용하고, 추출값으로 다른 장비에 자동 접속하지 않습니다.
 회사 PC v3에서 선택 한 대의 등록 접속 정보를 확인했습니다. 후속 TCP 시험은 카메라 HTTP 80과
 component 4510 성공, 카메라 HTTPS 443 실패입니다. 후속 화면에서 Hanwha Vision WebViewer와
-인증 요구를 관측했습니다. 다음은 [로그인 전 인증 응답 확인](docs/camera-web-auth-check.md)이며
+인증 요구와 후속 WWW-Authenticate=Digest 답변을 관측했습니다. [인증 응답 확인 기록](docs/camera-web-auth-check.md).
 고유 장비 매핑과 현재 PTZ 수신은 아직 미검증입니다.
 카메라 장비 계정이 미확인이어서 SSM 계정 기반 CONTROL 경로를 우선 조사합니다.
-진단 v4는 같은 목록 응답에서 한 대의 도메인/MediaGateway 관계와 로그인 키/UID 가용성만 확인합니다.
+진단 v4의 현장 결과에서 한 대의 컴포넌트/MediaGateway 참조 일치와 로그인 키/UID 존재를 확인했습니다.
+진단 v5는 한 대 선택 후 현재 로컬 도메인 GET을 한 번 선택 실행하여 인증 도메인 후보를 대조합니다.
 운영 값은 private 파일에 보관하며 CONTROL 접속·PTZ 요청은 아직 추가하지 않습니다.
 [GoogleMapViewer 추가 분석과 설치 경로](docs/ssm-google-map-analysis.md).
 

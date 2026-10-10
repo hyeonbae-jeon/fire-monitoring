@@ -141,18 +141,51 @@ HTTP 상태 코드·WWW-Authenticate는 표시되지 않았으며 현재 PTZ 응
 브랜드 표시는 선택한 SSM UUID와의 고유 장비 매핑 증명이 아닙니다. 팝업의 외형만으로
 Basic/Digest나 계정 오류를 판단하지 않습니다. 주소의 fragment는 HTTP 요청에 포함되지 않습니다.
 팝업을 띄운 요청도 사진으로 특정할 수 없어 추측한 API나 인증을 시험하지 않습니다.
-다음은 [로그인 없이 해당 응답의 인증 방식 확인](camera-web-auth-check.md)입니다.
+당시 다음 확인은 [로그인 없이 해당 응답의 인증 방식 확인](camera-web-auth-check.md)이었으며,
+후속 사용자 답변의 Digest 관측은 아래에 반영했습니다.
 장비 계정 보유 여부는 값 없이 사용자에게 확인하며, 원본 주소가 포함된 화면 관측은 private 기록으로만 보관합니다.
 
 후속 답변에서 사용자는 카메라 장비 계정을 모른다고 확인했습니다. 직접 카메라 로그인 시험 대신
 [SSM 계정 기반 CONTROL 조사](ptz-investigation-decision.md)를 우선합니다. v4는 같은 GET에서
-MediaGateway/도메인 관계를 추가 기록하며 운영 결과는 다음 회사 실행에서 대조해야 합니다.
+MediaGateway/도메인 관계를 추가 기록하며 후속 v4 결과는 아래에서 대조했습니다.
+
+## 진단 v4 현장 관계 및 Digest 관측 (2026-10-10)
+
+첨부한 v4 보고서의 정상 로그인/목록/로그아웃 10개 요청 모두 HTTP 200이며 `inventory-preview-ok`,
+`error=null`, `logout=ok`입니다. 미리보기와 메타데이터는 각각 146개로 UUID 집합이 같고,
+이전 v3의 전체 이름/UUID/PtzCap 및 선택 9대도 그대로입니다. 저장 좌표/heading은 모두 null,
+XMap 전체 데이터 조건 후보 0, 형식 문제 0입니다. 전체 설치 범위는 아직 미확인입니다.
+
+| 항목 | 실제 관측 | 해석 |
+| --- | --- | --- |
+| 카메라 componentGuid | 조회 컴포넌트 guid와 일치 | cameraComponentMatches=true |
+| 컴포넌트 serverGuid | 조회 서버 guid와 일치 | componentServerMatches=true |
+| 서버 type / 컴포넌트 type | 4097 / 4104 | MediaGateway / Recorder 계층을 구분 |
+| MediaGateway 후보 | 조회 서버 UUID | 컴포넌트 UUID를 대신 사용하지 않음 |
+| server domainGuid/currentDomainGuid/parentGuid | 서로 일치 | 등록 도메인 관계의 일치; 현재 로컬 Domain 응답은 아직 없음 |
+| component domainGuid | 서버 domainGuid와 일치 | 같은 등록 도메인 관계 |
+| serverVersion | 2.21.00 | 상태 헤더 버전과 일치 |
+| server useSSL / useDdns | false / false | 설정 관측; CONTROL의 실제 TLS 협상 결과가 아님 |
+| controlSecretKeyPresent / loginUserUuidPresent | true / true | 로그인 키/UID 존재만 확인; 값은 저장하지 않음 |
+| connectionDetailIssueCount / controlRoutingIssueCount | 0 / 0 | 추출한 허용 필드의 형식 문제 없음 |
+
+connection 파일의 `routeVerified=false`와 `liveControlValidated=false`를 유지합니다.
+카메라/컴포넌트의 parentGuid 누락은 임의로 채우지 않습니다. 등록된 관계가 맞다는 결과와
+실제 CONTROL 인증·TLS·현재 위치 수신은 별개입니다.
+
+사용자가 카메라 웹 응답의 **WWW-Authenticate 선두가 Digest**라고 추가 확인했습니다.
+HTTP Digest 제공 관측으로 기록하며 헤더 전체/nonce/realm은 받지 않습니다. 알고리즘/qop,
+응답 코드/요청 경로와 장비 고유 매핑, 장비 계정 및 현재 PTZ는 이번 관측으로 확인되지 않습니다.
+이 HTTP 인증을 SSM 바이너리 CONTROL LoginDigest의 운영 검증으로 해석하지 않습니다.
+
+추가 정적 조사에서 확인한 로컬 도메인 GET을 [진단 v5](ssm-connection-test.md)에 선택 실행으로 추가했습니다.
+현재 로컬 도메인과 등록 관계를 대조한 다음 CONTROL 일반/연합 분기·인증/TLS를 검증해야 합니다.
 
 ## 다음 단계
 
 1. 조회 계정의 전체 서버/권한 범위와 등록 수량 대조
 2. 전체 범위 확인 후 목록을 Camera Inventory에 반영하고 필요한 UUID 선택·설정 저장
-3. v4의 실제 MediaGateway/도메인/참조 관계 확인 후 SSM CONTROL 인증·TLS·한 대 위치 수신 검증
+3. v5의 현재 로컬 Domain 응답을 대조하고 SSM CONTROL 인증·TLS·한 대 위치 수신 검증
 4. 확인된 경로에서 한 카메라의 허용된 읽기 전용 현재 위치 응답과 UUID/값/수신 시각 검증
 
 MOVE_PTZ / SET_ABS_PTZ 금지를 유지합니다. 이번 검토는 결과 대조 및 문서 반영만 수행했으며

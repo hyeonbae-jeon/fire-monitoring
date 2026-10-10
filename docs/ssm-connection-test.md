@@ -2,7 +2,7 @@
 
 Windows 10/11 x64용 별도 실행 파일입니다. Git/.NET/Node.js 또는 Wisenet 프로그램을 설치할 필요가 없습니다.
 SSM에 접근할 수 있는 회사 PC에서 실행하세요. 기존 지도/목록 데모 프로그램과 별개이며,
-기존 카메라 선택·보정 설정을 변경하지 않습니다. 원본 SSM DLL은 사용하지 않습니다. 현재 진단 버전은 4이며 connection-report.json의 toolVersion으로 확인합니다.
+기존 카메라 선택·보정 설정을 변경하지 않습니다. 원본 SSM DLL은 사용하지 않습니다. 현재 진단 버전은 5이며 connection-report.json의 toolVersion으로 확인합니다.
 
 ## 실행 순서
 
@@ -21,7 +21,9 @@ SSM에 접근할 수 있는 회사 PC에서 실행하세요. 기존 지도/목�
 7. 로그인 성공 후 **‘카메라 한 대의 등록 주소·포트도 추출’** 안내에서 **Y**를 입력하고,
    대상 이름 일부 **백운대** 또는 정확한 UUID를 입력할 수 있습니다. Enter는 기존 기본 목록만 수집합니다.
    검색 결과가 0개/여러 개이면 대상을 자동 선택하지 않습니다. 선택 결과가 한 대일 때만 연결 정보 파일을 만듭니다.
-8. 결과를 확인한 뒤 Enter를 눌러 종료합니다. 테스트에서 만든 세션만 정상 로그아웃을 시도합니다.
+8. **‘v5: 현재 로컬 도메인과 선택 카메라의 관계’** 안내에서 **Y**를 입력합니다.
+   로그인된 같은 HTTPS 서버에 확인된 GET 한 번만 추가합니다. Enter는 추가 조회를 생략합니다.
+9. 결과를 확인한 뒤 Enter를 눌러 종료합니다. 테스트에서 만든 세션만 정상 로그아웃을 시도합니다.
 
 주소/지문을 입력할 때 Windows 터미널의 붙여넣기(Ctrl+V 또는 우클릭)를 사용할 수 있습니다.
 관리자 실행은 필요하지 않습니다. 종료 전 콘솔을 강제로 닫으면 세션 정리 요청이 생략될 수 있습니다.
@@ -102,6 +104,33 @@ SSM 조작권 요청 또는 PTZ 명령은 추가하지 않습니다. 기존 포�
 다음 단계는 확인된 MediaGateway/도메인 관계를 바탕으로 단일 정상 CONTROL 인증과 장비별
 위치 구독을 별도 구현·검증하는 것입니다. 목록/키 가용성 또는 TCP 연결만으로 PTZ 수신 성공을 판단하지 않습니다.
 
+## v5: 현재 로컬 도메인을 별도 응답으로 대조
+
+회사 PC의 v4 결과에서 선택 카메라→컴포넌트→MediaGateway의 명시적 참조가 일치했고,
+정상 로그인 응답의 secretKey/UID 존재를 확인했습니다. 현재 PTZ 수신과는 구분합니다.
+
+추가 정적 조사에서 `WebServiceStub.GET_DOMAIN`의 **GET /V1/Domain?type=local**과
+`converterManagementServer`의 guid/version 변환, `DataManager`의 DEFAULT_MGMT_UID 갱신을 확인했습니다.
+따라서 등록 서버의 domainGuid만으로 현재 로컬 로그인 도메인과 일반/연합 분기를 확정하지 않습니다.
+v5는 기존 실행에 **Y → 백운대 → 로컬 도메인 Y**를 추가하면, 같은 HTTPS 세션으로 이 GET을 한 번 수행합니다.
+명령줄에서 선택할 경우 `--connection-camera <확인된 UUID 또는 이름> --local-domain`을 사용합니다.
+
+- **camera-control-routing.private.json**: 선택 UUID와 기존 등록 관계, 로컬 응답에서 허용한
+  guid/version/sslUse만 기록합니다. 이름, Google/VWorld 키, 정책, extendedData 및 원본 도메인 응답은 제외합니다.
+- 서버 domainGuid/currentDomainGuid, 컴포넌트 domainGuid, 서버 버전 및 카메라/컴포넌트 참조를 대조합니다.
+  누락은 null, 불일치는 false입니다. 버전을 임의 축약하거나 연합 도메인을 로컬 도메인으로 바꾸지 않습니다.
+- `configuredLocalRoutingConsistent=true`일 때만 `loginDomainCandidateUuid`를 기록합니다.
+  이 값은 **등록 관계 후보**이며 CONTROL 인증·계정 권한·TLS·현재 PTZ 성공을 뜻하지 않습니다.
+- 로컬 도메인 응답이 0개/여러 개이거나 배열이 아니면 자동 선택하지 않고 중단합니다.
+  형식 오류는 원문을 버리고 null+issues로 기록합니다. 실패 시에도 자기 테스트 세션 로그아웃을 시도합니다.
+- 공유용 보고서에는 `localDomainRequested`, `localDomainRowCount`, `localDomainIssueCount`,
+  `configuredLocalRoutingConsistent`만 추가합니다. 도메인 UUID/주소/키는 public 보고서와 콘솔에 표시하지 않습니다.
+
+이번에는 **connection-report.json과 camera-control-routing.private.json** 두 파일을 대조합니다.
+후자는 운영 UUID가 있으므로 비공개 검토용이며 GitHub에 올리지 않습니다. 기존 네 파일도 생성됩니다.
+현재 위치 응답이나 CONTROL 패킷을 수집하는 도구는 아직 아닙니다. sslUse/useSSL은 설정 필드이며
+CONTROL의 실제 TLS 전환 응답/인증서를 대신하지 않습니다. 별도 LDAP/연합 인증도 자동 시험하지 않습니다.
+
 ## 연결·명령 범위
 
 고정한 HTTPS origin으로만 요청하고 리다이렉트/HTTP fallback/인증서 자동 교체를 허용하지 않습니다.
@@ -113,6 +142,7 @@ SSM 조작권 요청 또는 PTZ 명령은 추가하지 않습니다. 기존 포�
 - GET /v3/servers?type=all
 - GET /v3/servers/{UUID}/components
 - GET /v3/components/{UUID}/channels?serverGuid={UUID}
+- GET /V1/Domain?type=local: v5에서 한 대 선택 후 명시적으로 요청한 경우 한 번
 - DELETE /V1/Session: 이번 테스트 세션 정리
 
 로그인 body의 ID/password는 상태 헤더 PublicKey로 RSA PKCS#1 v1.5 암호화합니다.
@@ -135,6 +165,8 @@ GET/로그아웃에는 Session_ID 쿠키와 path+query/UTC Unix 초에 대한 �
 - HTTP_409: 중복 접속 등 충돌 가능성. 강제 접속하지 않음
 - HTTP_3xx: 리다이렉트 응답. 다른 주소로 자격 증명을 전달하지 않음
 - ARRAY_RESPONSE_REQUIRED / RESPONSE_FIELD_INVALID / PTZ_CAP_INVALID: 실제 응답이 확인된 계약과 다름
+- LOCAL_DOMAIN_SELECTION_AMBIGUOUS / LOCAL_DOMAIN_ROW_INVALID: 로컬 도메인을 안전하게 한 개로 대조할 수 없음
+- CONNECTION_SELECTION_REQUIRED / LOCAL_DOMAIN_REQUIRES_INVENTORY: 한 대 선택/목록 조회 없이 로컬 도메인을 요청함
 - logout=failed: 세션 정리 실패. 정상 로그아웃 성공이라고 해석하지 않음
 
 ## 검증 범위

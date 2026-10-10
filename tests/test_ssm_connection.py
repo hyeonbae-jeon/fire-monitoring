@@ -50,7 +50,7 @@ class Tests(unittest.TestCase):
         cls.temp.cleanup()
 
     def run_case(self, mode='ok', *, pin=None, endpoint_scheme='https', status_only=False, connection_target=None,
-                 interactive_connection_target=None):
+                 interactive_connection_target=None, local_domain=False, interactive_local_domain=False):
         seen = []
         auth_errors = []
         outer = self
@@ -98,10 +98,14 @@ class Tests(unittest.TestCase):
                         'serverPort': 9999, 'serverSslPort': 9991,
                         'networkInfo': {'addressList': {'tcp': '192.0.2.10'}, 'portList': {'tcpPort': 8888},
                                         'id': 'SECRET-NETWORK-ID', 'password': 'SECRET-NETWORK-PASSWORD'}}
-                    if mode.startswith('routing'):
+                    if mode.startswith(('routing', 'local-domain')):
                         row.update(type=4097, parentGuid=CURRENT_DOMAIN, domainGuid=DOMAIN,
                                    currentDomainGuid=CURRENT_DOMAIN, serverGuid=SERVER,
                                    serverVersion='2.21.00_260514', useDdns=False, useSSL=True)
+                    if mode.startswith('local-domain'):
+                        row.update(currentDomainGuid=DOMAIN, serverVersion='2.21.00')
+                    if mode == 'local-domain-non-gateway':
+                        row['type'] = 4100
                     if mode == 'routing-non-gateway':
                         row['type'] = 4100
                     if mode == 'routing-invalid':
@@ -111,10 +115,12 @@ class Tests(unittest.TestCase):
                     row = {'guid': COMPONENT, 'networkInfo': {'addressType': 1,
                         'addressList': {'wan': 'recorder.example.test'}, 'portList': {'wanPort': 8080},
                         'id': 'SECRET-NETWORK-ID', 'password': 'SECRET-NETWORK-PASSWORD'}}
-                    if mode.startswith('routing'):
+                    if mode.startswith(('routing', 'local-domain')):
                         row.update(type=4104, parentGuid=SERVER, serverGuid=SERVER,
                                    domainGuid=DOMAIN, currentDomainGuid=CURRENT_DOMAIN,
                                    userAuthorityKey='SECRET-AUTHORITY-KEY')
+                    if mode == 'local-domain-missing-reference':
+                        del row['serverGuid']
                     if mode == 'routing-mismatch':
                         row['serverGuid'] = OTHER
                     if mode == 'routing-invalid':
@@ -160,7 +166,7 @@ class Tests(unittest.TestCase):
                         network['portList'].update(httpPort=65536, httpsPort=-1, rtspPort='554')
                     if mode == 'connection-conflict':
                         rows.append(dict(rows[0], networkInfo=dict(rows[0]['networkInfo'], portList={'httpPort': 8080})))
-                    if mode.startswith('routing'):
+                    if mode.startswith(('routing', 'local-domain')):
                         rows[0].update(parentGuid=COMPONENT, componentGuid=COMPONENT, siteGuid=DOMAIN,
                                        deviceId='SECRET-DEVICE-ID', serialNumber='SECRET-SERIAL-NUMBER')
                     if mode == 'routing-mismatch':
@@ -170,6 +176,33 @@ class Tests(unittest.TestCase):
                     if mode == 'routing-conflict':
                         rows.append(dict(rows[0], siteGuid=OTHER))
                     return self.reply(body=rows)
+                if self.path == '/V1/Domain?type=local':
+                    if mode == 'local-domain-denied':
+                        return self.reply(403, {'password': 'SECRET-DOMAIN-FIELD'})
+                    if mode == 'local-domain-redirect':
+                        return self.reply(302, headers={'Location': 'https://unrelated.example.test/V1/Domain?type=all'})
+                    row = {'guid': DOMAIN, 'version': '2.21.00', 'sslUse': False,
+                           'googleLicenseKey': 'SECRET-DOMAIN-FIELD', 'name': 'SECRET-DOMAIN-FIELD',
+                           'extendedData': {'password': 'SECRET-DOMAIN-FIELD'}}
+                    if mode == 'local-domain-mismatch':
+                        row['guid'] = CURRENT_DOMAIN
+                    if mode == 'local-domain-version-mismatch':
+                        row['version'] = '2.22.00'
+                    if mode == 'local-domain-zero':
+                        row['guid'] = '00000000-0000-0000-0000-000000000000'
+                    if mode == 'local-domain-missing':
+                        row = {}
+                    if mode == 'local-domain-invalid':
+                        row.update(guid='SECRET-DOMAIN-FIELD', version='SECRET-DOMAIN-FIELD', sslUse='true')
+                    if mode == 'local-domain-empty':
+                        return self.reply(body=[])
+                    if mode == 'local-domain-multiple':
+                        return self.reply(body=[row, row])
+                    if mode == 'local-domain-shape':
+                        return self.reply(body={'content': [row]})
+                    if mode == 'local-domain-row':
+                        return self.reply(body=['SECRET-DOMAIN-FIELD'])
+                    return self.reply(body=[row])
                 return self.reply(404)
 
             def do_POST(self):
@@ -215,9 +248,13 @@ class Tests(unittest.TestCase):
                     args.append('--status-only')
                 if connection_target is not None:
                     args += ['--connection-camera', connection_target]
+                if local_domain:
+                    args += ['--local-domain']
                 inputs = 'Y\nfake-user\n' + PASSWORD + '\n'
                 if interactive_connection_target is not None:
                     inputs += 'Y\n' + interactive_connection_target + '\n'
+                if interactive_local_domain:
+                    inputs += 'Y\n'
                 result = subprocess.run(args, input=inputs, text=True,
                                         capture_output=True, timeout=35)
                 reports = list(Path(output).rglob('connection-report.json'))
@@ -229,12 +266,14 @@ class Tests(unittest.TestCase):
                 self.last_metadata = json.loads(metadata[0].read_text()) if metadata else None
                 details = list(Path(output).rglob('camera-connection.private.json'))
                 self.last_connection = json.loads(details[0].read_text()) if details else None
+                local = list(Path(output).rglob('camera-control-routing.private.json'))
+                self.last_local_domain = json.loads(local[0].read_text()) if local else None
                 all_output = result.stdout + result.stderr + ''.join(p.read_text() for p in Path(output).rglob('*.json'))
                 for secret in [PASSWORD, SESSION, 'SECRET-SERVER-FIELD', 'SECRET-TOKEN', 'SECRET-KEY', 'SECRET-IP',
                                'SECRET-CAMERA-FIELD', 'SECRET-ERROR-BODY', 'SECRET-EXTENDED-DATA', 'SECRET-EXTENDED-IP',
                                'SECRET-NETWORK-ID', 'SECRET-NETWORK-PASSWORD', 'SECRET-DDNS-ID', 'SECRET-NETWORK-EXTRA',
                                'SECRET-URL-PASSWORD', 'SECRET-URL-TOKEN', 'SECRET-PATH', 'SECRET-ROUTING-FIELD',
-                               'SECRET-DEVICE-ID', 'SECRET-SERIAL-NUMBER', 'SECRET-AUTHORITY-KEY', USER]:
+                               'SECRET-DEVICE-ID', 'SECRET-SERIAL-NUMBER', 'SECRET-AUTHORITY-KEY', 'SECRET-DOMAIN-FIELD', USER]:
                     self.assertNotIn(secret, all_output)
                 for address in ['192.0.2.10', '192.0.2.20', 'camera.example.test', 'recorder.example.test']:
                     self.assertNotIn(address, result.stdout + result.stderr + reports[0].read_text())
@@ -336,7 +375,7 @@ class Tests(unittest.TestCase):
     def test_configured_metadata_not_current_ptz_and_hex_capability_gate(self):
         result, report, preview, seen = self.run_case('metadata')
         self.assertEqual(result.returncode, 0)
-        self.assertEqual(report['toolVersion'], '4')
+        self.assertEqual(report['toolVersion'], '5')
         self.assertEqual(report['configuredHeadingCount'], 1)
         self.assertEqual(report['configuredCoordinateCount'], 1)
         self.assertEqual(report['xMapSubscriptionCandidateCount'], 1)
@@ -468,7 +507,7 @@ class Tests(unittest.TestCase):
     def test_routing_gateway_comes_from_server_and_references_are_preserved(self):
         result, report, _, seen = self.run_case('routing', connection_target=CAMERA)
         self.assertEqual(result.returncode, 0)
-        self.assertEqual(report['toolVersion'], '4')
+        self.assertEqual(report['toolVersion'], '5')
         self.assertTrue(report['controlSecretKeyPresent'])
         self.assertTrue(report['loginUserUuidPresent'])
         self.assertEqual(report['controlRoutingIssueCount'], 0)
@@ -547,6 +586,136 @@ class Tests(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertFalse(report['controlSecretKeyPresent'])
         self.assertFalse(report['loginUserUuidPresent'])
+
+    def test_local_domain_is_opt_in_and_signed_once_with_selected_camera(self):
+        result, report, _, seen = self.run_case('local-domain', connection_target=CAMERA, local_domain=True)
+        self.assertEqual(result.returncode, 0)
+        self.assertTrue(report['localDomainRequested'])
+        self.assertEqual(report['localDomainRowCount'], 1)
+        self.assertTrue(report['configuredLocalRoutingConsistent'])
+        self.assertEqual(report['localDomainIssueCount'], 0)
+        self.assertEqual(seen[-2:], [('GET', '/V1/Domain?type=local'), ('DELETE', '/V1/Session')])
+        self.assertEqual(len(seen), 7)
+        e = self.last_local_domain['evidence']
+        self.assertEqual(e['cameraUuid'], CAMERA)
+        self.assertEqual(e['localDomain']['uuid'], DOMAIN)
+        self.assertEqual(e['loginDomainCandidateUuid'], DOMAIN)
+        # Different REST/domain/server SSL settings are never CONTROL TLS proof.
+        self.assertFalse(e['localDomain']['sslUse'])
+        self.assertTrue(e['routing']['server']['useSSL'])
+        self.assertFalse(e['liveControlValidated'])
+        self.assertFalse(self.last_local_domain['currentPtzReceived'])
+        for field in ['serverDomainMatchesLocal', 'currentDomainMatchesLocal', 'componentDomainMatchesLocal', 'serverVersionMatchesLocal']:
+            self.assertTrue(e[field])
+        for identifier in [DOMAIN, CURRENT_DOMAIN, SERVER, COMPONENT, CAMERA]:
+            self.assertNotIn(identifier, json.dumps(report) + result.stdout)
+
+    def test_local_domain_interactive_opt_in(self):
+        result, report, _, _ = self.run_case('local-domain', interactive_connection_target=CAMERA, interactive_local_domain=True)
+        self.assertEqual(result.returncode, 0)
+        self.assertTrue(report['configuredLocalRoutingConsistent'])
+
+    def test_local_domain_not_requested_by_default(self):
+        result, report, _, seen = self.run_case('local-domain', connection_target=CAMERA)
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(report['localDomainRequested'])
+        self.assertIsNone(report['localDomainRowCount'])
+        self.assertIsNone(report['configuredLocalRoutingConsistent'])
+        self.assertIsNone(self.last_local_domain)
+        self.assertNotIn(('GET', '/V1/Domain?type=local'), seen)
+
+    def test_local_domain_requires_explicit_unique_camera_before_request(self):
+        result, report, _, seen = self.run_case('local-domain', local_domain=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(report['error'], 'CONNECTION_SELECTION_REQUIRED')
+        self.assertIsNone(self.last_local_domain)
+        self.assertNotIn(('GET', '/V1/Domain?type=local'), seen)
+        self.assertEqual(report['logout'], 'ok')
+
+    def test_local_domain_forbidden_with_status_only(self):
+        result, report, _, seen = self.run_case(local_domain=True, status_only=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(report['error'], 'LOCAL_DOMAIN_REQUIRES_INVENTORY')
+        self.assertEqual(seen, [])
+
+    def test_local_domain_mismatch_never_becomes_login_domain(self):
+        result, report, _, _ = self.run_case('local-domain-mismatch', connection_target=CAMERA, local_domain=True)
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(report['configuredLocalRoutingConsistent'])
+        e = self.last_local_domain['evidence']
+        self.assertFalse(e['serverDomainMatchesLocal'])
+        self.assertIsNone(e['loginDomainCandidateUuid'])
+        self.assertEqual(e['localDomain']['uuid'], CURRENT_DOMAIN)
+        self.assertEqual(e['routing']['server']['domainUuid'], DOMAIN)
+
+    def test_local_domain_version_mismatch_preserved_without_guessing(self):
+        result, report, _, _ = self.run_case('local-domain-version-mismatch', connection_target=CAMERA, local_domain=True)
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(report['configuredLocalRoutingConsistent'])
+        self.assertFalse(self.last_local_domain['evidence']['serverVersionMatchesLocal'])
+        self.assertIsNone(self.last_local_domain['evidence']['loginDomainCandidateUuid'])
+
+    def test_local_domain_missing_fields_remain_unknown(self):
+        result, report, _, _ = self.run_case('local-domain-missing', connection_target=CAMERA, local_domain=True)
+        self.assertEqual(result.returncode, 0)
+        self.assertIsNone(report['configuredLocalRoutingConsistent'])
+        self.assertIsNone(self.last_local_domain['evidence']['localDomain']['uuid'])
+        self.assertIsNone(self.last_local_domain['evidence']['loginDomainCandidateUuid'])
+
+    def test_local_domain_invalid_fields_removed_and_reported(self):
+        result, report, _, _ = self.run_case('local-domain-invalid', connection_target=CAMERA, local_domain=True)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(report['localDomainIssueCount'], 3)
+        self.assertIsNone(report['configuredLocalRoutingConsistent'])
+        self.assertIsNone(self.last_local_domain['evidence']['localDomain']['uuid'])
+
+    def test_local_domain_zero_uuid_not_used_for_authentication(self):
+        result, report, _, _ = self.run_case('local-domain-zero', connection_target=CAMERA, local_domain=True)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(report['localDomainIssueCount'], 1)
+        self.assertIsNone(self.last_local_domain['evidence']['loginDomainCandidateUuid'])
+
+    def test_local_domain_non_gateway_never_uses_component_uuid(self):
+        result, report, _, _ = self.run_case('local-domain-non-gateway', connection_target=CAMERA, local_domain=True)
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(report['configuredLocalRoutingConsistent'])
+        self.assertIsNone(self.last_local_domain['evidence']['loginDomainCandidateUuid'])
+
+    def test_local_domain_missing_component_reference_not_inferred(self):
+        result, report, _, _ = self.run_case('local-domain-missing-reference', connection_target=CAMERA, local_domain=True)
+        self.assertEqual(result.returncode, 0)
+        self.assertIsNone(report['configuredLocalRoutingConsistent'])
+        self.assertIsNone(self.last_local_domain['evidence']['loginDomainCandidateUuid'])
+
+    def test_local_domain_empty_or_multiple_rows_not_automatically_selected(self):
+        for mode, count in [('local-domain-empty', 0), ('local-domain-multiple', 2)]:
+            with self.subTest(mode=mode):
+                result, report, preview, _ = self.run_case(mode, connection_target=CAMERA, local_domain=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(report['error'], 'LOCAL_DOMAIN_SELECTION_AMBIGUOUS')
+                self.assertEqual(report['localDomainRowCount'], count)
+                self.assertIsNotNone(preview)
+                self.assertIsNone(self.last_local_domain)
+                self.assertEqual(report['logout'], 'ok')
+
+    def test_local_domain_invalid_shape_or_row_stops_and_logs_out(self):
+        for mode, error in [('local-domain-shape', 'ARRAY_RESPONSE_REQUIRED'), ('local-domain-row', 'LOCAL_DOMAIN_ROW_INVALID')]:
+            with self.subTest(mode=mode):
+                result, report, _, _ = self.run_case(mode, connection_target=CAMERA, local_domain=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(report['error'], error)
+                self.assertIsNone(self.last_local_domain)
+                self.assertEqual(report['logout'], 'ok')
+
+    def test_local_domain_auth_failure_or_redirect_has_no_retry_and_logs_out(self):
+        for mode, code in [('local-domain-denied', 403), ('local-domain-redirect', 302)]:
+            with self.subTest(mode=mode):
+                result, report, _, seen = self.run_case(mode, connection_target=CAMERA, local_domain=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(report['error'], f'HTTP_{code}')
+                self.assertEqual(seen.count(('GET', '/V1/Domain?type=local')), 1)
+                self.assertIsNone(self.last_local_domain)
+                self.assertEqual(report['logout'], 'ok')
 
 
 if __name__ == '__main__':

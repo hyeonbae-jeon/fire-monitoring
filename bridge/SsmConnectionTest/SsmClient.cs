@@ -15,7 +15,7 @@ public sealed record CameraMetadata(string uuid, string name, string? entityCapa
 public sealed record RequestResult(string stage, int httpStatus);
 public sealed class DiagnosticReport
 {
-    public string toolVersion { get; } = "4";
+    public string toolVersion { get; } = "5";
     public DateTimeOffset capturedAt { get; set; } = DateTimeOffset.UtcNow;
     public string result { get; set; } = "not-started";
     public string? serverStatus { get; set; }
@@ -37,6 +37,10 @@ public sealed class DiagnosticReport
     public int controlRoutingIssueCount { get; set; }
     public bool? controlSecretKeyPresent { get; set; }
     public bool? loginUserUuidPresent { get; set; }
+    public bool localDomainRequested { get; set; }
+    public int? localDomainRowCount { get; set; }
+    public int localDomainIssueCount { get; set; }
+    public bool? configuredLocalRoutingConsistent { get; set; }
     public bool complete { get; set; } = false;
     public List<RequestResult> requests { get; } = [];
     public string? error { get; set; }
@@ -46,7 +50,7 @@ public sealed class DiagnosticReport
 public sealed class DiagnosticException(string code) : Exception(code);
 
 // Independent implementation of the statically verified SSM 2.21 REST contract.
-// Only status/inventory GET, a single normal login POST, and own-session logout DELETE.
+// Only status/inventory/opt-in local Domain GET, one normal login and own logout.
 public sealed class SsmClient : IDisposable
 {
     private readonly Uri origin;
@@ -140,7 +144,7 @@ public sealed class SsmClient : IDisposable
     {
         if (path == "/V1/Session") return method == HttpMethod.Post || method == HttpMethod.Delete;
         if (method != HttpMethod.Get) return false;
-        if (path == "/V1/report/status" || path == "/v3/servers?type=all") return true;
+        if (path == "/V1/report/status" || path == "/v3/servers?type=all" || path == "/V1/Domain?type=local") return true;
         var pieces = path.Split('/');
         if (pieces.Length != 5 || pieces[1] != "v3" || !Guid.TryParseExact(pieces[3], "D", out _)) return false;
         if (pieces[2] == "servers" && pieces[4] == "components") return true;
@@ -389,6 +393,22 @@ public sealed class SsmClient : IDisposable
         report.result = "inventory-preview-ok";
         // The visible account/server scope is not proof of the entire installed inventory.
         return cameras.Values.OrderBy(c => c.uuid, StringComparer.Ordinal).ToList();
+    }
+
+    public async Task<LocalDomainRoutingEvidence> LocalDomain()
+    {
+        if (SelectedConnection is not { } selected) throw new DiagnosticException("CONNECTION_SELECTION_REQUIRED");
+        if (report.localDomainRequested) throw new DiagnosticException("LOCAL_DOMAIN_ALREADY_ATTEMPTED");
+        report.localDomainRequested = true;
+        // Exact GET_DOMAIN route from the provided WebServiceStub. No DDNS,
+        // federation credentials, extra hosts, CONTROL packets or settings APIs.
+        using var json = await Get("/V1/Domain?type=local", "local-domain");
+        report.localDomainRowCount = json.RootElement.GetArrayLength();
+        if (report.localDomainRowCount != 1) throw new DiagnosticException("LOCAL_DOMAIN_SELECTION_AMBIGUOUS");
+        var evidence = LocalDomainDetails.Read(json.RootElement[0], selected);
+        report.localDomainIssueCount = evidence.localDomain.issues.Length;
+        report.configuredLocalRoutingConsistent = evidence.configuredLocalRoutingConsistent;
+        return evidence;
     }
 
     public async Task Logout()

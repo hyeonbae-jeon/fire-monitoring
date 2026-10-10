@@ -137,7 +137,8 @@
 - [x] 회사 PC v3에서 선택 한 대의 연결 정보·동일 UUID 대조; 카메라 HTTP/HTTPS 포트 화면 일치 및 component TCP 4510 확인
 - [x] 회사 PC TCP 결과 대조: 카메라 HTTP 80=true/HTTPS 443=false, component TCP 4510=true (신원·인증·PTZ와 구분)
 - [x] 등록 HTTP origin의 사용자 화면에서 Hanwha Vision WebViewer 제목 및 브라우저 인증 요구 관측
-- [ ] 로그인 전 WWW-Authenticate 방식·장비 계정 보유 여부 및 모델/MAC 등 고유 장비 매핑 확인
+- [x] 사용자 WWW-Authenticate=Digest 관측 및 장비 계정 모름 반영
+- [ ] 모델/MAC 등 고유 장비 매핑 및 직접 조회에 필요한 장비 계정 확보
 - [ ] 카메라 443 실패 원인 조사 및 CONTROL 인증/TLS 별도 검증
 - [ ] 실제 도달 경로·ONVIF 서비스 또는 공식 SUNAPI 현재 위치 계약 확인 후 단일 상태 응답 검증
 
@@ -146,5 +147,8 @@
 - [x] ServerStub type=4097 → MediaGateway와 컴포넌트/Recorder 계층 구분; REST service=12 vs CONTROL ClientType=4096 확인
 - [x] 같은 목록 GET의 한 대 도메인/부모/타입 관계 및 로그인 키/UID 가용성만 기록하는 진단 v4 구현
 - [x] 합성 SSM 시험 36개 및 인증서 검사 4개 통과; 관계 불일치/누락·비밀 값 제외·추가 요청 없음 확인
-- [ ] 회사 PC에서 v4의 실제 MediaGateway/도메인/참조 관계 대조 (장비 계정 불필요)
+- [x] 회사 PC v4: 146대/선택 9대 유지, MediaGateway·컴포넌트 참조/도메인 일치 및 로그인 키/UID 존재 확인
+- [x] GET_DOMAIN→DEFAULT_MGMT_UID 갱신 정적 확인 및 로컬 도메인 선택 GET을 진단 v5에 추가
+- [x] v5 합성 HTTPS 51개 및 인증서 검사 4개 통과; Windows 패키지 생성·무결성/개인정보 제외 검증
+- [ ] 회사 PC에서 v5 현재 로컬 도메인·버전·등록 관계 대조
 - [ ] 확인된 관계로 정상 CONTROL 인증/TLS 및 한 대 읽기 전용 현재 위치 수신 검증

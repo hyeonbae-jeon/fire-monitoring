@@ -104,8 +104,9 @@ SSM networkInfo의 정적 필드 매핑과 v3의 선택 한 대 현장 등록값
 후속 TCP 시험에서는 HTTP 80과 component 4510 연결 성공, 카메라 HTTPS 443 연결 실패를 관측했습니다.
 실제 장비 신원·HTTP 서비스·CONTROL TLS/인증, 443 연결 실패 원인은 미확인입니다.
 후속 사용자 화면에서 Hanwha Vision WebViewer와 브라우저 인증 요구를 관측했습니다.
-HTTP 웹 화면 관측은 확보됐으나 모델/MAC/시리얼, 해당 인증 요청의 상태·WWW-Authenticate 방식,
-장비 계정 보유 여부와 고유 장비 매핑은 미확인입니다. 팝업만으로 Basic/Digest를 구분하지 않습니다.
+HTTP 웹 화면과 후속 사용자 답변의 WWW-Authenticate=Digest 관측을 확보했습니다.
+모델/MAC/시리얼, 해당 요청의 상태/경로·Digest 알고리즘/qop와 고유 장비 매핑은 미확인입니다.
+사용자는 장비 계정을 모른다고 답했으며 팝업 외형으로 인증 방식을 추정한 것은 아닙니다.
 카메라와 SSM CONTROL의 포트/계정을 구분합니다.
 ONVIF 서비스 URL/지원, 공식 SUNAPI 현재 위치 계약 및 독립 CONTROL 현재 위치 수신이 남아 있습니다.
 사용자는 주소창이 없다고 확인했으므로 주소창 재확인을 선행 조건으로 두지 않습니다.
@@ -118,5 +119,7 @@ ONVIF 서비스 URL/지원, 공식 SUNAPI 현재 위치 계약 및 독립 CONTRO
 일반 CONTROL 인증이 SSM User/ServerSessionID를 사용하는 정적 경로를 확인했으나 운영 CONTROL의
 CLIENT_SDK 허용·권한·TLS/현재 위치 수신은 미검증입니다. REST service=12와 CONTROL ClientType=4096을 구분합니다.
 ServerStub → MediaGateway(type=4097)와 Recorder/component는 별도 계층입니다.
-v3에는 타입/도메인/명시적 부모 관계가 없어 현재 componentUuid를 CONTROL 대상으로 확정할 수 없습니다.
-같은 GET의 이 필드를 추출하는 [진단 v4](ssm-connection-test.md)로 현장 관계를 대조한 뒤 진행합니다.
+후속 v4에서 type/도메인/명시적 참조 일치 및 로그인 secretKey/UID 존재를 확인했습니다.
+현재 로컬 도메인 응답은 아직 없으며 일반/연합 로그인 분기를 등록 서버 필드만으로 확정하지 않습니다.
+원본 GET_DOMAIN→DEFAULT_MGMT_UID 갱신을 확인하여 [진단 v5](ssm-connection-test.md)에 선택 GET을 추가했습니다.
+로컬 도메인 대조 후 CONTROL의 실제 인증 challenge/TLS/CLIENT_SDK 허용과 현재 PTZ 수신 검증이 남습니다.

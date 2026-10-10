@@ -24,8 +24,9 @@
 
 LDAP·연합 계정 분기도 존재하므로 일반 계정 분기를 모든 경우에 적용하지 않습니다.
 추가 분석은 패킷/인증 단서의 확인이며 운영 CONTROL 인증·구독 성공 검증이 아닙니다.
-장비/MediaGateway 연결 주소·포트·인증서와 선택 UUID 매핑, 이 클라이언트 유형의 허용 여부가
-아직 현장 미확인입니다. 추측한 포트로 인증/구독하지 않고, 전체 UI/SystemService를 초기화하는 방법도 사용하지 않습니다.
+이후 v3/v4에서 선택 UUID의 등록 주소·포트·MediaGateway 관계를 확인했습니다. 실제 CONTROL
+인증서/인증·이 클라이언트 유형 허용 여부는 미확인입니다. 추측한 포트로 인증/구독하지 않고,
+전체 UI/SystemService를 초기화하는 방법도 사용하지 않습니다.
 
 ## 대상 카메라 설정 사진 확인 (2026-10-10)
 
@@ -81,7 +82,8 @@ IP/포트·서비스 정보이며, 설정 변경·저장·자동 재등록·PTZ 
 후속 [TCP 확인](camera-route-check.md)에서 카메라 HTTP 80과 component TCP 4510은 연결됐고,
 카메라 HTTPS 443은 연결되지 않았습니다. 인증·SOAP·SUNAPI·CONTROL 명령을 시험한 결과는 아닙니다.
 후속 사용자 화면에서 Hanwha Vision WebViewer 제목과 브라우저 인증 창을 관측했습니다.
-모델/고유 식별정보와 Basic/Digest는 사진으로 확인되지 않아 [로그인 전 인증 응답 확인](camera-web-auth-check.md)을 준비했습니다.
+모델/고유 식별정보와 인증 방식은 사진으로 확인되지 않아 [로그인 전 인증 응답 확인](camera-web-auth-check.md)을 준비했습니다.
+후속 사용자 답변에서 WWW-Authenticate=Digest 제공을 관측했습니다. 알고리즘/qop와 계정·장비 매핑은 미확인입니다.
 후속 장비 계정 미확인에 따른 현재 우선순위는 아래 SSM CONTROL 조사입니다.
 장비 매핑과 공식 상태 조회 계약은 계속 검증 대상으로 남깁니다.
 CONTROL 경로는 인증/TLS/현재 위치 수신의 추가 검증 대상으로 유지합니다. 443 실패 원인은 미확인입니다.
@@ -112,14 +114,29 @@ CONTROL 경로는 인증/TLS/현재 위치 수신의 추가 검증 대상으로 
 CONTROL 로그인·TLS 전환·위치 구독을 아직 보내지 않습니다. type/참조가 없거나 불일치하면 UNKNOWN 또는
 false로 기록하고 추측으로 부모 UUID·도메인·포트를 보완하지 않습니다. 카메라 장비 계정은 입력할 필요가 없습니다.
 
-v4 현장 결과로 MediaGateway/도메인 관계를 확인한 뒤 정상 CONTROL 인증·TLS 및 한 대의 위치 수신을
-별도 검증해야 합니다. 이 조사와 4510 TCP 성공을 현재 PTZ 조회 성공으로 처리하지 않습니다.
+후속 v4 현장 결과에서 카메라→컴포넌트→서버 참조가 일치하고 MediaGateway/Recorder 타입,
+등록 도메인과 로그인 키/UID 존재를 확인했습니다. 146대 및 선택 9대 이름/UUID/PtzCap는 그대로입니다.
+현재 로컬 Domain 및 CONTROL 인증·TLS·현재 위치 응답은 아직 받지 않았습니다.
+
+원본에서 추가로 확인한 경로는 다음과 같습니다.
+
+- WebServiceStub.GET_DOMAIN: GET **/V1/Domain?type=local**, 응답은 DomainStubModel 배열입니다.
+- ObjConverter.converterManagementServer: DomainStubModel.guid/version을 Domain.Uuid/version으로 변환합니다.
+- DataManager.GET_ALLOBJECT_INFO_V2 및 다른 목록 경로: **DEF_VALUE.DEFAULT_MGMT_UID를 읽어 온 Domain.Uuid로 갱신**합니다.
+- ControlSession.OnConnected: Federation은 로그인 DomainUuid와 갱신된 DEFAULT_MGMT_UID를 비교합니다.
+  따라서 클래스의 초기 기본 GUID나 등록 서버 domainGuid만으로 분기를 정하지 않습니다.
+
+[진단 v5](ssm-connection-test.md)에 같은 HTTPS 로그인 세션의 로컬 Domain GET 한 번을 선택 실행으로 추가했습니다.
+로컬 UUID/버전과 선택 한 대의 등록 관계를 별도 대조하며 누락/불일치를 보완하지 않습니다.
+연합 자격 증명 조회나 전체 vendor 초기화는 포함하지 않습니다. 실제 CONTROL 인증 challenge/인증서와
+필수 필드·계정 유형/이벤트 수신 계약 검증은 남습니다. 설정 sslUse/useSSL이나 후보 일치를
+TLS 협상/현재 PTZ 성공으로 처리하지 않습니다.
 
 ## 현장 검증 순서
 
-1. 진단 v4에서 기존 SSM 계정으로 정상 로그인하고 한 대를 선택해 MediaGateway/도메인/명시적 참조를 대조합니다.
-   카메라 계정·설정 변경은 필요하지 않으며 새 CONTROL 인증이나 PTZ 요청은 보내지 않습니다.
-2. 실제 관계가 확인되면 정상 CONTROL 인증·TLS 전환 및 한 대의 읽기 전용 위치 구독 도구를 별도로 구현·검증합니다.
+1. v4의 등록 참조 대조는 완료됐습니다. v5에서 기존 SSM 계정으로 한 대를 선택한 뒤 로컬 도메인 **Y**를 입력합니다.
+   카메라 계정·설정 변경은 필요하지 않으며 별도 CONTROL 인증이나 PTZ 요청은 보내지 않습니다.
+2. 로컬 도메인 응답까지 실제 관계가 확인되면 정상 CONTROL 인증·TLS 전환 및 한 대의 읽기 전용 위치 구독을 별도로 구현·검증합니다.
    TLS 응답/인증서를 확인하고 지정한 대상만 허용합니다. 타입/권한/인증 실패 시 임의 보완·강제 접속하지 않습니다.
 3. 대응하는 SSM UUID와 영상의 일치를 확인합니다. 정규화 좌표/각도 단위와 부호, 북쪽 원점 및
    Zoom/FOV는 별도 자료로 확인합니다. 수신값만으로 지리적 방향을 확정하지 않습니다.

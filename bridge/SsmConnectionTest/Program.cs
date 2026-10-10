@@ -13,7 +13,7 @@ string outputRoot = Path.Combine(AppContext.BaseDirectory, "diagnostics");
 try
 {
     string? endpoint = null, pin = null, connectionTarget = null;
-    bool statusOnly = false;
+    bool statusOnly = false, localDomain = false;
     for (int i = 0; i < args.Length; i++)
     {
         switch (args[i])
@@ -23,9 +23,11 @@ try
             case "--output": outputRoot = Path.GetFullPath(args[++i]); break;
             case "--status-only": statusOnly = true; break;
             case "--connection-camera": connectionTarget = args[++i].Trim(); break;
+            case "--local-domain": localDomain = true; break;
             default: throw new DiagnosticException("ARGUMENT_INVALID");
         }
     }
+    if (localDomain && statusOnly) throw new DiagnosticException("LOCAL_DOMAIN_REQUIRES_INVENTORY");
     Console.WriteLine("SSM 읽기 전용 연결 테스트 — 카메라 이동/설정/영상 요청 없음");
     Console.WriteLine("최초 인증서의 서버 진위는 미검증입니다. 입력한 지문과 정확히 일치할 때만 연결합니다.");
     endpoint ??= Prompt("HTTPS 서버 주소 (https://주소:SSL포트): ");
@@ -66,7 +68,19 @@ try
             Console.WriteLine("선택한 한 대의 등록 주소·포트를 camera-connection.private.json에 저장했습니다. 주소는 화면/공유 보고서에 표시하지 않습니다.");
             Console.WriteLine("카메라 자체 포트와 외부 전달 포트는 다를 수 있습니다. 이 값으로 자동 접속하거나 조회 경로를 만들지 않습니다.");
             Console.WriteLine("v4: 도메인/부모/서버/컴포넌트 관계도 같은 응답에서 기록했습니다. CONTROL 연결이나 PTZ 요청은 아직 보내지 않습니다.");
+            if (localDomain || Prompt("v5: 현재 로컬 도메인과 선택 카메라의 관계를 읽으려면 Y 입력 (Enter: 생략): ").Equals("Y", StringComparison.OrdinalIgnoreCase))
+            {
+                var evidence = await client.LocalDomain();
+                await File.WriteAllTextAsync(Path.Combine(folder, "camera-control-routing.private.json"), JsonSerializer.Serialize(new {
+                    schemaVersion = 1, capturedAt = DateTimeOffset.UtcNow,
+                    provenance = "SSM configured local Domain and selected routing; live CONTROL authentication and PTZ NOT VERIFIED",
+                    liveControlValidated = false, currentPtzReceived = false, evidence
+                }, JsonOptions()));
+                Console.WriteLine("현재 로컬 도메인 관계를 camera-control-routing.private.json에 저장했습니다. CONTROL 로그인·PTZ 요청은 보내지 않았습니다.");
+                Console.WriteLine("등록 관계 대조: " + (evidence.configuredLocalRoutingConsistent switch { true => "일치", false => "불일치", null => "미확인" }));
+            }
         }
+        else if (localDomain) throw new DiagnosticException("CONNECTION_SELECTION_REQUIRED");
         Console.WriteLine($"서버 {report.serverCount} / 컴포넌트 {report.componentCount} / 카메라 {report.cameraCount} / PtzCap 미확인 {report.unknownPtzCapCount}");
         Console.WriteLine($"저장 heading 값 있음 {report.configuredHeadingCount} / 좌표 쌍 있음 {report.configuredCoordinateCount} / XMap 구독 조건 후보 {report.xMapSubscriptionCandidateCount}");
         Console.WriteLine("저장 heading은 현재 Pan 또는 북쪽 보정으로 확정한 값이 아닙니다. 계정 PTZ 권한도 별도 확인이 필요합니다.");
