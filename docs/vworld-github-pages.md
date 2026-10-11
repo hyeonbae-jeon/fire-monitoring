@@ -1,0 +1,48 @@
+# GitHub Secrets로 VWorld 지도 시험 배포
+
+회사 PC 없이 브라우저에서 지도 인터페이스를 시험하기 위한 정적 웹사이트입니다.
+중앙 PTZ Bridge + VWorld 3D라는 최종 구조는 유지합니다. 이 Pages 시험에서는 회사 API를 호출하거나
+CCTV 영상/위치 파일을 업로드하지 않습니다. 초기 임의 시험 지점만 포함합니다.
+입력한 좌표/참조 화면은 해당 브라우저에서 사용하며 설정은 JSON 다운로드로 보관합니다.
+
+## 설정할 항목
+
+1. 저장소 [Settings → Secrets and variables → Actions](https://github.com/hyeonbae-jeon/fire-monitoring/settings/secrets/actions)에서
+   **New repository secret**을 누릅니다. 이름은 `VWORLD_API_KEY`, 값은 VWorld **3D 지도에 사용할 수 있는 브라우저 키**입니다.
+   키를 채팅/소스/좌표 JSON에 넣지 않습니다. 다른 저장소에 저장한 Secrets는 자동 공유되지 않습니다.
+2. VWorld 키 관리 화면에서 실제 시험 주소 `https://hyeonbae-jeon.github.io/fire-monitoring/`를 허용하는지 확인합니다.
+   기존 `bukhansan-weather/`와 호스트는 같지만 경로까지 제한하는지는 확인이 필요합니다.
+   기존 키가 허용하지 않으면 등록 주소를 수정하거나 시험용 키를 발급합니다. 등록 도메인을 요청에 위장하지 않습니다.
+3. [Settings → Pages](https://github.com/hyeonbae-jeon/fire-monitoring/settings/pages)에서 **Source: GitHub Actions**를 선택합니다.
+4. [Actions](https://github.com/hyeonbae-jeon/fire-monitoring/actions)의 **VWorld map preview** 실행을 확인합니다.
+   키가 없으면 배포 전에 `Add repository Actions secret VWORLD_API_KEY` 안내와 함께 실패합니다.
+   키를 추가한 뒤 해당 실행의 **Re-run all jobs**를 누릅니다. 워크플로가 기본 브랜치에 있으면 Run workflow로도 실행할 수 있습니다.
+5. 배포 성공 뒤 `https://hyeonbae-jeon.github.io/fire-monitoring/`에서 지도 초기화와 북한산 지형이 실제로 보이는지 확인합니다.
+
+기능 브랜치 배포가 `github-pages` 환경 규칙으로 거부되면 Settings → Environments → github-pages의
+Deployment branches에서 `feat/vworld-monitoring-prototype`을 허용하거나, PR 검토/병합 뒤 main에서 배포합니다.
+기본 브랜치 병합은 자동으로 수행하지 않습니다.
+
+## 키가 사용되는 방식
+
+Actions는 `VWORLD_API_KEY`를 빌드 단계의 `VITE_VWORLD_API_KEY`로 전달합니다.
+키를 소스에 직접 작성하지 않으며, 지도 전용 모드는 `VITE_MAP_ONLY=true`, 경로는 `/fire-monitoring/`으로 빌드합니다.
+**브라우저 SDK용 키는 완성된 웹 JavaScript와 지도 요청에서 확인할 수 있습니다.** GitHub Secrets는 빌드 전 값을 관리하는 장소이며,
+배포 후 키를 브라우저에서 숨기지는 못합니다. VWorld의 등록 사이트 제한을 적용합니다.
+SSM 계정/비밀번호, Bridge 저장 키, 영상 조회 키는 이 빌드 변수에 넣지 않습니다.
+
+기존 Bridge 배포에서는 `VWORLD_API_KEY` 환경 변수를 설정하면 `/api/map-client-settings`를 통해
+브라우저용 지도 키만 전달합니다. 지도 탭을 열면 자동 연결하며, **지도 연결**에서 직접 키 입력 또는 재연결도 가능합니다.
+Windows 루프백 주소와 Pages 주소가 모두 허용되는지는 각각 확인해야 합니다.
+
+## 지도 안의 조작
+
+- 왼쪽 **카메라·설정**: 위치 선택/입력, 로컬 JSON 불러오기/다운로드, Bridge 모드의 중앙 저장.
+- 오른쪽 위 **참조 영상**: 로컬 CCTV 이미지, 촬영 시각과 기준점 이름.
+- 오른쪽 아래 **가상 시점 조정**: 방위각/기울기/수평 화각/높이. **슬라이더 자동 적용**은 250ms 뒤 지도 시점에 반영합니다.
+- 실제 지도 마커를 눌러 위치를 선택합니다. 카메라를 바꿔도 지도 뷰어는 유지됩니다.
+- 사진 없이 가상 지도 시점을 시험할 수 있습니다. 추정값 저장에는 실제 설치 위치와 기존의 촬영 시각/기준점 근거가 필요합니다.
+- **일반 지도 보기**로 지도 마우스 조작을 다시 켭니다. 이 조작은 CCTV 제어/실측 PTZ 수신이 아닙니다.
+
+SDK 초기화 메시지는 실제 지형 타일 성공과 구분합니다. 키 인증/실제 지형 표출은 운영 키와 등록 주소를 갖춘 배포에서 확인해야 합니다.
+현재 자동 지형 정합, 실시간 방향 추적 및 정확도 검증은 구현 완료 항목이 아닙니다.

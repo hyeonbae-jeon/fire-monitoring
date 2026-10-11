@@ -1,8 +1,9 @@
-import {useEffect,useRef,useState} from 'react';
+import {useEffect,useRef,useState,type CSSProperties} from 'react';
 import template from './vworld-frame.html?raw';
 import {sample,parseConfiguration,sector,type MapConfiguration,type Position} from './map-model';
 import {TerrainCalibration,type PreviewGround,type PreviewRequest} from './TerrainCalibration';
 import type {ManualOrientation} from './calibration-model';
+import './MapWorkspace.css';
 
 type MapSnapshot={revision:string;configuration:MapConfiguration};
 async function requestMap(options?:RequestInit):Promise<MapSnapshot>{
@@ -12,9 +13,11 @@ async function requestMap(options?:RequestInit):Promise<MapSnapshot>{
  if(typeof body?.revision!=='string')throw new Error('지도 설정 응답을 확인하세요.');
  return {revision:body.revision,configuration:parseConfiguration(JSON.stringify(body.configuration))};
 }
-export function MonitoringMap(){
+export function MonitoringMap({active=true,standalone=false}:{active?:boolean;standalone?:boolean}){
  const [configuration,setConfiguration]=useState<MapConfiguration>(sample),[selected,setSelected]=useState(sample.positions[0].id);
  const [revision,setRevision]=useState<string|null>(null),[dirty,setDirty]=useState(false),[writeKey,setWriteKey]=useState(''),[saving,setSaving]=useState(false),[storageStatus,setStorageStatus]=useState('중앙 지도 설정을 읽는 중…');
+ const [deploymentKey,setDeploymentKey]=useState(import.meta.env.VITE_VWORLD_API_KEY?.trim()??''),[settingsLoaded,setSettingsLoaded]=useState(standalone),[tools,setTools]=useState('cameras');
+ const autoConnected=useRef(false);
  const [name,setName]=useState(''),[latitude,setLatitude]=useState(''),[longitude,setLongitude]=useState(''),[uuid,setUuid]=useState('');
  const [key,setKey]=useState(''),[frame,setFrame]=useState<{html:string;session:string}|null>(null),[ready,setReady]=useState(false);
  const [status,setStatus]=useState('좌표 배치도 · VWorld 미연결'),[error,setError]=useState('');
@@ -22,6 +25,7 @@ export function MonitoringMap(){
  const [aspect,setAspect]=useState<number|null>(null),[previewEpoch,setPreviewEpoch]=useState(0),[calibrating,setCalibrating]=useState(false);
  const edits=useRef(0),iframe=useRef<HTMLIFrameElement>(null),pending=useRef(new Map<string,{resolve:(ground:PreviewGround)=>void;reject:(error:Error)=>void;timer:number}>());
  const positions=configuration.positions,current=positions.find(p=>p.id===selected);
+ const positionsRef=useRef(positions);positionsRef.current=positions;
  const estimate=current?.orientation?.status==='estimate'?current.orientation:null;
  const polygon=calibrating?null:simulation&&current?sector(current,heading,fov,range):showEstimate&&estimate&&current?sector(current,estimate.headingDeg,estimate.horizontalFovDeg,range):null;
  const xmin=Math.min(...positions.map(p=>p.lon),126.96)-.005,xmax=Math.max(...positions.map(p=>p.lon),126.99)+.005;
@@ -37,15 +41,19 @@ export function MonitoringMap(){
   }catch(e){setRevision(null);setStorageStatus('중앙 저장 사용 불가 · JSON 파일로 보관할 수 있습니다.');setError((e as Error).message);}
   finally{setSaving(false);}
  }
- useEffect(()=>{void loadCentral();},[]);
+ useEffect(()=>{if(!standalone)void loadCentral();else setStorageStatus('브라우저 지도 시험 · JSON으로 설정을 보관하세요.');},[]);
+ useEffect(()=>{if(standalone||!active||settingsLoaded)return;let cancelled=false;fetch('/api/map-client-settings').then(r=>r.ok?r.json():null).then(s=>{if(!cancelled&&typeof s?.vworldApiKey==='string')setDeploymentKey(s.vworldApiKey.trim());}).catch(()=>{}).finally(()=>{if(!cancelled)setSettingsLoaded(true);});return()=>{cancelled=true;};},[active,standalone,settingsLoaded]);
+ useEffect(()=>{if(active&&deploymentKey&&!autoConnected.current){autoConnected.current=true;connect(deploymentKey);}},[active,deploymentKey]);
  function cancelPending(message:string){pending.current.forEach(p=>{clearTimeout(p.timer);p.reject(new Error(message));});pending.current.clear();}
  function post(type:string,data:object={}){if(frame)iframe.current?.contentWindow?.postMessage({scope:'vworld-prototype',session:frame.session,type,...data},location.origin);}
  function exitPreview(){cancelPending('가상 시점 요청이 취소됐습니다.');setPreviewEpoch(v=>v+1);setCalibrating(false);post('end-calibration');post('draw',{positions,selected,sector:null,flyTo:true});}
+ function selectPosition(id:string){exitPreview();setSelected(id);post('draw',{positions:positionsRef.current,selected:id,sector:null,flyTo:true});}
  useEffect(()=>{
   if(!frame)return;let completed=false;
   const timer=window.setTimeout(()=>{if(!completed){setStatus('연결 시간 초과');setError('30초 안에 뷰어가 준비되지 않았습니다. 키 등록 주소와 SDK·지형 서버 접속을 확인하세요.');}},30000);
   const listener=(e:MessageEvent)=>{
    if(e.source!==iframe.current?.contentWindow||e.origin!==location.origin||e.data?.scope!=='vworld-prototype'||e.data.session!==frame.session)return;
+   if(e.data.type==='select-camera'&&positionsRef.current.some(p=>p.id===e.data.id))selectPosition(e.data.id);
    if(e.data.type==='ready'){completed=true;clearTimeout(timer);setReady(true);setStatus('VWorld 3D 뷰어 초기화 완료 · 지형 표출은 화면에서 확인하세요.');}
    if(e.data.type==='error'){completed=true;clearTimeout(timer);setReady(false);setStatus('VWorld 연결 실패');setError(String(e.data.message));cancelPending('VWorld 연결 실패');}
    if(e.data.type==='calibration-ready'||e.data.type==='calibration-error'){
@@ -66,8 +74,9 @@ export function MonitoringMap(){
    pending.current.set(requestId,{resolve,reject,timer});post('calibrate',{requestId,...request});
   });
  }
- function connect(){
-  const session=crypto.randomUUID(),url='https://map.vworld.kr/js/webglMapInit.js.do?version=3.0&apiKey='+encodeURIComponent(key.trim());
+ function connect(apiKey=key){
+  autoConnected.current=true;
+  const session=crypto.randomUUID(),url='https://map.vworld.kr/js/webglMapInit.js.do?version=3.0&apiKey='+encodeURIComponent(apiKey.trim());
   exitPreview();setReady(false);setError('');setStatus('VWorld SDK 연결 중…');
   setFrame({session,html:template.replace('__SDK_URL__',url.replaceAll('&','&amp;').replaceAll('"','&quot;')).replace('__SESSION__',session).replace('__APP_ORIGIN__',JSON.stringify(location.origin))});setKey('');
  }
@@ -98,23 +107,33 @@ export function MonitoringMap(){
    if(ticket===edits.current){setConfiguration(result.configuration);setDirty(false);}setRevision(result.revision);setWriteKey('');setStorageStatus(ticket===edits.current?'중앙 지도 설정 저장 완료 · 다른 브라우저에서 다시 불러올 수 있습니다.':'이전 설정 저장 완료 · 이후 변경은 추가 저장이 필요합니다.');
   }catch(e){setError((e as Error).message);}finally{setSaving(false);}
  }
- const mapPanel=<div className="map-panel" style={aspect?{height:'auto',aspectRatio:aspect}:undefined}>{frame?<iframe title="VWorld 3D 지도" ref={iframe} srcDoc={frame.html} sandbox="allow-scripts allow-same-origin"/>:<><p className="schematic-label">좌표 배치도 · 실제 지형 아님 · 북쪽 ↑</p><svg viewBox="0 0 800 480" role="img" aria-label="북한산 시험 카메라 좌표 배치도">{polygon&&<polygon points={polygon.map(([lon,lat])=>xy(lon,lat).join(',')).join(' ')} fill="#f5a623" fillOpacity=".35" stroke="#f5a623"/>}{positions.map(p=>{const[x,y]=xy(p.lon,p.lat);return <g key={p.id} onClick={()=>{exitPreview();setSelected(p.id);}}><circle cx={x} cy={y} r={p.id===selected?10:6} fill="#55deed"/><text x={x+14} y={y+5} fill="white" fontSize="16">{p.name}</text></g>;})}</svg></>}</div>;
- return <main className="monitoring">
-  <section className="notice"><strong>영상·지형 보정 · 현재 PTZ 수신은 보류</strong><p>설치 위치에서 VWorld 가상 시점을 참조 화면에 맞춥니다. 저장값은 영상·지형 추정이며 현재 실측 방향·촬영 영역은 아직 확인하지 않았습니다. 초기 3개 지점은 임의 시험 좌표입니다.</p><p>키는 메모리에서만 사용하며 VWorld SDK 요청에 전달됩니다. 실제 접속 주소가 키 등록 범위에 포함돼야 합니다.</p></section>
-  <div className="toolbar"><label>VWorld 3D 키<input type="password" autoComplete="off" value={key} onChange={e=>setKey(e.target.value)}/></label><button onClick={connect} disabled={!key.trim()}>VWorld 3D 연결</button><button onClick={()=>{exitPreview();setFrame(null);setReady(false);setStatus('좌표 배치도 · VWorld 미연결');setError('');}}>좌표 배치도로 보기</button></div>
-  <p role="status">{status}</p>{error&&<p role="alert" className="error">{error}</p>}
-  <div className="monitor-grid"><aside><h2>카메라 위치</h2>
-   {positions.map(p=><button className={p.id===selected?'camera active':'camera'} key={p.id} onClick={()=>{exitPreview();setSelected(p.id);}}>{p.name}<small>{p.positionSource==='synthetic'?'시험 좌표':'입력 좌표'} · {p.orientation?.status==='estimate'?'영상·지형 추정':'방향 UNKNOWN'}</small></button>)}
+ const mapPanel=<div className="map-panel" data-reference={aspect?'true':undefined} style={aspect?{height:'auto',aspectRatio:aspect,'--reference-aspect':aspect} as CSSProperties:undefined}>{frame?<iframe title="VWorld 3D 지도" ref={iframe} srcDoc={frame.html} sandbox="allow-scripts allow-same-origin"/>:<><p className="schematic-label">좌표 배치도 · 실제 지형 아님 · 북쪽 ↑</p><svg viewBox="0 0 800 480" role="img" aria-label="북한산 시험 카메라 좌표 배치도">{polygon&&<polygon points={polygon.map(([lon,lat])=>xy(lon,lat).join(',')).join(' ')} fill="#f5a623" fillOpacity=".35" stroke="#f5a623"/>}{positions.map(p=>{const[x,y]=xy(p.lon,p.lat);return <g key={p.id} onClick={()=>selectPosition(p.id)}><circle cx={x} cy={y} r={p.id===selected?10:6} fill="#55deed"/><text x={x+14} y={y+5} fill="white" fontSize="16">{p.name}</text></g>;})}</svg></>}</div>;
+ return <main className="monitoring map-workspace">
+  <div className="map-topbar"><div><strong>VWorld 3D · 산불감시 지도</strong><span role="status">{status}</span></div><div className="map-tool-tabs" aria-label="지도 도구"><button aria-pressed={tools==='cameras'} onClick={()=>setTools(tools==='cameras'?'':'cameras')}>카메라·설정</button><button aria-pressed={tools==='connection'} onClick={()=>setTools(tools==='connection'?'':'connection')}>지도 연결</button></div></div>
+  {error&&<p role="alert" className="error map-error">{error}</p>}
+  <div className="monitor-grid"><aside className="map-floating camera-panel" hidden={tools!=='cameras'}><h2>카메라 위치</h2>
+   {positions.map(p=><button className={p.id===selected?'camera active':'camera'} key={p.id} onClick={()=>selectPosition(p.id)}>{p.name}<small>{p.positionSource==='synthetic'?'시험 좌표':'입력 좌표'} · {p.orientation?.status==='estimate'?'영상·지형 추정':'방향 UNKNOWN'}</small></button>)}
    <button disabled={!current||!ready} onClick={exitPreview}>선택 위치로 지도 이동</button>
    <p>위도 {current?.lat??'—'} / 경도 {current?.lon??'—'}<br/>SSM UUID: {current?.ssmUuid??'미연결'}</p>
    <details><summary>설치 위치 추가</summary><label>카메라 위치 이름<input value={name} onChange={e=>setName(e.target.value)} maxLength={200}/></label><label>설치 위도<input type="number" value={latitude} onChange={e=>setLatitude(e.target.value)}/></label><label>설치 경도<input type="number" value={longitude} onChange={e=>setLongitude(e.target.value)}/></label><label>SSM UUID(선택)<input value={uuid} onChange={e=>setUuid(e.target.value)}/></label><button onClick={addPosition}>설치 위치 추가하기</button><p className="help">처음 실제 위치를 추가하면 초기 시험 좌표를 대체합니다. UUID는 확인된 값만 입력하세요.</p></details>
    <label>위도·경도 JSON 불러오기<input type="file" accept=".json,application/json" onChange={e=>{void importFile(e.target.files?.[0]);e.target.value='';}}/></label><button onClick={download}>좌표 설정 다운로드</button>
    <p className="help">JSON에는 저장한 추정값·기준점 메타데이터가 포함됩니다. 지도 키·참조 이미지·시험 부채꼴 값은 포함하지 않습니다.</p>
-  </aside><div className="terrain-workspace">
-   {current&&<TerrainCalibration key={current.id+':'+current.lat+':'+current.lon} position={current} mapPanel={mapPanel} ready={ready} previewEpoch={previewEpoch} onPreview={preview} onAspect={setAspect} onSave={saveOrientation} onExit={exitPreview}/>}
-   {!current&&mapPanel}
+   <p className="help">초기 지점은 임의 시험 좌표입니다. 지도 마커를 눌러도 위치를 선택할 수 있습니다.</p>
+   <details className="map-storage" open><summary>설정 보관</summary>
+   <p>{storageStatus} {dirty&&'· 저장하지 않은 변경'}</p>
+   {!standalone&&<><label>지도 저장 키<input type="password" autoComplete="off" value={writeKey} onChange={e=>setWriteKey(e.target.value)}/></label><button disabled={saving||!dirty||!writeKey||revision===null} onClick={()=>void saveCentral()}>중앙 지도 설정 저장</button><button disabled={saving} onClick={()=>{if(!dirty||window.confirm('저장하지 않은 지도 설정을 버리고 다시 불러올까요?'))void loadCentral();}}>중앙 지도 설정 다시 불러오기</button></>}
+   </details>
+  <details className="simulation"><summary>시험 방향 표시</summary><label className="inline"><input type="checkbox" checked={showEstimate} disabled={!estimate} onChange={e=>setShowEstimate(e.target.checked)}/>저장 추정 방향 부채꼴 표시</label><label className="inline"><input type="checkbox" checked={simulation} onChange={e=>setSimulation(e.target.checked)}/>시험 방향 부채꼴 표시</label><p>부채꼴은 수평 방향 시각화입니다. 표시 거리는 임의값이며 산에 가리는 구간이나 실제 촬영 범위를 계산하지 않습니다. 가상 시점 보정 중에는 부채꼴을 숨깁니다.</p><div className="simulation-controls">{simulation&&<><label>시험 방위각 {heading}° (북=0°, 동=90°)<input type="range" min="0" max="359" value={heading} onChange={e=>setHeading(Number(e.target.value))}/></label><label>시험 수평 화각 {fov}°<input type="range" min="10" max="120" value={fov} onChange={e=>setFov(Number(e.target.value))}/></label></>}<label>표시 거리 {range}m<input type="range" min="100" max="3000" step="100" value={range} onChange={e=>setRange(Number(e.target.value))}/></label></div></details>
+  </aside>
+  <aside className="map-floating connection-panel" hidden={tools!=='connection'}><h2>지도 연결</h2><label>VWorld 3D 키<input type="password" autoComplete="off" value={key} onChange={e=>setKey(e.target.value)}/></label><button onClick={()=>connect()} disabled={!key.trim()}>VWorld 3D 연결</button>
+   {deploymentKey&&<button onClick={()=>connect(deploymentKey)}>등록된 키로 다시 연결</button>}
+   <button onClick={()=>{exitPreview();setFrame(null);setReady(false);setStatus('좌표 배치도 · VWorld 미연결');setError('');}}>좌표 배치도로 보기</button>
+   <p className="help">{deploymentKey?'배포된 지도 키를 사용합니다.':'등록된 키가 없으면 이 화면에서 직접 입력할 수 있습니다.'} 키는 지도 요청 시 브라우저에 전달됩니다. VWorld에 이 사이트 주소를 등록하세요.</p><p className="help">현재 사이트: {location.origin}{import.meta.env.BASE_URL}</p>
+  </aside>
+  <div className="terrain-workspace">
+   <div className="map-surface">{mapPanel}</div>
+   {current&&<TerrainCalibration key={current.id+':'+current.lat+':'+current.lon} position={current} ready={ready} previewEpoch={previewEpoch} onPreview={preview} onAspect={setAspect} onSave={saveOrientation} onExit={exitPreview}/>}
   </div></div>
-  <section className="save"><p>{storageStatus} {dirty&&'· 저장하지 않은 변경'}</p><label>지도 저장 키<input type="password" autoComplete="off" value={writeKey} onChange={e=>setWriteKey(e.target.value)}/></label><button disabled={saving||!dirty||!writeKey||revision===null} onClick={()=>void saveCentral()}>중앙 지도 설정 저장</button><button disabled={saving} onClick={()=>{if(!dirty||window.confirm('저장하지 않은 지도 설정을 버리고 다시 불러올까요?'))void loadCentral();}}>중앙 지도 설정 다시 불러오기</button><p>Windows 로컬 패키지의 저장 키는 local-demo-only입니다. 중앙 배포에서는 Bridge 저장 키를 사용합니다.</p></section>
-  <section className="notice simulation"><label className="inline"><input type="checkbox" checked={showEstimate} disabled={!estimate} onChange={e=>setShowEstimate(e.target.checked)}/>저장 추정 방향 부채꼴 표시</label><label className="inline"><input type="checkbox" checked={simulation} onChange={e=>setSimulation(e.target.checked)}/>시험 방향 부채꼴 표시</label><p>부채꼴은 수평 방향 시각화입니다. 표시 거리는 임의값이며 산에 가리는 구간이나 실제 촬영 범위를 계산하지 않습니다. 가상 시점 보정 중에는 부채꼴을 숨깁니다.</p><div className="simulation-controls">{simulation&&<><label>시험 방위각 {heading}° (북=0°, 동=90°)<input type="range" min="0" max="359" value={heading} onChange={e=>setHeading(Number(e.target.value))}/></label><label>시험 수평 화각 {fov}°<input type="range" min="10" max="120" value={fov} onChange={e=>setFov(Number(e.target.value))}/></label></>}<label>표시 거리 {range}m<input type="range" min="100" max="3000" step="100" value={range} onChange={e=>setRange(Number(e.target.value))}/></label></div></section>
+  <div className="map-bottom-status">{current?.name??'위치 없음'} · {estimate?'영상·지형 추정 · 실시간 확인 안 됨':'현재 방향 미확인'} · CCTV 제어 없음</div>
  </main>;
 }

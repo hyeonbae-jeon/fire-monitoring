@@ -16,6 +16,7 @@ on:
       - 'tests/test_inventory.py'
       - 'tests/test_portable_demo.py'
       - 'tests/serve_e2e.py'
+      - 'tests/serve_map_preview.py'
       - 'tests/test_screen_capture.py'
       - 'tests/ScreenCaptureChecks/**'
       - 'tests/WindowsCaptureSmoke/**'
@@ -81,6 +82,8 @@ jobs:
           cd web
           npx playwright install --with-deps chromium
           npm run test:e2e
+          VITE_MAP_ONLY=true VITE_BASE_PATH=/fire-monitoring/ VITE_VWORLD_API_KEY=synthetic-pages-key npm run build
+          npx playwright test --config playwright.pages.config.ts
       - name: Package Windows x64 demo
         run: python3 scripts/build-portable.py
       - name: Register downloadable artifact

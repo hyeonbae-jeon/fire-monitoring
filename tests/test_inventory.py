@@ -40,13 +40,13 @@ class BridgeTests(unittest.TestCase):
         cls.start()
 
     @classmethod
-    def start(cls, *, write_key=True, inventory=True, configuration=True, map_configuration=True, map_alias=None):
+    def start(cls, *, write_key=True, inventory=True, configuration=True, map_configuration=True, map_alias=None, map_key=None):
         with socket.socket() as s:
             s.bind(('127.0.0.1', 0))
             port = s.getsockname()[1]
         cls.base = f'http://127.0.0.1:{port}'
         env = os.environ.copy()
-        for name in ['INVENTORY_FILE', 'CAMERA_CONFIG_FILE', 'MAP_CONFIG_FILE', 'INVENTORY_WRITE_KEY']:
+        for name in ['INVENTORY_FILE', 'CAMERA_CONFIG_FILE', 'MAP_CONFIG_FILE', 'INVENTORY_WRITE_KEY', 'VWORLD_API_KEY', 'SSM_USERNAME', 'SSM_PASSWORD']:
             env.pop(name, None)
         env['ASPNETCORE_URLS'] = cls.base
         env['ASPNETCORE_ENVIRONMENT'] = 'Production'
@@ -54,6 +54,9 @@ class BridgeTests(unittest.TestCase):
         if configuration: env['CAMERA_CONFIG_FILE'] = str(cls.config_path)
         if map_configuration: env['MAP_CONFIG_FILE'] = str(map_alias or cls.map_path)
         if write_key: env['INVENTORY_WRITE_KEY'] = cls.key
+        if map_key is not None: env['VWORLD_API_KEY'] = map_key
+        env['SSM_USERNAME'] = 'synthetic-private-username'
+        env['SSM_PASSWORD'] = 'synthetic-private-password'
         cls.log = open(cls.work / 'bridge.log', 'ab')
         cls.process = subprocess.Popen([cls.dotnet, str(DLL)], cwd=PROJECT,
                                        env=env, stdout=cls.log, stderr=cls.log)
@@ -104,6 +107,22 @@ class BridgeTests(unittest.TestCase):
 
     def save(self, request):
         return self.request('/api/cameras', 'PUT', request, self.key)
+
+    def test_map_client_settings_without_key_stays_unconfigured(self):
+        status, data = self.request('/api/map-client-settings')
+        self.assertEqual((status, data), (200, {'vworldApiKey': None}))
+
+    def test_map_client_settings_only_exposes_public_browser_key(self):
+        self.stop()
+        try:
+            self.start(map_key=' synthetic-vworld-browser-key ')
+            status, data = self.request('/api/map-client-settings')
+            self.assertEqual((status, data), (200, {'vworldApiKey': 'synthetic-vworld-browser-key'}))
+            self.assertNotIn(self.key, json.dumps(data))
+            self.assertNotIn('synthetic-private-password', json.dumps(data))
+        finally:
+            self.stop()
+            self.start()
 
     def test_inventory_capabilities_and_unknown_are_distinct(self):
         status, data = self.request('/api/inventory')

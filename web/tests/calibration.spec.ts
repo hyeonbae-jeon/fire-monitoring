@@ -23,9 +23,11 @@ async function setup(page:Page,ground:number|null=700){
  await page.getByLabel('카메라 위치 이름',{exact:true}).fill('합성 시험 설치점');
  await page.getByLabel('설치 위도',{exact:true}).fill('37.5');await page.getByLabel('설치 경도',{exact:true}).fill('127.1');
  await page.getByRole('button',{name:'설치 위치 추가하기',exact:true}).click();
+ await page.getByRole('button',{name:'지도 연결',exact:true}).click();
  await page.getByLabel('VWorld 3D 키',{exact:true}).fill('synthetic-sdk-key');
  await page.getByRole('button',{name:'VWorld 3D 연결',exact:true}).click();
  await expect(page.getByText(/VWorld 3D 뷰어 초기화 완료 ·/)).toBeVisible();
+ await page.getByRole('button',{name:'카메라·설정',exact:true}).click();
 }
 async function image(page:Page,width=320,height=180){
  const data=await page.evaluate(({width,height})=>{const c=document.createElement('canvas');c.width=width;c.height=height;const x=c.getContext('2d')!;x.fillStyle='#7bc';x.fillRect(0,0,width,height);x.fillStyle='#243';x.beginPath();x.moveTo(0,height);x.lineTo(width*.3,height*.2);x.lineTo(width*.7,height*.5);x.lineTo(width,height);x.fill();return c.toDataURL('image/png').split(',')[1];},{width,height});

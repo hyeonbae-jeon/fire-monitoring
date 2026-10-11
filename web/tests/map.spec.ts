@@ -8,9 +8,12 @@ test('positions load offline, selection works and export excludes key/simulation
   await expect(page.getByRole('img',{name:'북한산 시험 카메라 좌표 배치도'})).toBeVisible();
   await page.getByRole('button',{name:/북한산 시험 B/}).click();
   await expect(page.getByText('위도 37.645 / 경도 126.965')).toBeVisible();
+  await page.getByText('시험 방향 표시',{exact:true}).click();
   await page.getByLabel('시험 방향 부채꼴 표시').check();
   await expect(page.locator('svg polygon')).toBeVisible();
+  await page.getByRole('button',{name:'지도 연결',exact:true}).click();
   await page.getByLabel('VWorld 3D 키').fill('synthetic-test-key');
+  await page.getByRole('button',{name:'카메라·설정',exact:true}).click();
   const download=page.waitForEvent('download');await page.getByRole('button',{name:'좌표 설정 다운로드'}).click();
   const file=await download;const stream=await file.createReadStream();let text='';for await(const b of stream!)text+=b.toString();
   expect(JSON.parse(text)).toEqual(sample);expect(text).not.toContain('synthetic-test-key');expect(text).not.toContain('heading');
@@ -36,19 +39,23 @@ test('SDK iframe handles parser-loaded dependencies and forwards marker/sector u
  // Separate route prevents recursive document.write from the simulated dependency.
  await page.route('https://map.vworld.kr/test-dependency.js',r=>r.fulfill({contentType:'application/javascript',body:'window.dependencyReady=true;'}));
  await page.goto('/');await page.getByRole('button',{name:'지도 모니터링',exact:true}).click();
- await page.getByLabel('VWorld 3D 키').fill('synthetic-key<&');await page.getByRole('button',{name:'VWorld 3D 연결',exact:true}).click();
+ await page.getByRole('button',{name:'지도 연결',exact:true}).click();
+  await page.getByLabel('VWorld 3D 키').fill('synthetic-key<&');await page.getByRole('button',{name:'VWorld 3D 연결',exact:true}).click();
  await expect(page.getByText(/VWorld 3D 뷰어 초기화 완료 ·/)).toBeVisible();
  await expect(page.getByLabel('VWorld 3D 키')).toHaveValue('');
  const frame=page.frames().find(f=>f!==page.mainFrame())!;
  await expect.poll(()=>frame.evaluate('calls.filter(x=>x.point).length')).toBe(3);
  expect(await frame.evaluate('dependencyReady')).toBe(true);
+ await page.getByRole('button',{name:'카메라·설정',exact:true}).click();
+ await page.getByText('시험 방향 표시',{exact:true}).click();
  await page.getByLabel('시험 방향 부채꼴 표시').check();
  await expect.poll(()=>frame.evaluate('calls.filter(x=>x.polygon).length')).toBeGreaterThan(0);
  expect(await page.evaluate(()=>({local:localStorage.length,session:sessionStorage.length}))).toEqual({local:0,session:0});
 });
 test('blocked SDK produces actionable error without removing inventory',async({page})=>{
  await page.route('https://map.vworld.kr/**',r=>r.abort());await page.goto('/');await page.getByRole('button',{name:'지도 모니터링',exact:true}).click();
- await page.getByLabel('VWorld 3D 키').fill('synthetic-key');await page.getByRole('button',{name:'VWorld 3D 연결',exact:true}).click();
+ await page.getByRole('button',{name:'지도 연결',exact:true}).click();
+  await page.getByLabel('VWorld 3D 키').fill('synthetic-key');await page.getByRole('button',{name:'VWorld 3D 연결',exact:true}).click();
  await expect(page.getByRole('alert')).toContainText('SDK를 불러오지 못했습니다');await page.getByRole('button',{name:'카메라 목록',exact:true}).click();
  await expect(page.getByRole('table')).toBeVisible();
 });

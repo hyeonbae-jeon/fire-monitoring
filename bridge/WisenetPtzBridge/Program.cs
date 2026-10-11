@@ -59,6 +59,11 @@ app.MapGet("/api/cameras", async (CameraConfiguration registry, CancellationToke
     Results.Ok(await registry.ReadAsync(ct)));
 app.MapGet("/api/map-configuration", async (MapConfiguration registry, CancellationToken ct) =>
     Results.Ok(await registry.ReadAsync(ct)));
+// VWorld's browser SDK must receive its domain-restricted map key. Never expose SSM or write keys here.
+app.MapGet("/api/map-client-settings", (IConfiguration config) => Results.Ok(new
+{
+    vworldApiKey = string.IsNullOrWhiteSpace(config["VWORLD_API_KEY"]) ? null : config["VWORLD_API_KEY"]!.Trim()
+}));
 IResult? CaptureAccess(HttpContext context, ScreenFrameSource source, IConfiguration config)
 {
     context.Response.Headers["Cross-Origin-Resource-Policy"] = "same-origin";

@@ -1,4 +1,7 @@
 .env
+web/test-results-pages/
+.env.*
+!.env.example
 .vs/
 bin/
 obj/
