@@ -1,0 +1,31 @@
+name: VWorld live diagnostics
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/vworld-monitoring-prototype]
+    paths: ['.github/workflows/vworld-diagnostics.yml', 'scripts/diagnose-vworld.cjs']
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Prepare browser
+        working-directory: web
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      - name: Inspect actual Pages origin and VWorld SDK
+        env:
+          VWORLD_DIAGNOSTIC_KEY: ${{ secrets.VWORLD_API_KEY }}
+        run: node scripts/diagnose-vworld.cjs
