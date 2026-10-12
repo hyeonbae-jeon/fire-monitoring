@@ -70,6 +70,11 @@ test('mock SDK receives terrain/tiles classification; layers toggle, survive cam
  const frame=page.frames().find(f=>f!==page.mainFrame())!;
  await expect.poll(()=>frame.evaluate('sources.length')).toBe(2);await frame.evaluate('layerLoads=[]');
  await page.getByRole('button',{name:'지도 레이어',exact:true}).click();await page.getByLabel('지도자료 JSON 불러오기').setInputFiles(file(bundle));
+ // File.text() and iframe loads are asynchronous. The old published layers
+ // also have two ready labels; wait for this bundle's identity before reading.
+ await expect(page.getByLabel('시험 공원경계',{exact:true})).toBeChecked();
+ await expect.poll(()=>frame.evaluate('sources.map(s=>s.name)')).toEqual(['시험 공원경계','시험 탐방로']);
+ await expect.poll(()=>frame.evaluate('layerLoads.length')).toBe(2);
  await expect(page.getByText('표시 준비 완료',{exact:false})).toHaveCount(2);
  expect(await frame.evaluate('layerLoads[0].data.features[0].geometry.coordinates.length')).toBe(3);
  expect(await frame.evaluate('layerLoads.map(x=>x.options.clampToGround)')).toEqual([true,true]);
