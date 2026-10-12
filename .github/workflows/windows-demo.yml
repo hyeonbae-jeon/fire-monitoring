@@ -81,9 +81,31 @@ jobs:
         run: |
           cd web
           npx playwright install --with-deps chromium
-          npm run test:e2e
+          PLAYWRIGHT_JSON_OUTPUT_FILE=../artifacts/browser-normal-results.json npm run test:e2e -- --reporter=line,json
           VITE_MAP_ONLY=true VITE_BASE_PATH=/fire-monitoring/ VITE_VWORLD_API_KEY=synthetic-pages-key npm run build
-          npx playwright test --config playwright.pages.config.ts
+          PLAYWRIGHT_JSON_OUTPUT_FILE=../artifacts/browser-pages-results.json npx playwright test --config playwright.pages.config.ts --reporter=line,json
+      - name: Report browser failures through check annotations
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          import json, re
+          from pathlib import Path
+          def suites(items):
+              for suite in items:
+                  for spec in suite.get('specs', []):
+                      for test in spec.get('tests', []):
+                          if test.get('status') not in ('unexpected', 'flaky'):
+                              continue
+                          errors = [e.get('message', '') for r in test.get('results', []) for e in r.get('errors', [])]
+                          message = spec['title'] + ': ' + ' '.join(errors)
+                          message = re.sub(r'\x1b\[[0-9;]*m', '', message)
+                          message = re.sub(r'https?://\S+', '[request URL omitted]', message)[:1800]
+                          message = message.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+                          print('::error title=Browser check failed::' + message)
+                  suites(suite.get('suites', []))
+          for path in Path('artifacts').glob('browser-*-results.json'):
+              suites(json.loads(path.read_text()).get('suites', []))
+          PY
       - name: Package Windows x64 demo
         run: python3 scripts/build-portable.py
       - name: Register downloadable artifact
