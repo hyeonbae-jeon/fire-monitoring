@@ -56,8 +56,15 @@ test('blocked SDK produces actionable error without removing inventory',async({p
  await page.route('https://map.vworld.kr/**',r=>r.abort());await page.goto('/');await page.getByRole('button',{name:'지도 모니터링',exact:true}).click();
  await page.getByRole('button',{name:'지도 연결',exact:true}).click();
   await page.getByLabel('VWorld 3D 키').fill('synthetic-key');await page.getByRole('button',{name:'VWorld 3D 연결',exact:true}).click();
- await expect(page.getByRole('alert')).toContainText('SDK를 불러오지 못했습니다');await page.getByRole('button',{name:'카메라 목록',exact:true}).click();
+ await expect(page.getByRole('alert')).toContainText('내려받기에 실패');await page.getByRole('button',{name:'카메라 목록',exact:true}).click();
  await expect(page.getByRole('table')).toBeVisible();
+});
+test('a loaded SDK response without its module is distinct from a network download failure',async({page})=>{
+ await page.route('https://map.vworld.kr/**',r=>r.fulfill({contentType:'application/javascript',body:'/* synthetic response without a map SDK */'}));
+ await page.goto('/');await page.getByRole('button',{name:'지도 모니터링',exact:true}).click();
+ await page.getByRole('button',{name:'지도 연결',exact:true}).click();
+ await page.getByLabel('VWorld 3D 키').fill('synthetic-key');await page.getByRole('button',{name:'VWorld 3D 연결',exact:true}).click();
+ await expect(page.getByRole('alert')).toContainText('응답에 지도 모듈이 없습니다');
 });
 test('north-clockwise convention and physical range are used for illustrative sector',()=>{
  const p=sample.positions[0],north=destination(p,0,1000),east=destination(p,90,1000);

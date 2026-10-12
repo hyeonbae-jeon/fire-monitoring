@@ -7,6 +7,7 @@ Windows 패키지를 실행하고 **지도 모니터링** 탭을 선택합니다
 키 없이 보이는 좌표 배치도는 실제 지도·지형이 아닙니다.
 지도 위의 **지도 연결** 패널에서 VWorld 3D 키를 입력하면 SDK가 별도 iframe에서 로드됩니다.
 Bridge의 `VWORLD_API_KEY` 또는 Pages 빌드의 `VITE_VWORLD_API_KEY`가 설정되면 지도 탭에서 자동 연결합니다.
+등록된 키가 있으면 키 입력란은 **다른 키로 연결 (선택)** 안에 숨기고 자동 사용 상태를 표시합니다. 다시 입력할 필요가 없습니다.
 키는 직접 소스에 작성하지 않으며 JSON 내보내기/브라우저 저장소에 넣지 않습니다.
 Pages 빌드에 사용한 브라우저용 키는 결과 JavaScript, SDK 요청 URL과 개발자 도구에서 확인 가능합니다.
 실제 지도에는 인터넷 접근이 필요합니다. 기존 등록 사이트의 키가 이 앱 주소에서도 동작한다고 보장할 수 없습니다.
@@ -21,7 +22,10 @@ VWorld 관리 화면에서 실제 접속 주소를 허용하는지 확인해야 
 `frontend/index.html`에서 확인한 VWorld v3.0 로더, vw.Map/setOption/start,
 vw.CameraPosition/CoordZ/Direction, vw.ws3dInitCallBack → ws3d.viewer 방식에 맞췄습니다.
 기존 사이트의 키는 복사하거나 커밋하지 않았습니다. SDK의 parser 로딩(document.write 호환)을
-iframe으로 격리하고 준비 콜백은 start 전에 등록합니다.
+실제 앱 주소의 `vworld-viewer.html` iframe으로 격리하고 준비 콜백은 start 전에 등록합니다.
+뷰어 자신의 주소에 키를 넣지 않고 같은 출처의 부모 창이 메모리 메시지로 초기화합니다.
+`about:srcdoc` 대신 실제 HTTP(S) 문서 주소를 유지해 SDK의 위치/리퍼러 처리와 호환성을 높입니다.
+SDK 파일 요청 실패와 응답 후 지도 모듈 부재를 구분하며 어느 경우도 키 인증 실패로 단정하지 않습니다.
 마커는 Cesium entities로 표시하며 로드된 지형의 clampToHeight를 시도하고 실패 시
 CLAMP_TO_GROUND로 대체합니다. 고도는 확정 측량값이 아닙니다. 마커는 식별을 위해 지형 뒤에서도 보이므로 실제 가시성을 나타내지 않습니다.
 

@@ -11,6 +11,14 @@ test('Pages subpath loads and auto connects with configured browser key without 
  const urls:string[]=[];page.on('request',r=>urls.push(r.url()));
  await page.route('https://map.vworld.kr/**',r=>{expect(new URL(r.request().url()).searchParams.get('apiKey')).toBe('synthetic-pages-key');return r.fulfill({contentType:'application/javascript',body:sdk});});
  await page.goto('./');await expect(page.getByText(/VWorld 3D 뷰어 초기화 완료 ·/)).toBeVisible();
+ const actualFrame=page.frames().find(f=>f!==page.mainFrame())!;
+ expect(actualFrame.url()).toBe('http://127.0.0.1:5082/fire-monitoring/vworld-viewer.html');
+ expect(new URL(actualFrame.url()).search).toBe('');
+ expect(await actualFrame.evaluate(()=>location.protocol)).toBe('http:');
+ await page.getByRole('button',{name:'지도 연결',exact:true}).click();
+ await expect(page.getByText('등록된 지도 키 자동 사용 · 다시 입력할 필요 없습니다.')).toBeVisible();
+ await expect(page.getByLabel('VWorld 3D 키')).toBeHidden();
+ await page.getByRole('button',{name:'카메라·설정',exact:true}).click();
  expect(urls.some(u=>u.includes('/api/')||u.endsWith('/health'))).toBe(false);
  await expect(page.getByRole('button',{name:'중앙 지도 설정 저장'})).toHaveCount(0);
  await expect(page.getByRole('button',{name:'카메라 목록',exact:true})).toHaveCount(0);

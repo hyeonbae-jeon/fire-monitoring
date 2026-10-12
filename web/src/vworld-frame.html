@@ -1,4 +1,4 @@
-<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>html,body,#map{margin:0;width:100%;height:100%;overflow:hidden;background:#112b3c;color:white}</style><script src="__SDK_URL__"></script></head><body><div id="map"></div><script>
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>html,body,#map{margin:0;width:100%;height:100%;overflow:hidden;background:#112b3c;color:white}</style><script>window.vworldSdkTransport={loaded:false,failed:false};</script><script src="__SDK_URL__" onload="window.vworldSdkTransport.loaded=true" onerror="window.vworldSdkTransport.failed=true"></script></head><body><div id="map"></div><script>
 'use strict';
 const appOrigin=__APP_ORIGIN__;const session='__SESSION__';let viewer,latest,owned=[],originalFrustum=null;const cameras=new Map();
 function report(type,message){parent.postMessage({scope:'vworld-prototype',session,type,message},appOrigin);}
@@ -50,7 +50,9 @@ function draw(data){
 }
 addEventListener('message',e=>{if(e.source!==parent||e.origin!==appOrigin||e.data?.session!==session||e.data?.scope!=='vworld-prototype')return;if(e.data.type==='draw')draw(e.data);if(e.data.type==='calibrate')calibrate(e.data);if(e.data.type==='end-calibration')endCalibration();});
 try{
- if(typeof vw==='undefined')throw new Error('VWorld SDK를 불러오지 못했습니다. 키의 등록 주소와 네트워크를 확인하세요.');
+ if(typeof vw==='undefined')throw new Error(window.vworldSdkTransport.failed
+  ? 'VWorld SDK를 불러오지 못했습니다. 적용된 키로 SDK 파일을 요청했지만 내려받기에 실패했습니다. 네트워크 연결과 브라우저의 요청 오류를 확인하세요.'
+  : 'VWorld SDK를 불러오지 못했습니다. 응답에 지도 모듈이 없습니다. 키의 등록 주소·사용 API와 하위 스크립트 로딩을 확인하세요.');
  // v3 API matches the user's bukhansan-weather site. Register callback before start.
  vw.ws3dInitCallBack=function(){try{viewer=ws3d.viewer;draw(latest||{positions:[]});
  if(Cesium.ScreenSpaceEventHandler&&Cesium.ScreenSpaceEventType&&viewer.scene.canvas){const clicks=new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);clicks.setInputAction(event=>{const id=cameras.get(viewer.scene.pick(event.position)?.id);if(id)parent.postMessage({scope:'vworld-prototype',session,type:'select-camera',id},appOrigin);},Cesium.ScreenSpaceEventType.LEFT_CLICK);}
