@@ -1,6 +1,33 @@
 <!doctype html><html lang="ko"><head><meta charset="utf-8"><style>html,body,#map{margin:0;width:100%;height:100%;overflow:hidden;background:#112b3c;color:white}</style><script>window.vworldSdkTransport={loaded:false,failed:false};</script><script src="__SDK_URL__" onload="window.vworldSdkTransport.loaded=true" onerror="window.vworldSdkTransport.failed=true"></script></head><body><div id="map"></div><script>
 'use strict';
 const appOrigin=__APP_ORIGIN__;const session='__SESSION__';let viewer,latest,owned=[],originalFrustum=null;const cameras=new Map();
+let layerRevision=null,layerGeneration=0,latestLayers=null,layerVisibility=new Set();const layerSources=new Map();
+function drawLayers(data){
+ if(!viewer){latestLayers=data;return;}
+ layerVisibility=new Set(data.visibleIds);
+ if(data.revision===layerRevision){layerSources.forEach((source,id)=>{source.show=layerVisibility.has(id);});return;}
+ layerRevision=data.revision;const generation=++layerGeneration;
+ layerSources.forEach(source=>viewer.dataSources.remove(source,true));layerSources.clear();
+ data.layers.forEach(layer=>{
+  const answer=ok=>{if(generation===layerGeneration)parent.postMessage({scope:'vworld-prototype',session,type:'layer-status',revision:data.revision,id:layer.id,ok},appOrigin);};
+  try{
+   if(typeof Cesium.GeoJsonDataSource?.load!=='function'||!viewer.dataSources)throw new Error('GeoJSON viewer unavailable');
+   // Draw every park boundary ring independently, including polygon holes.
+   // Keep original polygons in the parent configuration for export.
+   const geojson=layer.kind==='boundary'?{type:'FeatureCollection',features:layer.geojson.features.map(f=>({type:'Feature',properties:{name:f.properties.name},geometry:{type:'MultiLineString',coordinates:f.geometry.type==='Polygon'?f.geometry.coordinates:f.geometry.coordinates.flat()}}))}:layer.geojson;
+   const color=Cesium.Color.fromCssColorString(layer.kind==='boundary'?'#71f2cf':'#ffca68');
+   Promise.resolve(Cesium.GeoJsonDataSource.load(geojson,{clampToGround:true,stroke:color,strokeWidth:layer.kind==='boundary'?3:2})).then(async source=>{
+    if(generation!==layerGeneration){source.destroy?.();return;}
+    source.name=layer.name;source.show=layerVisibility.has(layer.id);
+    // Ground polylines can drape on both terrain and VWorld's 3D tiles.
+    for(const entity of source.entities.values){if(entity.polyline&&Cesium.ClassificationType)entity.polyline.classificationType=Cesium.ClassificationType.BOTH;}
+    await viewer.dataSources.add(source);
+    if(generation!==layerGeneration){viewer.dataSources.remove(source,true);return;}
+    source.show=layerVisibility.has(layer.id);layerSources.set(layer.id,source);answer(true);
+   }).catch(()=>answer(false));
+  }catch(_){answer(false);}
+ });
+}
 function report(type,message){parent.postMessage({scope:'vworld-prototype',session,type,message},appOrigin);}
 function endCalibration(){
  if(!viewer)return;
@@ -48,13 +75,13 @@ function draw(data){
  if(data.sector)owned.push(viewer.entities.add({polygon:{hierarchy:Cesium.Cartesian3.fromDegreesArray(data.sector.flat()),material:Cesium.Color.ORANGE.withAlpha(.3)}}));
  if(data.flyTo){endCalibration();const p=data.positions.find(p=>p.id===data.selected);if(p)viewer.camera.flyTo({destination:Cesium.Cartesian3.fromDegrees(p.lon,p.lat,4500),orientation:{heading:0,pitch:Cesium.Math.toRadians(-75),roll:0}});}
 }
-addEventListener('message',e=>{if(e.source!==parent||e.origin!==appOrigin||e.data?.session!==session||e.data?.scope!=='vworld-prototype')return;if(e.data.type==='draw')draw(e.data);if(e.data.type==='calibrate')calibrate(e.data);if(e.data.type==='end-calibration')endCalibration();});
+addEventListener('message',e=>{if(e.source!==parent||e.origin!==appOrigin||e.data?.session!==session||e.data?.scope!=='vworld-prototype')return;if(e.data.type==='draw')draw(e.data);if(e.data.type==='layers')drawLayers(e.data);if(e.data.type==='fit-layers'&&viewer&&Cesium.Rectangle){endCalibration();viewer.camera.flyTo({destination:Cesium.Rectangle.fromDegrees(...e.data.bounds)});}if(e.data.type==='calibrate')calibrate(e.data);if(e.data.type==='end-calibration')endCalibration();});
 try{
  if(typeof vw==='undefined')throw new Error(window.vworldSdkTransport.failed
   ? 'VWorld SDK를 불러오지 못했습니다. 적용된 키로 SDK 파일을 요청했지만 내려받기에 실패했습니다. 네트워크 연결과 브라우저의 요청 오류를 확인하세요.'
   : 'VWorld SDK를 불러오지 못했습니다. 응답에 지도 모듈이 없습니다. 키의 등록 주소·사용 API와 하위 스크립트 로딩을 확인하세요.');
  // v3 API matches the user's bukhansan-weather site. Register callback before start.
- vw.ws3dInitCallBack=function(){try{viewer=ws3d.viewer;draw(latest||{positions:[]});
+ vw.ws3dInitCallBack=function(){try{viewer=ws3d.viewer;draw(latest||{positions:[]});if(latestLayers)drawLayers(latestLayers);
  if(Cesium.ScreenSpaceEventHandler&&Cesium.ScreenSpaceEventType&&viewer.scene.canvas){const clicks=new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);clicks.setInputAction(event=>{const id=cameras.get(viewer.scene.pick(event.position)?.id);if(id)parent.postMessage({scope:'vworld-prototype',session,type:'select-camera',id},appOrigin);},Cesium.ScreenSpaceEventType.LEFT_CLICK);}
  report('ready','VWorld 3D 뷰어 초기화 완료');}catch(_){report('error','VWorld 뷰어 초기화에 실패했습니다.');}};
  const map=new vw.Map();map.setOption({mapId:'map',initPosition:new vw.CameraPosition(new vw.CoordZ(126.977,37.6585,10000),new vw.Direction(0,-75,0)),logo:true,navigation:true});map.start();

@@ -130,6 +130,10 @@ Playwright Chromium이 필요하며, 시스템 Chromium은 `CHROMIUM_EXECUTABLE`
 실제 SSM/PTZ/영상은 연결하지 않습니다. 지도 키와 등록 주소가 필요하며 클라우드 실지도 접속은 아직 미검증입니다.
 [지도 실행과 좌표 형식](docs/vworld-monitoring.md) · [영상 방향 추정 검토](docs/video-direction-feasibility.md)
 
+공원경계·탐방로와 카메라 설치 위치를 하나의 로컬 JSON으로 불러올 수 있습니다.
+지도 상단 **지도 레이어**에서 파일을 선택하고 개별 레이어 표시를 조정합니다.
+실제 위치 자료는 공개 기본 자료에 포함하지 않습니다. [지도 레이어 사용·변환](docs/map-layers.md).
+
 ## 장치 설정 리포트 가져오기
 
 카메라 목록 탭에서 SSM Excel XML(.xls) 리포트를 읽고 이름/Guid/모델/PTZ 지원 표시를 가져올 수 있습니다.
