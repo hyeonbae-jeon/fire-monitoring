@@ -1,11 +1,6 @@
 import {test,expect} from '@playwright/test';
 
-const sdk=`
-window.views=[];window.mockEntities=[];window.flies=[];
-window.vw={CameraPosition:function(){},CoordZ:function(){},Direction:function(){},Map:function(){this.setOption=function(){};this.start=function(){setTimeout(()=>vw.ws3dInitCallBack(),0)}}};
-window.ws3d={viewer:{entities:{add:e=>{mockEntities.push(e);return e},remove:()=>{}},scene:{canvas:{clientWidth:1200,clientHeight:700},pick:()=>({id:window.picked}),clampToHeight:()=>null,globe:{getHeight:()=>700},screenSpaceCameraController:{enableInputs:true}},camera:{frustum:{fov:1,aspectRatio:1},flyTo:x=>flies.push(x),setView:x=>views.push(x)}}};
-window.Cesium={ScreenSpaceEventHandler:function(){this.setInputAction=f=>window.clickHandler=f},ScreenSpaceEventType:{LEFT_CLICK:1},Cartesian3:{fromDegrees:(...x)=>x,fromDegreesArray:x=>x},Cartographic:{fromDegrees:(...x)=>x,fromCartesian:x=>({height:x[2]})},Cartesian2:function(){},HeightReference:{CLAMP_TO_GROUND:1,NONE:0},Color:{CYAN:'cyan',WHITE:'white',ORANGE:{withAlpha:()=> 'orange'}},Math:{toRadians:x=>x*Math.PI/180}};
-`;
+import {sdk} from '../fixtures/vworld-sdk';
 
 test('Pages subpath loads and auto connects with configured browser key without company API calls',async({page})=>{
  const urls:string[]=[];page.on('request',r=>urls.push(r.url()));
@@ -49,11 +44,11 @@ test('map marker selection updates the panel and retains the same viewer on came
  await page.route('https://map.vworld.kr/**',r=>r.fulfill({contentType:'application/javascript',body:sdk}));
  await page.goto('./');await expect(page.getByText(/VWorld 3D 뷰어 초기화 완료 ·/)).toBeVisible();
  const frame=page.frames().find(f=>f!==page.mainFrame())!;
- await expect.poll(()=>frame.evaluate('mockEntities.filter(e=>e.point).length')).toBeGreaterThanOrEqual(3);
- await frame.evaluate('window.picked=mockEntities.filter(e=>e.point).slice(-3)[1];clickHandler({position:{x:1,y:1}})');
- await expect(page.getByText('위도 37.645 / 경도 126.965')).toBeVisible();
- await expect.poll(()=>frame.evaluate('flies.at(-1).destination')).toEqual([126.965,37.645,4500]);
- await page.getByRole('button',{name:/북한산 시험 C/}).click();
+ await expect.poll(()=>frame.evaluate('mockEntities.filter(e=>e.point).length')).toBeGreaterThanOrEqual(9);
+ await frame.evaluate('window.picked=mockEntities.filter(e=>e.point).slice(-9)[1];clickHandler({position:{x:1,y:1}})');
+ await expect(page.getByText('위도 37.66294 / 경도 126.97638')).toBeVisible();
+ await expect.poll(()=>frame.evaluate('flies.at(-1).destination')).toEqual([126.97638,37.66294,4500]);
+ await page.getByRole('button',{name:/백운대/}).click();
  expect(page.frames().find(f=>f!==page.mainFrame())).toBe(frame);
- await expect.poll(()=>frame.evaluate('flies.at(-1).destination')).toEqual([126.985,37.671,4500]);
+ await expect.poll(()=>frame.evaluate('flies.at(-1).destination')).toEqual([126.97798,37.65868,4500]);
 });

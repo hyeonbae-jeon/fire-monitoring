@@ -1,0 +1,10 @@
+export const sdk=`
+window.views=[];window.mockEntities=[];window.flies=[];window.sources=[];window.layerLoads=[];window.pendingLoads=[];
+window.vw={CameraPosition:function(){},CoordZ:function(){},Direction:function(){},Map:function(){this.setOption=function(){};this.start=function(){setTimeout(()=>vw.ws3dInitCallBack(),0)}}};
+window.ws3d={viewer:{entities:{add:e=>{mockEntities.push(e);return e},remove:()=>{}},dataSources:{add:s=>{sources.push(s);return Promise.resolve(s)},remove:s=>{sources=sources.filter(x=>x!==s)}},scene:{canvas:{clientWidth:1200,clientHeight:700},pick:()=>({id:window.picked}),clampToHeight:()=>null,globe:{getHeight:()=>700},screenSpaceCameraController:{enableInputs:true}},camera:{frustum:{fov:1,aspectRatio:1},flyTo:x=>flies.push(x),setView:x=>views.push(x)}}};
+window.Cesium={ScreenSpaceEventHandler:function(){this.setInputAction=f=>window.clickHandler=f},ScreenSpaceEventType:{LEFT_CLICK:1},Cartesian3:{fromDegrees:(...x)=>x,fromDegreesArray:x=>x},Cartographic:{fromDegrees:(...x)=>x,fromCartesian:x=>({height:x[2]})},Cartesian2:function(){},HeightReference:{CLAMP_TO_GROUND:1,NONE:0},ClassificationType:{BOTH:2},Rectangle:{fromDegrees:(...x)=>({bounds:x})},Color:{fromCssColorString:x=>x,CYAN:'cyan',WHITE:'white',ORANGE:{withAlpha:()=> 'orange'}},Math:{toRadians:x=>x*Math.PI/180},GeoJsonDataSource:{load:(data,options)=>{
+ layerLoads.push({data,options});if(window.failLayers)return Promise.reject(new Error('synthetic failure'));
+ const source={entities:{values:[{polyline:{}}]},show:true,destroy:function(){this.destroyed=true}};
+ return window.holdLayers?new Promise(resolve=>pendingLoads.push(()=>resolve(source))):Promise.resolve(source);
+}}};
+`;

@@ -4,6 +4,7 @@ import {sample,parseConfiguration,sector,type MapConfiguration,type Position} fr
 import {TerrainCalibration,type PreviewGround,type PreviewRequest} from './TerrainCalibration';
 import type {ManualOrientation} from './calibration-model';
 import {parseMapBundle,layerLines,MAX_MAP_FILE_BYTES,type MapLayer} from './map-layers';
+import {publishedMap} from './default-map';
 import './MapWorkspace.css';
 
 type MapSnapshot={revision:string;configuration:MapConfiguration};
@@ -15,11 +16,13 @@ async function requestMap(options?:RequestInit):Promise<MapSnapshot>{
  return {revision:body.revision,configuration:parseConfiguration(JSON.stringify(body.configuration))};
 }
 export function MonitoringMap({active=true,standalone=false}:{active?:boolean;standalone?:boolean}){
- const [configuration,setConfiguration]=useState<MapConfiguration>(sample),[selected,setSelected]=useState(sample.positions[0].id);
+ const initialMap=standalone&&publishedMap?publishedMap:{...sample,layers:[]};
+ const [configuration,setConfiguration]=useState<MapConfiguration>({schemaVersion:1,crs:'EPSG:4326',positions:initialMap.positions}),[selected,setSelected]=useState(initialMap.positions[0]?.id??'');
  const [revision,setRevision]=useState<string|null>(null),[dirty,setDirty]=useState(false),[writeKey,setWriteKey]=useState(''),[saving,setSaving]=useState(false),[storageStatus,setStorageStatus]=useState('중앙 지도 설정을 읽는 중…');
  const [deploymentKey,setDeploymentKey]=useState(import.meta.env.VITE_VWORLD_API_KEY?.trim()??''),[settingsLoaded,setSettingsLoaded]=useState(standalone),[tools,setTools]=useState('cameras');
  const autoConnected=useRef(false);
- const [layers,setLayers]=useState<MapLayer[]>([]),[visibleLayers,setVisibleLayers]=useState<string[]>([]),[layerRevision,setLayerRevision]=useState('none'),[layerStatus,setLayerStatus]=useState<Record<string,string>>({});
+ const fittedFrame=useRef<string|null>(null);
+ const [layers,setLayers]=useState<MapLayer[]>(initialMap.layers),[visibleLayers,setVisibleLayers]=useState<string[]>(initialMap.layers.map(l=>l.id)),[layerRevision,setLayerRevision]=useState(initialMap.layers.length?'published-bukhansan':'none'),[layerStatus,setLayerStatus]=useState<Record<string,string>>({});
  const layerRevisionRef=useRef(layerRevision);layerRevisionRef.current=layerRevision;
  const [name,setName]=useState(''),[latitude,setLatitude]=useState(''),[longitude,setLongitude]=useState(''),[uuid,setUuid]=useState('');
  const [key,setKey]=useState(''),[frame,setFrame]=useState<{html:string;session:string}|null>(null),[ready,setReady]=useState(false);
@@ -48,7 +51,7 @@ export function MonitoringMap({active=true,standalone=false}:{active?:boolean;st
   }catch(e){setRevision(null);setStorageStatus('중앙 저장 사용 불가 · JSON 파일로 보관할 수 있습니다.');setError((e as Error).message);}
   finally{setSaving(false);}
  }
- useEffect(()=>{if(!standalone)void loadCentral();else setStorageStatus('브라우저 지도 시험 · JSON으로 설정을 보관하세요.');},[]);
+ useEffect(()=>{if(!standalone)void loadCentral();else setStorageStatus('북한산 기본 지도 표시 · 편집한 설정은 JSON으로 보관하세요.');},[]);
  useEffect(()=>{if(standalone||!active||settingsLoaded)return;let cancelled=false;fetch('/api/map-client-settings').then(r=>r.ok?r.json():null).then(s=>{if(!cancelled&&typeof s?.vworldApiKey==='string')setDeploymentKey(s.vworldApiKey.trim());}).catch(()=>{}).finally(()=>{if(!cancelled)setSettingsLoaded(true);});return()=>{cancelled=true;};},[active,standalone,settingsLoaded]);
  useEffect(()=>{if(active&&deploymentKey&&!autoConnected.current){autoConnected.current=true;connect(deploymentKey);}},[active,deploymentKey]);
  function cancelPending(message:string){pending.current.forEach(p=>{clearTimeout(p.timer);p.reject(new Error(message));});pending.current.clear();}
@@ -75,6 +78,7 @@ export function MonitoringMap({active=true,standalone=false}:{active?:boolean;st
  },[frame]);
  useEffect(()=>{if(frame&&ready)post('draw',{positions,selected,sector:polygon});},[frame,ready,configuration,selected,simulation,heading,fov,range,showEstimate,calibrating]);
  useEffect(()=>{if(frame&&ready)post('layers',{revision:layerRevision,layers,visibleIds:visibleLayers});},[frame,ready,layers,layerRevision,visibleLayers]);
+ useEffect(()=>{if(frame&&ready&&standalone&&publishedMap&&fittedFrame.current!==frame.session){fittedFrame.current=frame.session;post('fit-layers',{bounds:extent});}},[frame,ready]);
  function preview(request:PreviewRequest):Promise<PreviewGround>{
   if(!frame||!ready)return Promise.reject(new Error('VWorld 3D에 먼저 연결하세요.'));
   cancelPending('새 가상 시점 요청으로 교체됐습니다.');setCalibrating(true);
@@ -138,7 +142,7 @@ export function MonitoringMap({active=true,standalone=false}:{active?:boolean;st
    <details><summary>설치 위치 추가</summary><label>카메라 위치 이름<input value={name} onChange={e=>setName(e.target.value)} maxLength={200}/></label><label>설치 위도<input type="number" value={latitude} onChange={e=>setLatitude(e.target.value)}/></label><label>설치 경도<input type="number" value={longitude} onChange={e=>setLongitude(e.target.value)}/></label><label>SSM UUID(선택)<input value={uuid} onChange={e=>setUuid(e.target.value)}/></label><button onClick={addPosition}>설치 위치 추가하기</button><p className="help">처음 실제 위치를 추가하면 초기 시험 좌표를 대체합니다. UUID는 확인된 값만 입력하세요.</p></details>
    <label>위도·경도 JSON 불러오기<input type="file" accept=".json,application/json" onChange={e=>{void importFile(e.target.files?.[0]);e.target.value='';}}/></label><button onClick={download}>좌표 설정 다운로드</button>
    <p className="help">JSON에는 저장한 추정값·기준점 메타데이터가 포함됩니다. 지도 키·참조 이미지·시험 부채꼴 값은 포함하지 않습니다.</p>
-   <p className="help">{positions.every(p=>p.positionSource==='synthetic')?'초기 지점은 임의 시험 좌표입니다. ':''}지도 마커를 눌러도 위치를 선택할 수 있습니다. 경계·탐방로가 포함된 파일은 지도 레이어에서 불러오세요.</p>
+   <p className="help">{positions.every(p=>p.positionSource==='synthetic')?'초기 지점은 임의 시험 좌표입니다. ':''}지도 마커를 눌러도 위치를 선택할 수 있습니다. 경계·탐방로는 지도 레이어에서 표시를 조정하세요.</p>
    <details className="map-storage" open><summary>설정 보관</summary>
    <p>{storageStatus} {dirty&&'· 저장하지 않은 변경'}</p>
    {!standalone&&<><label>지도 저장 키<input type="password" autoComplete="off" value={writeKey} onChange={e=>setWriteKey(e.target.value)}/></label><button disabled={saving||!dirty||!writeKey||revision===null} onClick={()=>void saveCentral()}>중앙 지도 설정 저장</button><button disabled={saving} onClick={()=>{if(!dirty||window.confirm('저장하지 않은 지도 설정을 버리고 다시 불러올까요?'))void loadCentral();}}>중앙 지도 설정 다시 불러오기</button></>}
@@ -146,11 +150,11 @@ export function MonitoringMap({active=true,standalone=false}:{active?:boolean;st
   <details className="simulation"><summary>시험 방향 표시</summary><label className="inline"><input type="checkbox" checked={showEstimate} disabled={!estimate} onChange={e=>setShowEstimate(e.target.checked)}/>저장 추정 방향 부채꼴 표시</label><label className="inline"><input type="checkbox" checked={simulation} onChange={e=>setSimulation(e.target.checked)}/>시험 방향 부채꼴 표시</label><p>부채꼴은 수평 방향 시각화입니다. 표시 거리는 임의값이며 산에 가리는 구간이나 실제 촬영 범위를 계산하지 않습니다. 가상 시점 보정 중에는 부채꼴을 숨깁니다.</p><div className="simulation-controls">{simulation&&<><label>시험 방위각 {heading}° (북=0°, 동=90°)<input type="range" min="0" max="359" value={heading} onChange={e=>setHeading(Number(e.target.value))}/></label><label>시험 수평 화각 {fov}°<input type="range" min="10" max="120" value={fov} onChange={e=>setFov(Number(e.target.value))}/></label></>}<label>표시 거리 {range}m<input type="range" min="100" max="3000" step="100" value={range} onChange={e=>setRange(Number(e.target.value))}/></label></div></details>
   </aside>
   <aside className="map-floating layers-panel" hidden={tools!=='layers'}><h2>지도 레이어</h2>
-   <label>지도자료 JSON 불러오기<input type="file" accept=".json,application/json" onChange={e=>{void importBundle(e.target.files?.[0]);e.target.value='';}}/></label>
-   <p className="help">카메라 좌표·경계·탐방로를 함께 불러옵니다. 파일은 이 브라우저에서 읽으며 서버에 업로드하지 않습니다.</p>
+   {standalone&&publishedMap&&<p className="help">북한산 공원경계·탐방로와 카메라 9개를 기본 표시합니다. 파일을 선택할 필요가 없습니다.</p>}
    {layers.length?layers.map(l=><div className="layer-row" key={l.id}><label className="inline"><input type="checkbox" checked={visibleLayers.includes(l.id)} onChange={e=>setVisibleLayers(ids=>e.target.checked?[...ids,l.id]:ids.filter(id=>id!==l.id))}/><span><i className={'layer-swatch '+l.kind}/>{l.name}</span></label><small>{l.geojson.features.length}개 도형 · 자료 기준 {l.sourceDate}<br/>{!visibleLayers.includes(l.id)?'숨김':!frame?'좌표 배치도 표시':layerStatus[l.id]??'지도 표시 준비 중…'}</small></div>):<p>불러온 경계·탐방로가 없습니다.</p>}
    <button disabled={!ready||!extentPoints.length} onClick={()=>{exitPreview();post('fit-layers',{bounds:extent});}}>전체 위치·경계 보기</button>
    <button disabled={!layers.length} onClick={downloadBundle}>지도자료 전체 다운로드</button>
+   <details><summary>다른 지도자료 사용 (선택)</summary><label>지도자료 JSON 불러오기<input type="file" accept=".json,application/json" onChange={e=>{void importBundle(e.target.files?.[0]);e.target.value='';}}/></label><p className="help">카메라 좌표·경계·탐방로를 함께 바꿉니다. 선택한 파일은 이 브라우저에서 읽으며 서버에 업로드하지 않습니다.</p></details>
    <p className="help">지도자료 전체 파일에는 현재 카메라 설정과 레이어가 포함됩니다. 중앙 설정 저장은 카메라 위치·보정값을 저장합니다.</p>
   </aside>
   <aside className="map-floating connection-panel" hidden={tools!=='connection'}><h2>지도 연결</h2>

@@ -9,16 +9,30 @@ const bundle:MapBundle={schemaVersion:1,crs:'EPSG:4326',positions:Array.from({le
  {id:'trails',name:'시험 탐방로',kind:'trails',sourceCrs:'EPSG:5181',sourceDate:'2024-04-04',geojson:{type:'FeatureCollection',features:[{type:'Feature',id:'trails-1',properties:{name:'시험 길'},geometry:{type:'MultiLineString',coordinates:[[[126.95,37.62],[126.96,37.64]],[[126.98,37.66],[126.99,37.67]]]}}]}}
 ]};
 const file=(b:unknown)=>({name:'map-data.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(b))});
-const sdk=`
-window.sources=[];window.layerLoads=[];window.pendingLoads=[];window.markers=[];window.flies=[];
-window.vw={CameraPosition:function(){},CoordZ:function(){},Direction:function(){},Map:function(){this.setOption=function(){};this.start=function(){setTimeout(()=>vw.ws3dInitCallBack(),0)}}};
-window.ws3d={viewer:{entities:{add:e=>{markers.push(e);return e},remove:()=>{}},dataSources:{add:s=>{sources.push(s);return Promise.resolve(s)},remove:s=>{sources=sources.filter(x=>x!==s)}},scene:{canvas:{clientWidth:1200,clientHeight:700},clampToHeight:()=>null,screenSpaceCameraController:{enableInputs:true}},camera:{frustum:{fov:1,aspectRatio:1},flyTo:x=>flies.push(x)}}};
-window.Cesium={Cartesian3:{fromDegrees:(...x)=>x,fromDegreesArray:x=>x},Cartesian2:function(){},HeightReference:{CLAMP_TO_GROUND:1,NONE:0},ClassificationType:{BOTH:2},Rectangle:{fromDegrees:(...x)=>({bounds:x})},Color:{CYAN:'cyan',WHITE:'white',fromCssColorString:x=>x,ORANGE:{withAlpha:()=> 'orange'}},Math:{toRadians:x=>x*Math.PI/180},GeoJsonDataSource:{load:(data,options)=>{
- layerLoads.push({data,options});if(window.failLayers)return Promise.reject(new Error('synthetic failure'));
- const source={entities:{values:[{polyline:{}}]},show:true,destroy:function(){this.destroyed=true}};
- return window.holdLayers?new Promise(resolve=>pendingLoads.push(()=>resolve(source))):Promise.resolve(source);
-}}};
-`;
+import {sdk} from '../fixtures/vworld-sdk';
+
+test('published site immediately displays approved nine camera coordinates and full park layers after reload',async({page})=>{
+ const coordinates=[[126.94632,37.65729],[126.97638,37.66294],[126.96187,37.64377],[126.97419,37.62858],[126.94295,37.61806],[127.00971,37.66243],[126.97798,37.65868],[126.99210,37.63216],[126.99059,37.68027]];
+ const requests:string[]=[];page.on('request',r=>requests.push(r.method()+' '+r.url()));
+ await page.route('https://map.vworld.kr/**',r=>r.fulfill({contentType:'application/javascript',body:sdk}));
+ for(let attempt=0;attempt<2;attempt++){
+  if(attempt)await page.reload();else await page.goto('./');
+  await expect(page.getByText(/VWorld 3D 뷰어 초기화 완료 ·/)).toBeVisible();
+  await expect(page.locator('.camera-panel button.camera')).toHaveCount(9);
+  await expect(page.getByRole('button',{name:/백운대/})).toBeVisible();
+  await expect(page.getByText(/현재 방향 미확인/).last()).toBeVisible();
+  const frame=page.frames().find(f=>f!==page.mainFrame())!;
+  await expect.poll(()=>frame.evaluate('mockEntities.filter(e=>e.point).slice(-9).map(e=>e.position)')).toEqual(coordinates);
+  await expect.poll(()=>frame.evaluate('sources.length')).toBe(2);
+  await expect.poll(()=>frame.evaluate('flies.at(-1).destination.bounds')).toEqual([126.933388,37.5965684,127.0456293,37.7386941]);
+  expect(await frame.evaluate('layerLoads.map(l=>l.data.features.length)')).toEqual([1,102]);
+  await page.getByRole('button',{name:'지도 레이어',exact:true}).click();
+  await expect(page.getByLabel('북한산 공원경계',{exact:true})).toBeChecked();await expect(page.getByLabel('북한산 탐방로',{exact:true})).toBeChecked();
+  await expect(page.getByLabel('지도자료 JSON 불러오기')).toBeHidden();
+  await page.getByLabel('북한산 탐방로',{exact:true}).uncheck();await expect.poll(()=>frame.evaluate('sources.find(s=>s.name==="북한산 탐방로").show')).toBe(false);
+ }
+ expect(requests.filter(r=>r.includes('/api/')||r.startsWith('POST ')||r.startsWith('PUT '))).toEqual([]);
+});
 
 test('GeoJSON validation retains holes and multipart lines, strips attributes and rejects unprojected data',()=>{
  const input=structuredClone(bundle) as any;input.layers[0].geojson.features[0].properties.path='private-device-path';
@@ -54,6 +68,7 @@ test('mock SDK receives terrain/tiles classification; layers toggle, survive cam
  await page.route('https://map.vworld.kr/**',r=>r.fulfill({contentType:'application/javascript',body:sdk}));await page.goto('./');
  await expect(page.getByText(/VWorld 3D 뷰어 초기화 완료 ·/)).toBeVisible();
  const frame=page.frames().find(f=>f!==page.mainFrame())!;
+ await expect.poll(()=>frame.evaluate('sources.length')).toBe(2);await frame.evaluate('layerLoads=[]');
  await page.getByRole('button',{name:'지도 레이어',exact:true}).click();await page.getByLabel('지도자료 JSON 불러오기').setInputFiles(file(bundle));
  await expect(page.getByText('표시 준비 완료',{exact:false})).toHaveCount(2);
  expect(await frame.evaluate('layerLoads[0].data.features[0].geometry.coordinates.length')).toBe(3);
@@ -71,7 +86,7 @@ test('mock SDK receives terrain/tiles classification; layers toggle, survive cam
 
 test('replacing a bundle while its GeoJSON is loading discards stale sources and statuses',async({page})=>{
  await page.route('https://map.vworld.kr/**',r=>r.fulfill({contentType:'application/javascript',body:sdk}));await page.goto('./');await expect(page.getByText(/VWorld 3D 뷰어 초기화 완료 ·/)).toBeVisible();
- const frame=page.frames().find(f=>f!==page.mainFrame())!;await frame.evaluate('window.holdLayers=true');
+ const frame=page.frames().find(f=>f!==page.mainFrame())!;await expect.poll(()=>frame.evaluate('sources.length')).toBe(2);await frame.evaluate('layerLoads=[];window.holdLayers=true');
  await page.getByRole('button',{name:'지도 레이어',exact:true}).click();await page.getByLabel('지도자료 JSON 불러오기').setInputFiles(file(bundle));
  await expect.poll(()=>frame.evaluate('pendingLoads.length')).toBe(2);
  const next=structuredClone(bundle);next.layers=next.layers.slice(0,1);next.layers[0].name='새 경계';
