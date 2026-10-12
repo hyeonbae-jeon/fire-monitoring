@@ -16,9 +16,9 @@ const commandEscape=text=>text.replaceAll('%','%25').replaceAll('\r','%0D').repl
  const browser=await chromium.launch({headless:true,args:['--use-angle=swiftshader','--enable-unsafe-swiftshader',...(http1?['--disable-http2']:[])]});
  const page=await browser.newPage({viewport:{width:1440,height:1000}});
  const result={target,source:'real-public-pages',transport:http1?'http1':'browser-default',sdkRequests:[],sdkResponses:[],failures:[],consoleErrors:[],pageErrors:[],dialogs:[]};
- const pending=[];
+ const pending=[];let sdkUrl=null;
  page.on('request',r=>{try{const u=new URL(r.url()),key=u.searchParams.get('apiKey');if(key)secrets.add(key);
-  if(u.pathname.endsWith('/webglMapInit.js.do'))result.sdkRequests.push({host:u.hostname,path:u.pathname,hasKey:!!key,usesConfiguredKey:!!process.env.VWORLD_DIAGNOSTIC_KEY&&key===process.env.VWORLD_DIAGNOSTIC_KEY.trim(),referrer:safe(r.headers().referer)});
+  if(u.pathname.endsWith('/webglMapInit.js.do')){sdkUrl??=r.url();result.sdkRequests.push({host:u.hostname,path:u.pathname,hasKey:!!key,usesConfiguredKey:!!process.env.VWORLD_DIAGNOSTIC_KEY&&key===process.env.VWORLD_DIAGNOSTIC_KEY.trim(),referrer:safe(r.headers().referer)});}
  }catch{}});
  page.on('requestfailed',r=>{const u=new URL(r.url());result.failures.push({host:u.hostname,path:safe(u.pathname),error:r.failure()?.errorText});});
  page.on('console',m=>{if(m.type()==='error')result.consoleErrors.push(safe(m.text()));});
@@ -48,6 +48,21 @@ const commandEscape=text=>text.replaceAll('%','%25').replaceAll('\r','%0D').repl
     documentReferrer:document.referrer,vwType:typeof window.vw,viewerPresent:!!viewer,canvasCount:document.querySelectorAll('canvas').length,
     tilesLoaded:viewer?.scene?.globe?.tilesLoaded??null,heightAtSyntheticPoint:Number.isFinite(height)?height:null};
   }).catch(e=>({inspectionError:safe(e.message)}))));
+  // One bounded comparison using the browser's supported full-referrer policy.
+  // It uses the same real viewer URL and key; no registered URL or header is forged.
+  if(!result.viewerInitialized&&sdkUrl){
+   const src=sdkUrl.replaceAll('&','&amp;').replaceAll('"','&quot;');
+   const html='<!doctype html><html><head><meta charset="utf-8"><meta name="referrer" content="no-referrer-when-downgrade"><script>window.sdkProbe={loaded:false,failed:false};</script><script src="'+src+'" referrerpolicy="no-referrer-when-downgrade" onload="sdkProbe.loaded=true" onerror="sdkProbe.failed=true"></script></head><body></body></html>';
+   await page.evaluate(html=>{
+    const iframe=document.createElement('iframe');iframe.id='vworld-referrer-diagnostic';iframe.src=new URL('vworld-viewer.html',location.href).href;
+    iframe.onload=()=>iframe.contentWindow.postMessage({scope:'vworld-bootstrap',type:'initialize',html},location.origin);
+    document.body.appendChild(iframe);
+   },html);
+   const handle=await page.locator('#vworld-referrer-diagnostic').elementHandle(),probe=await handle.contentFrame();
+   await probe.waitForFunction(()=>window.sdkProbe?.loaded||window.sdkProbe?.failed,null,{timeout:15000}).catch(()=>{});
+   result.fullReferrerProbe=await probe.evaluate(()=>({documentLocation:location.origin+location.pathname,
+    vwType:typeof window.vw,scriptLoaded:!!window.sdkProbe?.loaded,scriptFailed:!!window.sdkProbe?.failed}));
+  }
  }catch(e){result.navigationError=safe(e.message);}
  await Promise.allSettled(pending);
  result.consoleErrors=result.consoleErrors.slice(0,8);result.pageErrors=result.pageErrors.slice(0,8);result.failures=result.failures.slice(0,12);
