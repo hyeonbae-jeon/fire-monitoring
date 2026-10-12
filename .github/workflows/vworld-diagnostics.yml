@@ -13,6 +13,10 @@ jobs:
   diagnose:
     runs-on: ubuntu-latest
     timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      matrix:
+        transport: [default, http1]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -28,4 +32,5 @@ jobs:
       - name: Inspect actual Pages origin and VWorld SDK
         env:
           VWORLD_DIAGNOSTIC_KEY: ${{ secrets.VWORLD_API_KEY }}
+          VWORLD_DIAGNOSTIC_HTTP1: ${{ matrix.transport == 'http1' }}
         run: node scripts/diagnose-vworld.cjs

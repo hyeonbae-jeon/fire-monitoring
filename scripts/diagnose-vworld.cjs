@@ -12,12 +12,15 @@ function safe(text){
 }
 const commandEscape=text=>text.replaceAll('%','%25').replaceAll('\r','%0D').replaceAll('\n','%0A');
 (async()=>{
- const browser=await chromium.launch({headless:true,args:['--use-angle=swiftshader','--enable-unsafe-swiftshader']});
+ const http1=process.env.VWORLD_DIAGNOSTIC_HTTP1==='true';
+ const browser=await chromium.launch({headless:true,args:['--use-angle=swiftshader','--enable-unsafe-swiftshader',...(http1?['--disable-http2']:[])]});
  const page=await browser.newPage({viewport:{width:1440,height:1000}});
- const result={target,source:'real-public-pages',sdkResponses:[],failures:[],consoleErrors:[],pageErrors:[],dialogs:[]};
+ const result={target,source:'real-public-pages',transport:http1?'http1':'browser-default',sdkRequests:[],sdkResponses:[],failures:[],consoleErrors:[],pageErrors:[],dialogs:[]};
  const pending=[];
- page.on('request',r=>{try{const key=new URL(r.url()).searchParams.get('apiKey');if(key)secrets.add(key);}catch{}});
- page.on('requestfailed',r=>{const u=new URL(r.url());result.failures.push({host:u.hostname,path:u.pathname,error:r.failure()?.errorText});});
+ page.on('request',r=>{try{const u=new URL(r.url()),key=u.searchParams.get('apiKey');if(key)secrets.add(key);
+  if(u.pathname.endsWith('/webglMapInit.js.do'))result.sdkRequests.push({host:u.hostname,path:u.pathname,hasKey:!!key,usesConfiguredKey:!!process.env.VWORLD_DIAGNOSTIC_KEY&&key===process.env.VWORLD_DIAGNOSTIC_KEY.trim(),referrer:safe(r.headers().referer)});
+ }catch{}});
+ page.on('requestfailed',r=>{const u=new URL(r.url());result.failures.push({host:u.hostname,path:safe(u.pathname),error:r.failure()?.errorText});});
  page.on('console',m=>{if(m.type()==='error')result.consoleErrors.push(safe(m.text()));});
  page.on('pageerror',e=>result.pageErrors.push(safe(e.message)));
  page.on('dialog',async d=>{result.dialogs.push(safe(d.message()));await d.dismiss();});
@@ -27,7 +30,7 @@ const commandEscape=text=>text.replaceAll('%','%25').replaceAll('\r','%0D').repl
   pending.push((async()=>{
    const b=await r.text().catch(()=>'');
    result.sdkResponses.push({host:u.hostname,path:u.pathname,status:r.status(),contentType:r.headers()['content-type'],bytes:b.length,
-    usesConfiguredKey:!!process.env.VWORLD_DIAGNOSTIC_KEY&&u.searchParams.get('apiKey')===process.env.VWORLD_DIAGNOSTIC_KEY,
+    usesConfiguredKey:!!process.env.VWORLD_DIAGNOSTIC_KEY&&u.searchParams.get('apiKey')===process.env.VWORLD_DIAGNOSTIC_KEY.trim(),
     requestReferrer:safe(r.request().headers().referer),
     flags:{serviceUnavailable:/Service Unavailable|503 Service/i.test(b),domainDenied:/INVALID_DOMAIN|UNREGISTERED|등록되지|등록된.*(URL|도메인)/i.test(b),
      keyDenied:/INVALID_KEY|유효하지.*키|인증키.*(오류|없|유효)/i.test(b),exportsVw:/\bvw\b/.test(b)}});
@@ -37,7 +40,7 @@ const commandEscape=text=>text.replaceAll('%','%25').replaceAll('\r','%0D').repl
   const response=await page.goto(target,{waitUntil:'domcontentloaded',timeout:30000});result.httpStatus=response?.status();
   await page.waitForFunction(()=>Array.from(document.querySelectorAll('[role=status]')).some(e=>/초기화 완료|연결 실패|연결 시간 초과/.test(e.textContent)),null,{timeout:40000}).catch(()=>{});
   result.viewerInitialized=await page.getByText(/VWorld 3D 뷰어 초기화 완료 ·/).count()>0;
-  result.deployedKeyPresent=await page.getByRole('button',{name:'등록된 키로 다시 연결',exact:true}).count()>0;
+  result.deployedKeyPresent=await page.locator('button').filter({hasText:'등록된 키로 다시 연결'}).count()>0;
   result.frames=await Promise.all(page.frames().filter(f=>f!==page.mainFrame()).map(f=>f.evaluate(()=>{
    const viewer=window.ws3d?.viewer;let height=null;
    try{height=viewer?.scene?.globe?.getHeight(window.Cesium.Cartographic.fromDegrees(126.977,37.6585))??null;}catch{}
