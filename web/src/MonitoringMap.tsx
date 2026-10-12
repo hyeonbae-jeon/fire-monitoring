@@ -1,10 +1,12 @@
-import {useEffect,useRef,useState,type CSSProperties} from 'react';
+import {useEffect,useMemo,useRef,useState,type CSSProperties} from 'react';
 import template from './vworld-frame.html?raw';
 import {sample,parseConfiguration,sector,type MapConfiguration,type Position} from './map-model';
 import {TerrainCalibration,type PreviewGround,type PreviewRequest} from './TerrainCalibration';
 import type {ManualOrientation} from './calibration-model';
 import {parseMapBundle,layerLines,MAX_MAP_FILE_BYTES,type MapLayer} from './map-layers';
 import {publishedMap} from './default-map';
+import {CoverageControls,readSavedCoverage} from './CoverageControls';
+import {buildCoverageShapes} from './coverage-model';
 import './MapWorkspace.css';
 
 type MapSnapshot={revision:string;configuration:MapConfiguration};
@@ -28,14 +30,17 @@ export function MonitoringMap({active=true,standalone=false}:{active?:boolean;st
  const [key,setKey]=useState(''),[frame,setFrame]=useState<{html:string;session:string}|null>(null),[ready,setReady]=useState(false);
  const [status,setStatus]=useState('좌표 배치도 · VWorld 미연결'),[error,setError]=useState('');
  const [simulation,setSimulation]=useState(false),[heading,setHeading]=useState(0),[fov,setFov]=useState(60),[range,setRange]=useState(1000),[showEstimate,setShowEstimate]=useState(true);
+ const [savedCoverage]=useState(readSavedCoverage),[coveragePlans,setCoveragePlans]=useState(savedCoverage.plans),[coverageStorageStatus,setCoverageStorageStatus]=useState(savedCoverage.status),[coverageHidden,setCoverageHidden]=useState(false),[coverageSelectedOnly,setCoverageSelectedOnly]=useState(false),[coverageRenderError,setCoverageRenderError]=useState('');
+ const coverageRequest=useRef('');
  const [aspect,setAspect]=useState<number|null>(null),[previewEpoch,setPreviewEpoch]=useState(0),[calibrating,setCalibrating]=useState(false);
  const edits=useRef(0),iframe=useRef<HTMLIFrameElement>(null),pending=useRef(new Map<string,{resolve:(ground:PreviewGround)=>void;reject:(error:Error)=>void;timer:number}>());
  const positions=configuration.positions,current=positions.find(p=>p.id===selected);
  const positionsRef=useRef(positions);positionsRef.current=positions;
  const estimate=current?.orientation?.status==='estimate'?current.orientation:null;
- const polygon=calibrating?null:simulation&&current?sector(current,heading,fov,range):showEstimate&&estimate&&current?sector(current,estimate.headingDeg,estimate.horizontalFovDeg,range):null;
+ const coverageShapes=useMemo(()=>calibrating||coverageHidden?[]:buildCoverageShapes(positions,coveragePlans,coverageSelectedOnly?selected:null),[positions,coveragePlans,coverageSelectedOnly,selected,coverageHidden,calibrating]);
+ const polygon=calibrating||coverageShapes.some(s=>s.cameraId===selected)?null:simulation&&current?sector(current,heading,fov,range):showEstimate&&estimate&&current?sector(current,estimate.headingDeg,estimate.horizontalFovDeg,range):null;
  const displayedLines=layers.filter(l=>visibleLayers.includes(l.id)).map(l=>({layer:l,lines:layerLines(l)}));
- const extentPoints=[...positions.map(p=>[p.lon,p.lat]),...displayedLines.flatMap(l=>l.lines.flat())];
+ const extentPoints=[...positions.map(p=>[p.lon,p.lat]),...displayedLines.flatMap(l=>l.lines.flat()),...coverageShapes.flatMap(s=>s.coordinates)];
  const extent=extentPoints.reduce((b,p)=>[Math.min(b[0],p[0]),Math.min(b[1],p[1]),Math.max(b[2],p[0]),Math.max(b[3],p[1])],[180,90,-180,-90]);
  const xmin=(extentPoints.length?extent[0]:126.96)-.005,xmax=(extentPoints.length?extent[2]:126.99)+.005;
  const ymin=(extentPoints.length?extent[1]:37.64)-.005,ymax=(extentPoints.length?extent[3]:37.68)+.005;
@@ -67,6 +72,7 @@ export function MonitoringMap({active=true,standalone=false}:{active?:boolean;st
    if(e.data.type==='ready'){completed=true;clearTimeout(timer);setReady(true);setError('');setStatus('VWorld 3D 뷰어 초기화 완료 · 지형 표출은 화면에서 확인하세요.');}
    if(e.data.type==='error'){completed=true;clearTimeout(timer);setReady(false);setStatus('VWorld 연결 실패');setError(String(e.data.message));cancelPending('VWorld 연결 실패');}
    if(e.data.type==='layer-status'&&e.data.revision===layerRevisionRef.current&&typeof e.data.id==='string')setLayerStatus(s=>({...s,[e.data.id]:e.data.ok?'표시 준비 완료':'표시 실패 · 지도에 다시 연결해 주세요.'}));
+   if(e.data.type==='coverage-status'&&e.data.requestId===coverageRequest.current)setCoverageRenderError(e.data.ok?'':'범위 시안을 지도에 표시하지 못했습니다. 지도에 다시 연결해 주세요.');
    if(e.data.type==='calibration-ready'||e.data.type==='calibration-error'){
     const p=pending.current.get(e.data.requestId);if(!p)return;clearTimeout(p.timer);pending.current.delete(e.data.requestId);
     if(e.data.type==='calibration-error')p.reject(new Error(String(e.data.message)));
@@ -76,8 +82,9 @@ export function MonitoringMap({active=true,standalone=false}:{active?:boolean;st
   };
   window.addEventListener('message',listener);return()=>{clearTimeout(timer);window.removeEventListener('message',listener);cancelPending('지도 연결이 바뀌었습니다.');};
  },[frame]);
- useEffect(()=>{if(frame&&ready)post('draw',{positions,selected,sector:polygon});},[frame,ready,configuration,selected,simulation,heading,fov,range,showEstimate,calibrating]);
+ useEffect(()=>{if(frame&&ready)post('draw',{positions,selected,sector:polygon});},[frame,ready,configuration,selected,simulation,heading,fov,range,showEstimate,calibrating,coverageShapes]);
  useEffect(()=>{if(frame&&ready)post('layers',{revision:layerRevision,layers,visibleIds:visibleLayers});},[frame,ready,layers,layerRevision,visibleLayers]);
+ useEffect(()=>{if(frame&&ready){coverageRequest.current=crypto.randomUUID();post('coverage',{requestId:coverageRequest.current,shapes:coverageShapes,selected});}},[frame,ready,coverageShapes,selected]);
  useEffect(()=>{if(frame&&ready&&standalone&&publishedMap&&fittedFrame.current!==frame.session){fittedFrame.current=frame.session;post('fit-layers',{bounds:extent});}},[frame,ready]);
  function preview(request:PreviewRequest):Promise<PreviewGround>{
   if(!frame||!ready)return Promise.reject(new Error('VWorld 3D에 먼저 연결하세요.'));
@@ -131,9 +138,9 @@ export function MonitoringMap({active=true,standalone=false}:{active?:boolean;st
    if(ticket===edits.current){setConfiguration(result.configuration);setDirty(false);}setRevision(result.revision);setWriteKey('');setStorageStatus(ticket===edits.current?'중앙 지도 설정 저장 완료 · 다른 브라우저에서 다시 불러올 수 있습니다.':'이전 설정 저장 완료 · 이후 변경은 추가 저장이 필요합니다.');
   }catch(e){setError((e as Error).message);}finally{setSaving(false);}
  }
- const mapPanel=<div className="map-panel" data-reference={aspect?'true':undefined} style={aspect?{height:'auto',aspectRatio:aspect,'--reference-aspect':aspect} as CSSProperties:undefined}>{frame?<iframe key={frame.session} title="VWorld 3D 지도" ref={iframe} src={import.meta.env.BASE_URL+'vworld-viewer.html'} sandbox="allow-scripts allow-same-origin" onLoad={()=>iframe.current?.contentWindow?.postMessage({scope:'vworld-bootstrap',type:'initialize',html:frame.html},location.origin)}/>:<><p className="schematic-label">좌표 배치도 · 실제 지형 아님 · 북쪽 ↑</p><svg viewBox="0 0 800 480" role="img" aria-label="북한산 시험 카메라 좌표 배치도">{displayedLines.map(({layer,lines})=><g key={layer.id} data-layer={layer.id}>{lines.map((line,i)=><polyline key={i} points={line.map(([lon,lat])=>xy(lon,lat).join(',')).join(' ')} fill="none" stroke={layer.kind==='boundary'?'#71f2cf':'#ffca68'} strokeWidth={layer.kind==='boundary'?2.5:1.5}/>)}</g>)}{polygon&&<polygon points={polygon.map(([lon,lat])=>xy(lon,lat).join(',')).join(' ')} fill="#f5a623" fillOpacity=".35" stroke="#f5a623"/>}{positions.map(p=>{const[x,y]=xy(p.lon,p.lat);return <g key={p.id} onClick={()=>selectPosition(p.id)}><circle cx={x} cy={y} r={p.id===selected?10:6} fill="#55deed"/><text x={x+14} y={y+5} fill="white" fontSize="16">{p.name}</text></g>;})}</svg></>}</div>;
+ const mapPanel=<div className="map-panel" data-reference={aspect?'true':undefined} style={aspect?{height:'auto',aspectRatio:aspect,'--reference-aspect':aspect} as CSSProperties:undefined}>{frame?<iframe key={frame.session} title="VWorld 3D 지도" ref={iframe} src={import.meta.env.BASE_URL+'vworld-viewer.html'} sandbox="allow-scripts allow-same-origin" onLoad={()=>iframe.current?.contentWindow?.postMessage({scope:'vworld-bootstrap',type:'initialize',html:frame.html},location.origin)}/>:<><p className="schematic-label">좌표 배치도 · 실제 지형 아님 · 북쪽 ↑</p><svg viewBox="0 0 800 480" role="img" aria-label="북한산 시험 카메라 좌표 배치도">{displayedLines.map(({layer,lines})=><g key={layer.id} data-layer={layer.id}>{lines.map((line,i)=><polyline key={i} points={line.map(([lon,lat])=>xy(lon,lat).join(',')).join(' ')} fill="none" stroke={layer.kind==='boundary'?'#71f2cf':'#ffca68'} strokeWidth={layer.kind==='boundary'?2.5:1.5}/>)}</g>)}{coverageShapes.map(shape=><g key={shape.cameraId} data-coverage={shape.cameraId} onClick={()=>selectPosition(shape.cameraId)}><polygon points={shape.coordinates.map(([lon,lat])=>xy(lon,lat).join(',')).join(' ')} fill={shape.color} fillOpacity={shape.cameraId===selected?'.28':'.16'} stroke={shape.color} strokeWidth={shape.cameraId===selected?2:1}/><polyline points={shape.centerline.map(([lon,lat])=>xy(lon,lat).join(',')).join(' ')} stroke={shape.color} strokeDasharray="5 4"/></g>)}{polygon&&<polygon points={polygon.map(([lon,lat])=>xy(lon,lat).join(',')).join(' ')} fill="#f5a623" fillOpacity=".35" stroke="#f5a623"/>}{positions.map(p=>{const[x,y]=xy(p.lon,p.lat);return <g key={p.id} onClick={()=>selectPosition(p.id)}><circle cx={x} cy={y} r={p.id===selected?10:6} fill="#55deed"/><text x={x+14} y={y+5} fill="white" fontSize="16">{p.name}</text></g>;})}</svg></>}</div>;
  return <main className="monitoring map-workspace">
-  <div className="map-topbar"><div><strong>VWorld 3D · 산불감시 지도</strong><span role="status">{status}</span></div><div className="map-tool-tabs" aria-label="지도 도구"><button aria-pressed={tools==='cameras'} onClick={()=>setTools(tools==='cameras'?'':'cameras')}>카메라·설정</button><button aria-pressed={tools==='layers'} onClick={()=>setTools(tools==='layers'?'':'layers')}>지도 레이어</button><button aria-pressed={tools==='connection'} onClick={()=>setTools(tools==='connection'?'':'connection')}>지도 연결</button></div></div>
+  <div className="map-topbar"><div><strong>VWorld 3D · 산불감시 지도</strong><span role="status">{status}</span></div><div className="map-tool-tabs" aria-label="지도 도구"><button aria-pressed={tools==='cameras'} onClick={()=>setTools(tools==='cameras'?'':'cameras')}>카메라·설정</button><button aria-pressed={tools==='coverage'} onClick={()=>setTools(tools==='coverage'?'':'coverage')}>관측 범위</button><button aria-pressed={tools==='layers'} onClick={()=>setTools(tools==='layers'?'':'layers')}>지도 레이어</button><button aria-pressed={tools==='connection'} onClick={()=>setTools(tools==='connection'?'':'connection')}>지도 연결</button></div></div>
   {error&&<p role="alert" className="error map-error">{error}</p>}
   <div className="monitor-grid"><aside className="map-floating camera-panel" hidden={tools!=='cameras'}><h2>카메라 위치</h2>
    {positions.map(p=><button className={p.id===selected?'camera active':'camera'} key={p.id} onClick={()=>selectPosition(p.id)}>{p.name}<small>{p.positionSource==='synthetic'?'시험 좌표':'입력 좌표'} · {p.orientation?.status==='estimate'?'영상·지형 추정':'방향 UNKNOWN'}</small></button>)}
@@ -149,6 +156,7 @@ export function MonitoringMap({active=true,standalone=false}:{active?:boolean;st
    </details>
   <details className="simulation"><summary>시험 방향 표시</summary><label className="inline"><input type="checkbox" checked={showEstimate} disabled={!estimate} onChange={e=>setShowEstimate(e.target.checked)}/>저장 추정 방향 부채꼴 표시</label><label className="inline"><input type="checkbox" checked={simulation} onChange={e=>setSimulation(e.target.checked)}/>시험 방향 부채꼴 표시</label><p>부채꼴은 수평 방향 시각화입니다. 표시 거리는 임의값이며 산에 가리는 구간이나 실제 촬영 범위를 계산하지 않습니다. 가상 시점 보정 중에는 부채꼴을 숨깁니다.</p><div className="simulation-controls">{simulation&&<><label>시험 방위각 {heading}° (북=0°, 동=90°)<input type="range" min="0" max="359" value={heading} onChange={e=>setHeading(Number(e.target.value))}/></label><label>시험 수평 화각 {fov}°<input type="range" min="10" max="120" value={fov} onChange={e=>setFov(Number(e.target.value))}/></label></>}<label>표시 거리 {range}m<input type="range" min="100" max="3000" step="100" value={range} onChange={e=>setRange(Number(e.target.value))}/></label></div></details>
   </aside>
+  <aside className="map-floating coverage-panel" hidden={tools!=='coverage'}><CoverageControls positions={positions} current={current} plans={coveragePlans} hidden={coverageHidden} selectedOnly={coverageSelectedOnly} suspended={calibrating} storageStatus={coverageStorageStatus} onSelect={selectPosition} onPlans={setCoveragePlans} onHidden={setCoverageHidden} onSelectedOnly={setCoverageSelectedOnly} onStorageStatus={setCoverageStorageStatus}/><button disabled={!ready||!coverageShapes.length} onClick={()=>{exitPreview();post('fit-layers',{bounds:extent});}}>전체 범위 시안 보기</button>{coverageRenderError&&<p role="alert" className="error">{coverageRenderError}</p>}</aside>
   <aside className="map-floating layers-panel" hidden={tools!=='layers'}><h2>지도 레이어</h2>
    {standalone&&publishedMap&&<p className="help">북한산 공원경계·탐방로와 카메라 9개를 기본 표시합니다. 파일을 선택할 필요가 없습니다.</p>}
    {layers.length?layers.map(l=><div className="layer-row" key={l.id}><label className="inline"><input type="checkbox" checked={visibleLayers.includes(l.id)} onChange={e=>setVisibleLayers(ids=>e.target.checked?[...ids,l.id]:ids.filter(id=>id!==l.id))}/><span><i className={'layer-swatch '+l.kind}/>{l.name}</span></label><small>{l.geojson.features.length}개 도형 · 자료 기준 {l.sourceDate}<br/>{!visibleLayers.includes(l.id)?'숨김':!frame?'좌표 배치도 표시':layerStatus[l.id]??'지도 표시 준비 중…'}</small></div>):<p>불러온 경계·탐방로가 없습니다.</p>}
@@ -166,6 +174,7 @@ export function MonitoringMap({active=true,standalone=false}:{active?:boolean;st
    <div className="map-surface">{mapPanel}</div>
    {current&&<TerrainCalibration key={current.id+':'+current.lat+':'+current.lon} position={current} ready={ready} previewEpoch={previewEpoch} onPreview={preview} onAspect={setAspect} onSave={saveOrientation} onExit={exitPreview}/>}
   </div></div>
+  {(coverageShapes.length>0||calibrating&&coveragePlans.length>0)&&<div className="coverage-disclaimer">{coverageRenderError?'범위 시안 표시 실패':calibrating?'가상 시점 보정 중 범위 시안 숨김':`범위 시안 ${coverageShapes.length}대 · 실제 촬영 범위·지형 가림 미확인`}</div>}
   <div className="map-bottom-status">{current?.name??'위치 없음'} · {estimate?'영상·지형 추정 · 실시간 확인 안 됨':'현재 방향 미확인'} · CCTV 제어 없음</div>
  </main>;
 }
