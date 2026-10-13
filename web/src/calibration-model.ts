@@ -1,5 +1,8 @@
 import type {Position} from './map-model';
 
+// Operator's trial assumption (2026-10-13), not a measured installation height.
+export const DEFAULT_TRIAL_CAMERA_HEIGHT_M=3;
+
 export type Landmark = {label:string;x:number;y:number};
 export type Pose = {headingDeg:number;pitchDeg:number;horizontalFovDeg:number;cameraHeightM:number};
 export type ManualOrientation = Pose & {

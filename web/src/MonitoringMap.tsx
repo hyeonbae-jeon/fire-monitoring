@@ -9,6 +9,8 @@ import {CoverageControls,readSavedCoverage} from './CoverageControls';
 import {buildCoverageShapes} from './coverage-model';
 import {LocationLookup} from './LocationLookup';
 import {validLocation,type SelectedLocation} from './location-model';
+import {useTerrainVisibility} from './useTerrainVisibility';
+import {TerrainVisibilityControls} from './TerrainVisibilityControls';
 import './MapWorkspace.css';
 
 type MapSnapshot={revision:string;configuration:MapConfiguration};
@@ -36,12 +38,17 @@ export function MonitoringMap({active=true,standalone=false}:{active?:boolean;st
  const [simulation,setSimulation]=useState(false),[heading,setHeading]=useState(0),[fov,setFov]=useState(60),[range,setRange]=useState(1000),[showEstimate,setShowEstimate]=useState(true);
  const [savedCoverage]=useState(readSavedCoverage),[coveragePlans,setCoveragePlans]=useState(savedCoverage.plans),[coverageStorageStatus,setCoverageStorageStatus]=useState(savedCoverage.status),[coverageHidden,setCoverageHidden]=useState(false),[coverageSelectedOnly,setCoverageSelectedOnly]=useState(false),[coverageRenderError,setCoverageRenderError]=useState('');
  const coverageRequest=useRef('');
+ const visibilityRequest=useRef('');
  const [aspect,setAspect]=useState<number|null>(null),[previewEpoch,setPreviewEpoch]=useState(0),[calibrating,setCalibrating]=useState(false);
  const edits=useRef(0),iframe=useRef<HTMLIFrameElement>(null),pending=useRef(new Map<string,{resolve:(ground:PreviewGround)=>void;reject:(error:Error)=>void;timer:number}>());
  const positions=configuration.positions,current=positions.find(p=>p.id===selected);
  const positionsRef=useRef(positions);positionsRef.current=positions;
  const estimate=current?.orientation?.status==='estimate'?current.orientation:null;
  const coverageShapes=useMemo(()=>calibrating||coverageHidden?[]:buildCoverageShapes(positions,coveragePlans,coverageSelectedOnly?selected:null),[positions,coveragePlans,coverageSelectedOnly,selected,coverageHidden,calibrating]);
+ const visibility=useTerrainVisibility({positions,current,plans:coveragePlans,ready,session:frame?.session??null,post});
+ const visibilityReceiver=useRef(visibility.receive);visibilityReceiver.current=visibility.receive;
+ const displayedVisibility=useMemo(()=>!ready||calibrating?[]:visibility.results.filter(v=>coverageShapes.some(s=>s.cameraId===v.cameraId)),[visibility.results,coverageShapes,ready,calibrating]);
+ const computedCoverageShapes=useMemo(()=>coverageShapes.map(s=>({...s,visibilityComputed:displayedVisibility.some(v=>v.cameraId===s.cameraId)})),[coverageShapes,displayedVisibility]);
  const polygon=calibrating||coverageShapes.some(s=>s.cameraId===selected)?null:simulation&&current?sector(current,heading,fov,range):showEstimate&&estimate&&current?sector(current,estimate.headingDeg,estimate.horizontalFovDeg,range):null;
  const displayedLines=layers.filter(l=>visibleLayers.includes(l.id)).map(l=>({layer:l,lines:layerLines(l)}));
  const extentPoints=[...positions.map(p=>[p.lon,p.lat]),...displayedLines.flatMap(l=>l.lines.flat()),...coverageShapes.flatMap(s=>s.coordinates)];
@@ -77,6 +84,8 @@ export function MonitoringMap({active=true,standalone=false}:{active?:boolean;st
    if(e.data.type==='error'){completed=true;clearTimeout(timer);setReady(false);setLocationPicking(false);setStatus('VWorld 연결 실패');setError(String(e.data.message));cancelPending('VWorld 연결 실패');}
    if(e.data.type==='layer-status'&&e.data.revision===layerRevisionRef.current&&typeof e.data.id==='string')setLayerStatus(s=>({...s,[e.data.id]:e.data.ok?'표시 준비 완료':'표시 실패 · 지도에 다시 연결해 주세요.'}));
    if(e.data.type==='coverage-status'&&e.data.requestId===coverageRequest.current)setCoverageRenderError(e.data.ok?'':'범위 시안을 지도에 표시하지 못했습니다. 지도에 다시 연결해 주세요.');
+   if(['terrain-heights','terrain-progress','terrain-error'].includes(e.data.type))visibilityReceiver.current(e.data);
+   if(e.data.type==='visibility-status'&&e.data.requestId===visibilityRequest.current)visibility.setRenderError(e.data.ok?'':'지형 가림 시안을 지도에 표시하지 못했습니다. 다시 연결해 주세요.');
    if(e.data.type==='location-picked'&&pickingRef.current){
     if(validLocation(e.data.point)&&e.data.point.source==='map-surface'){setLocationPoint(e.data.point);setLocationError('');setTools('location');}
     else{setLocationPoint(null);setLocationError('지도 좌표 응답을 확인할 수 없습니다. 다시 지점을 선택하세요.');}
@@ -93,7 +102,8 @@ export function MonitoringMap({active=true,standalone=false}:{active?:boolean;st
  },[frame]);
  useEffect(()=>{if(frame&&ready)post('draw',{positions,selected,sector:polygon});},[frame,ready,configuration,selected,simulation,heading,fov,range,showEstimate,calibrating,coverageShapes]);
  useEffect(()=>{if(frame&&ready)post('layers',{revision:layerRevision,layers,visibleIds:visibleLayers});},[frame,ready,layers,layerRevision,visibleLayers]);
- useEffect(()=>{if(frame&&ready){coverageRequest.current=crypto.randomUUID();post('coverage',{requestId:coverageRequest.current,shapes:coverageShapes,selected});}},[frame,ready,coverageShapes,selected]);
+ useEffect(()=>{if(frame&&ready){coverageRequest.current=crypto.randomUUID();post('coverage',{requestId:coverageRequest.current,shapes:computedCoverageShapes,selected});}},[frame,ready,computedCoverageShapes,selected]);
+ useEffect(()=>{if(frame&&ready){visibilityRequest.current=crypto.randomUUID();post('visibility',{requestId:visibilityRequest.current,results:displayedVisibility});}},[frame,ready,displayedVisibility]);
  useEffect(()=>{if(frame&&ready&&standalone&&publishedMap&&fittedFrame.current!==frame.session){fittedFrame.current=frame.session;post('fit-layers',{bounds:extent});}},[frame,ready]);
  useEffect(()=>{if(frame&&ready)post('location-mode',{enabled:locationPicking});},[frame,ready,locationPicking]);
  useEffect(()=>{if(frame&&ready)post('location-point',{point:locationPoint});},[frame,ready,locationPoint]);
@@ -168,7 +178,7 @@ export function MonitoringMap({active=true,standalone=false}:{active?:boolean;st
    </details>
   <details className="simulation"><summary>시험 방향 표시</summary><label className="inline"><input type="checkbox" checked={showEstimate} disabled={!estimate} onChange={e=>setShowEstimate(e.target.checked)}/>저장 추정 방향 부채꼴 표시</label><label className="inline"><input type="checkbox" checked={simulation} onChange={e=>setSimulation(e.target.checked)}/>시험 방향 부채꼴 표시</label><p>부채꼴은 수평 방향 시각화입니다. 표시 거리는 임의값이며 산에 가리는 구간이나 실제 촬영 범위를 계산하지 않습니다. 가상 시점 보정 중에는 부채꼴을 숨깁니다.</p><div className="simulation-controls">{simulation&&<><label>시험 방위각 {heading}° (북=0°, 동=90°)<input type="range" min="0" max="359" value={heading} onChange={e=>setHeading(Number(e.target.value))}/></label><label>시험 수평 화각 {fov}°<input type="range" min="10" max="120" value={fov} onChange={e=>setFov(Number(e.target.value))}/></label></>}<label>표시 거리 {range}m<input type="range" min="100" max="3000" step="100" value={range} onChange={e=>setRange(Number(e.target.value))}/></label></div></details>
   </aside>
-  <aside className="map-floating coverage-panel" hidden={tools!=='coverage'}><CoverageControls positions={positions} current={current} plans={coveragePlans} hidden={coverageHidden} selectedOnly={coverageSelectedOnly} suspended={calibrating} storageStatus={coverageStorageStatus} onSelect={selectPosition} onPlans={setCoveragePlans} onHidden={setCoverageHidden} onSelectedOnly={setCoverageSelectedOnly} onStorageStatus={setCoverageStorageStatus}/><button disabled={!ready||!coverageShapes.length} onClick={()=>{exitPreview();post('fit-layers',{bounds:extent});}}>전체 범위 시안 보기</button>{coverageRenderError&&<p role="alert" className="error">{coverageRenderError}</p>}</aside>
+  <aside className="map-floating coverage-panel" hidden={tools!=='coverage'}><CoverageControls positions={positions} current={current} plans={coveragePlans} hidden={coverageHidden} selectedOnly={coverageSelectedOnly} suspended={calibrating} storageStatus={coverageStorageStatus} onSelect={selectPosition} onPlans={setCoveragePlans} onHidden={setCoverageHidden} onSelectedOnly={setCoverageSelectedOnly} onStorageStatus={setCoverageStorageStatus}/><TerrainVisibilityControls current={current} plan={coveragePlans.find(p=>p.cameraId===selected)} ready={ready} suspended={calibrating} visibility={visibility}/><button disabled={!ready||!coverageShapes.length} onClick={()=>{exitPreview();post('fit-layers',{bounds:extent});}}>전체 범위 시안 보기</button>{coverageRenderError&&<p role="alert" className="error">{coverageRenderError}</p>}</aside>
   <aside className="map-floating layers-panel" hidden={tools!=='layers'}><h2>지도 레이어</h2>
    {standalone&&publishedMap&&<p className="help">북한산 공원경계·탐방로와 카메라 9개를 기본 표시합니다. 파일을 선택할 필요가 없습니다.</p>}
    {layers.length?layers.map(l=><div className="layer-row" key={l.id}><label className="inline"><input type="checkbox" checked={visibleLayers.includes(l.id)} onChange={e=>setVisibleLayers(ids=>e.target.checked?[...ids,l.id]:ids.filter(id=>id!==l.id))}/><span><i className={'layer-swatch '+l.kind}/>{l.name}</span></label><small>{l.geojson.features.length}개 도형 · 자료 기준 {l.sourceDate}<br/>{!visibleLayers.includes(l.id)?'숨김':!frame?'좌표 배치도 표시':layerStatus[l.id]??'지도 표시 준비 중…'}</small></div>):<p>불러온 경계·탐방로가 없습니다.</p>}
@@ -187,7 +197,7 @@ export function MonitoringMap({active=true,standalone=false}:{active?:boolean;st
    <div className="map-surface">{mapPanel}</div>
    {current&&<TerrainCalibration key={current.id+':'+current.lat+':'+current.lon} position={current} ready={ready} previewEpoch={previewEpoch} onPreview={preview} onAspect={setAspect} onSave={saveOrientation} onExit={exitPreview}/>}
   </div></div>
-  {(coverageShapes.length>0||calibrating&&coveragePlans.length>0)&&<div className="coverage-disclaimer">{coverageRenderError?'범위 시안 표시 실패':calibrating?'가상 시점 보정 중 범위 시안 숨김':`범위 시안 ${coverageShapes.length}대 · 실제 촬영 범위·지형 가림 미확인`}</div>}
+  {(coverageShapes.length>0||calibrating&&coveragePlans.length>0)&&<div className="coverage-disclaimer">{coverageRenderError?'범위 시안 표시 실패':calibrating?'가상 시점 보정 중 범위 시안 숨김':displayedVisibility.length?`지형 가림 시안 ${displayedVisibility.length}대 · 초록 비가림 추정 / 빨강 가림 추정 / 노랑 미확인 · 실제 촬영 범위 미검증`:`범위 시안 ${coverageShapes.length}대 · 실제 촬영 범위·지형 가림 미확인`}</div>}
   {locationPicking&&<div className="location-picking-status">위치 선택 중 · 지형 지점을 클릭하세요 <button onClick={()=>setLocationPicking(false)}>종료</button></div>}
   <div className="map-bottom-status">{current?.name??'위치 없음'} · {estimate?'영상·지형 추정 · 실시간 확인 안 됨':'현재 방향 미확인'} · CCTV 제어 없음</div>
  </main>;

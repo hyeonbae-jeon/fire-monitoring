@@ -3,9 +3,64 @@
 const appOrigin=__APP_ORIGIN__;const session='__SESSION__';let viewer,latest,owned=[],originalFrustum=null;const cameras=new Map();
 let coverageOwned=[];const coverageCameras=new Map();
 let locationPicking=false,locationPin=null;
-function excludedOverlays(){return [...owned,...coverageOwned,...(locationPin?[locationPin]:[]),...Array.from(layerSources.values()).flatMap(s=>s.entities.values)];}
+let visibilityOwned=[],terrainJob=null,overlayGeneration=0;const visibilityCameras=new Map();
+function excludedOverlays(){return [...owned,...coverageOwned,...visibilityOwned,...(locationPin?[locationPin]:[]),...Array.from(layerSources.values()).flatMap(s=>s.entities.values)];}
+function drawVisibility(data){
+ if(!viewer)return;overlayGeneration++;
+ visibilityOwned.forEach(e=>viewer.entities.remove(e));visibilityOwned=[];visibilityCameras.clear();
+ try{
+  const colors={visible:'#52d38a',blocked:'#f47b78',unknown:'#f5cc57'};
+  const classification=Cesium.ClassificationType?{classificationType:Cesium.ClassificationType.BOTH}:{};
+  for(const result of data.results)for(const polygon of result.polygons){
+   const e=viewer.entities.add({name:result.cameraId+' · 지형 가림 '+polygon.state,polygon:{hierarchy:Cesium.Cartesian3.fromDegreesArray(polygon.coordinates.flat()),material:Cesium.Color.fromCssColorString(colors[polygon.state]).withAlpha(.32),...classification}});
+   visibilityOwned.push(e);visibilityCameras.set(e,result.cameraId);
+  }
+  parent.postMessage({scope:'vworld-prototype',session,type:'visibility-status',requestId:data.requestId,ok:true},appOrigin);
+ }catch(_){visibilityOwned.forEach(e=>viewer.entities.remove(e));visibilityOwned=[];visibilityCameras.clear();parent.postMessage({scope:'vworld-prototype',session,type:'visibility-status',requestId:data.requestId,ok:false},appOrigin);}
+}
+function cancelTerrain(requestId){if(terrainJob&&(!requestId||terrainJob.id===requestId)){terrainJob.cancelled=true;terrainJob=null;}}
+async function collectTerrain(data){
+ cancelTerrain();const job={id:data.requestId,cancelled:false};terrainJob=job;
+ const send=(type,values)=>{if(!job.cancelled&&terrainJob===job)parent.postMessage({scope:'vworld-prototype',session,type,requestId:job.id,...values},appOrigin);};
+ try{
+  if(!viewer||!Array.isArray(data.points)||!data.points.length||data.points.length>3001||data.points.some(p=>!Array.isArray(p)||p.length!==2||!Number.isFinite(p[0])||Math.abs(p[0])>180||!Number.isFinite(p[1])||Math.abs(p[1])>90))throw new Error('Invalid terrain request');
+  const provider=viewer.terrainProvider??viewer.scene.terrainProvider;
+  const realProvider=provider&&typeof Cesium.EllipsoidTerrainProvider==='function'&&!(provider instanceof Cesium.EllipsoidTerrainProvider);
+  const detailed=typeof viewer.scene.clampToHeightMostDetailed==='function'&&viewer.scene.clampToHeightSupported!==false;
+  const fromProvider=realProvider&&provider.availability&&typeof Cesium.sampleTerrainMostDetailed==='function';
+  const source=fromProvider?'terrain-provider':detailed?'scene-most-detailed':'rendered-scene';
+  if(!fromProvider&&!detailed&&(typeof viewer.scene.clampToHeight!=='function'||viewer.scene.clampToHeightSupported===false))throw new Error('Terrain sampling unavailable');
+  const heights=[];
+  for(let offset=0;offset<data.points.length;offset+=64){
+   if(job.cancelled)return;
+   const points=data.points.slice(offset,offset+64);let batch,stable=false;
+   for(let attempt=0;attempt<3&&!stable;attempt++){
+    const generation=overlayGeneration,excluded=excludedOverlays();
+    if(fromProvider){
+     const positions=points.map(p=>Cesium.Cartographic.fromDegrees(p[0],p[1]));
+     const sampled=await Cesium.sampleTerrainMostDetailed(provider,positions);batch=sampled.map(p=>p?.height);
+    }else{
+     const positions=points.map(p=>Cesium.Cartesian3.fromDegrees(p[0],p[1],9000));
+     const sampled=detailed?await viewer.scene.clampToHeightMostDetailed(positions,excluded):positions.map(p=>{try{return viewer.scene.clampToHeight(p,excluded);}catch(_){return undefined;}});
+     batch=sampled.map(p=>p?Cesium.Cartographic.fromCartesian(p).height:undefined);
+    }
+    if(job.cancelled)return;
+    // New markers/lines added during an async query were not in its exclusions.
+    // Discard that batch instead of treating our overlays as terrain heights.
+    stable=fromProvider||generation===overlayGeneration;
+   }
+   if(!stable||!Array.isArray(batch)||batch.length!==points.length)throw new Error('Terrain sampling changed');
+   heights.push(...batch.map(h=>Number.isFinite(h)&&h>=-500&&h<=9000&&(fromProvider||Math.abs(h)>=.01)?h:null));
+   send('terrain-progress',{done:heights.length});
+   // Yield between bounded batches; cancellation stops further height queries.
+   await new Promise(resolve=>setTimeout(resolve,0));
+  }
+  send('terrain-heights',{heights,heightSource:source});
+ }catch(_){send('terrain-error',{});}
+ finally{if(terrainJob===job)terrainJob=null;}
+}
 function showLocation(point){
- if(!viewer)return;
+ if(!viewer)return;overlayGeneration++;
  if(locationPin)viewer.entities.remove(locationPin);locationPin=null;
  if(!point)return;
  const heightReference=point.heightM===null?Cesium.HeightReference.CLAMP_TO_GROUND:Cesium.HeightReference.NONE;
@@ -36,14 +91,14 @@ function pickLocation(position){
  finally{states.forEach(s=>{s.entity.show=s.show;});viewer.scene.requestRender?.();}
 }
 function drawCoverage(data){
- if(!viewer)return;
+ if(!viewer)return;overlayGeneration++;
  coverageOwned.forEach(e=>viewer.entities.remove(e));coverageOwned=[];coverageCameras.clear();
  try{
   for(const shape of data.shapes){
    const color=Cesium.Color.fromCssColorString(shape.color),selected=shape.cameraId===data.selected;
    const add=definition=>{const e=viewer.entities.add(definition);coverageOwned.push(e);coverageCameras.set(e,shape.cameraId);};
    const classification=Cesium.ClassificationType?{classificationType:Cesium.ClassificationType.BOTH}:{};
-   add({name:shape.name+' · 범위 시안',polygon:{hierarchy:Cesium.Cartesian3.fromDegreesArray(shape.coordinates.flat()),material:color.withAlpha(selected?.28:.16),...classification}});
+   if(!shape.visibilityComputed)add({name:shape.name+' · 범위 시안',polygon:{hierarchy:Cesium.Cartesian3.fromDegreesArray(shape.coordinates.flat()),material:color.withAlpha(selected?.28:.16),...classification}});
    for(const line of [shape.coordinates,shape.centerline])add({polyline:{positions:Cesium.Cartesian3.fromDegreesArray(line.flat()),width:selected?3:2,material:color.withAlpha(.9),clampToGround:true,...classification}});
   }
   parent.postMessage({scope:'vworld-prototype',session,type:'coverage-status',requestId:data.requestId,ok:true},appOrigin);
@@ -52,6 +107,7 @@ function drawCoverage(data){
 let layerRevision=null,layerGeneration=0,latestLayers=null,layerVisibility=new Set();const layerSources=new Map();
 function drawLayers(data){
  if(!viewer){latestLayers=data;return;}
+ overlayGeneration++;
  layerVisibility=new Set(data.visibleIds);
  if(data.revision===layerRevision){layerSources.forEach((source,id)=>{source.show=layerVisibility.has(id);});return;}
  layerRevision=data.revision;const generation=++layerGeneration;
@@ -71,7 +127,7 @@ function drawLayers(data){
     for(const entity of source.entities.values){if(entity.polyline&&Cesium.ClassificationType)entity.polyline.classificationType=Cesium.ClassificationType.BOTH;}
     await viewer.dataSources.add(source);
     if(generation!==layerGeneration){viewer.dataSources.remove(source,true);return;}
-    source.show=layerVisibility.has(layer.id);layerSources.set(layer.id,source);answer(true);
+    source.show=layerVisibility.has(layer.id);layerSources.set(layer.id,source);overlayGeneration++;answer(true);
    }).catch(()=>answer(false));
   }catch(_){answer(false);}
  });
@@ -114,7 +170,7 @@ function calibrate(data){
  }catch(e){endCalibration();answer('calibration-error',{message:e.message});}
 }
 function draw(data){
- if(!viewer){latest=data;return;}owned.forEach(e=>viewer.entities.remove(e));owned=[];cameras.clear();
+ if(!viewer){latest=data;return;}overlayGeneration++;owned.forEach(e=>viewer.entities.remove(e));owned=[];cameras.clear();
  data.positions.forEach(p=>{
  let position=Cesium.Cartesian3.fromDegrees(p.lon,p.lat),heightReference=Cesium.HeightReference.CLAMP_TO_GROUND;
  try{const ground=viewer.scene.clampToHeight(Cesium.Cartesian3.fromDegrees(p.lon,p.lat,9000),excludedOverlays());if(ground){const c=Cesium.Cartographic.fromCartesian(ground);position=Cesium.Cartesian3.fromRadians(c.longitude,c.latitude,c.height+2);heightReference=Cesium.HeightReference.NONE;}}catch(_){/* Tiles may be unavailable; fallback height is approximate. */}
@@ -123,14 +179,14 @@ function draw(data){
  if(data.sector)owned.push(viewer.entities.add({polygon:{hierarchy:Cesium.Cartesian3.fromDegreesArray(data.sector.flat()),material:Cesium.Color.ORANGE.withAlpha(.3)}}));
  if(data.flyTo){endCalibration();const p=data.positions.find(p=>p.id===data.selected);if(p)viewer.camera.flyTo({destination:Cesium.Cartesian3.fromDegrees(p.lon,p.lat,4500),orientation:{heading:0,pitch:Cesium.Math.toRadians(-75),roll:0}});}
 }
-addEventListener('message',e=>{if(e.source!==parent||e.origin!==appOrigin||e.data?.session!==session||e.data?.scope!=='vworld-prototype')return;if(e.data.type==='draw')draw(e.data);if(e.data.type==='layers')drawLayers(e.data);if(e.data.type==='coverage')drawCoverage(e.data);if(e.data.type==='fit-layers'&&viewer&&Cesium.Rectangle){endCalibration();viewer.camera.flyTo({destination:Cesium.Rectangle.fromDegrees(...e.data.bounds)});}if(e.data.type==='calibrate')calibrate(e.data);if(e.data.type==='end-calibration')endCalibration();if(e.data.type==='location-mode'){locationPicking=e.data.enabled===true;if(viewer?.scene?.canvas?.style)viewer.scene.canvas.style.cursor=locationPicking?'crosshair':'';}if(e.data.type==='location-point')showLocation(e.data.point);});
+addEventListener('message',e=>{if(e.source!==parent||e.origin!==appOrigin||e.data?.session!==session||e.data?.scope!=='vworld-prototype')return;if(e.data.type==='draw')draw(e.data);if(e.data.type==='layers')drawLayers(e.data);if(e.data.type==='coverage')drawCoverage(e.data);if(e.data.type==='visibility')drawVisibility(e.data);if(e.data.type==='terrain-heights')void collectTerrain(e.data);if(e.data.type==='terrain-cancel')cancelTerrain(e.data.requestId);if(e.data.type==='fit-layers'&&viewer&&Cesium.Rectangle){endCalibration();viewer.camera.flyTo({destination:Cesium.Rectangle.fromDegrees(...e.data.bounds)});}if(e.data.type==='calibrate')calibrate(e.data);if(e.data.type==='end-calibration')endCalibration();if(e.data.type==='location-mode'){locationPicking=e.data.enabled===true;if(viewer?.scene?.canvas?.style)viewer.scene.canvas.style.cursor=locationPicking?'crosshair':'';}if(e.data.type==='location-point')showLocation(e.data.point);});
 try{
  if(typeof vw==='undefined')throw new Error(window.vworldSdkTransport.failed
   ? 'VWorld SDK를 불러오지 못했습니다. 적용된 키로 SDK 파일을 요청했지만 내려받기에 실패했습니다. 네트워크 연결과 브라우저의 요청 오류를 확인하세요.'
   : 'VWorld SDK를 불러오지 못했습니다. 응답에 지도 모듈이 없습니다. 키의 등록 주소·사용 API와 하위 스크립트 로딩을 확인하세요.');
  // v3 API matches the user's bukhansan-weather site. Register callback before start.
  vw.ws3dInitCallBack=function(){try{viewer=ws3d.viewer;draw(latest||{positions:[]});if(latestLayers)drawLayers(latestLayers);
- if(Cesium.ScreenSpaceEventHandler&&Cesium.ScreenSpaceEventType&&viewer.scene.canvas){const clicks=new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);clicks.setInputAction(event=>{if(locationPicking){pickLocation(event.position);return;}const picked=viewer.scene.pick(event.position)?.id,id=cameras.get(picked)??coverageCameras.get(picked);if(id)parent.postMessage({scope:'vworld-prototype',session,type:'select-camera',id},appOrigin);},Cesium.ScreenSpaceEventType.LEFT_CLICK);}
+ if(Cesium.ScreenSpaceEventHandler&&Cesium.ScreenSpaceEventType&&viewer.scene.canvas){const clicks=new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);clicks.setInputAction(event=>{if(locationPicking){pickLocation(event.position);return;}const picked=viewer.scene.pick(event.position)?.id,id=cameras.get(picked)??coverageCameras.get(picked)??visibilityCameras.get(picked);if(id)parent.postMessage({scope:'vworld-prototype',session,type:'select-camera',id},appOrigin);},Cesium.ScreenSpaceEventType.LEFT_CLICK);}
  report('ready','VWorld 3D 뷰어 초기화 완료');}catch(_){report('error','VWorld 뷰어 초기화에 실패했습니다.');}};
  const map=new vw.Map();map.setOption({mapId:'map',initPosition:new vw.CameraPosition(new vw.CoordZ(126.977,37.6585,10000),new vw.Direction(0,-75,0)),logo:true,navigation:true});map.start();
 }catch(e){report('error',e.message);}

@@ -1,5 +1,5 @@
 export const sdk=`
-window.views=[];window.mockEntities=[];window.activeEntities=[];window.flies=[];window.sources=[];window.layerLoads=[];window.pendingLoads=[];window.surface=[126.97798,37.65868,700];window.surfacePicks=[];window.renderedShows=[];
+window.views=[];window.mockEntities=[];window.activeEntities=[];window.flies=[];window.sources=[];window.layerLoads=[];window.pendingLoads=[];window.surface=[126.97798,37.65868,700];window.surfacePicks=[];window.renderedShows=[];window.terrainCalls=[];window.pendingTerrain=[];
 window.vw={CameraPosition:function(){},CoordZ:function(){},Direction:function(){},Map:function(){this.setOption=function(){};this.start=function(){setTimeout(()=>vw.ws3dInitCallBack(),0)}}};
 window.ws3d={viewer:{entities:{add:e=>{mockEntities.push(e);activeEntities.push(e);return e},remove:e=>{activeEntities=activeEntities.filter(x=>x!==e)}},dataSources:{add:s=>{sources.push(s);return Promise.resolve(s)},remove:s=>{sources=sources.filter(x=>x!==s)}},scene:{canvas:{clientWidth:1200,clientHeight:700,style:{}},pick:()=>({id:window.picked}),pickPositionSupported:true,pickPosition:p=>{surfacePicks.push(p);return window.surface},render:()=>renderedShows.push([...activeEntities,...sources.flatMap(s=>s.entities.values)].map(e=>e.show)),requestRender:()=>{},clampToHeight:()=>null,globe:{getHeight:()=>700},screenSpaceCameraController:{enableInputs:true}},camera:{frustum:{fov:1,aspectRatio:1},flyTo:x=>flies.push(x),setView:x=>views.push(x)}}};
 window.Cesium={ScreenSpaceEventHandler:function(){this.setInputAction=f=>window.clickHandler=f},ScreenSpaceEventType:{LEFT_CLICK:1},Cartesian3:{fromDegrees:(...x)=>x,fromDegreesArray:x=>x},Cartographic:{fromDegrees:(...x)=>x,fromCartesian:x=>({height:x[2],longitude:x[0]*Math.PI/180,latitude:x[1]*Math.PI/180})},Cartesian2:function(){},HeightReference:{CLAMP_TO_GROUND:1,NONE:0},ClassificationType:{BOTH:2},Rectangle:{fromDegrees:(...x)=>({bounds:x})},Color:{fromCssColorString:x=>({css:x,withAlpha:alpha=>({css:x,alpha})}),CYAN:'cyan',WHITE:'white',ORANGE:{withAlpha:()=> 'orange'}},Math:{toRadians:x=>x*Math.PI/180,toDegrees:x=>x*180/Math.PI},GeoJsonDataSource:{load:(data,options)=>{
@@ -7,4 +7,10 @@ window.Cesium={ScreenSpaceEventHandler:function(){this.setInputAction=f=>window.
  const source={entities:{values:[{polyline:{}}]},show:true,destroy:function(){this.destroyed=true}};
  return window.holdLayers?new Promise(resolve=>pendingLoads.push(()=>resolve(source))):Promise.resolve(source);
 }}};
+ws3d.viewer.scene.clampToHeightMostDetailed=(points,excluded)=>{
+ terrainCalls.push({points,excludedCount:excluded.length,excludedNames:excluded.map(e=>e.label?.text??e.name??'GIS')});
+ if(window.failTerrain)return Promise.reject(new Error('synthetic terrain failure'));
+ const result=()=>points.map(p=>{const h=window.terrainHeight?window.terrainHeight(p):700;return h===null?undefined:[p[0],p[1],h]});
+ return window.holdTerrain?new Promise(resolve=>pendingTerrain.push({points,resolve,result})):Promise.resolve(result());
+};
 `;

@@ -53,7 +53,7 @@ test('manual virtual pose, evidence-only central persistence and explicit stale 
  await range(page,'가상 방위각',90);await range(page,'가상 기울기',-5);await apply(page);
  const frame=page.frames().find(f=>f!==page.mainFrame())!;
  const state=await frame.evaluate('({view:views.at(-1),frustum:ws3d.viewer.camera.frustum,inputs:ws3d.viewer.scene.screenSpaceCameraController.enableInputs})');
- expect(state.view.destination).toEqual([127.1,37.5,705]);expect(state.view.orientation.heading).toBeCloseTo(Math.PI/2);expect(state.view.orientation.pitch).toBeCloseTo(-5*Math.PI/180);expect(state.inputs).toBe(false);
+ expect(state.view.destination).toEqual([127.1,37.5,703]);expect(state.view.orientation.heading).toBeCloseTo(Math.PI/2);expect(state.view.orientation.pitch).toBeCloseTo(-5*Math.PI/180);expect(state.inputs).toBe(false);
  expect(state.frustum.fov).toBeCloseTo(Math.PI/3);expect(state.frustum.aspectRatio).toBeCloseTo(16/9);
  const mapBox=(await page.locator('.map-panel').boundingBox())!;expect(mapBox.width/mapBox.height).toBeCloseTo(16/9,1);
  await page.getByRole('button',{name:'추정 방향을 설정에 반영',exact:true}).click();await expect(page.getByText('저장된 영상·지형 추정',{exact:true})).toBeVisible();
@@ -61,7 +61,7 @@ test('manual virtual pose, evidence-only central persistence and explicit stale 
  await page.getByLabel('지도 저장 키',{exact:true}).fill(saveKey);await page.getByRole('button',{name:'중앙 지도 설정 저장',exact:true}).click();
  await expect(page.getByLabel('지도 저장 키',{exact:true})).toHaveValue('');
  const saved=await (await request.get('/api/map-configuration')).json();const o=saved.configuration.positions[0].orientation;
- expect(o).toMatchObject({source:'manual-calibration',status:'estimate',confidence:'unvalidated',headingDeg:90,pitchDeg:-5,groundElevationM:700,groundElevationSource:'map-terrain'});
+ expect(o).toMatchObject({source:'manual-calibration',status:'estimate',confidence:'unvalidated',headingDeg:90,pitchDeg:-5,cameraHeightM:3,groundElevationM:700,groundElevationSource:'map-terrain'});
  expect(o.reference).toMatchObject({width:320,height:180});expect(o.reference.sha256).toMatch(/^[a-f0-9]{64}$/);expect(o.landmarks).toHaveLength(2);
  expect(writes).toHaveLength(1);for(const forbidden of ['data:image','blob:','synthetic-sdk-key',saveKey,'synthetic-reference.png'])expect(writes[0]).not.toContain(forbidden);
  await page.reload();await page.getByRole('button',{name:'지도 모니터링',exact:true}).click();await expect(page.getByText('저장된 영상·지형 추정',{exact:true})).toBeVisible();
@@ -76,7 +76,7 @@ test('missing terrain stays unknown; explicit zero height and portrait field of 
  await expect(page.getByRole('button',{name:'추정 방향을 설정에 반영',exact:true})).toBeDisabled();
  await page.getByLabel('지도 지면 높이(m, 선택 입력)',{exact:true}).fill('0');await apply(page);
  const frame=page.frames().find(f=>f!==page.mainFrame())!;const state=await frame.evaluate('({view:views.at(-1),frustum:ws3d.viewer.camera.frustum})');
- expect(state.view.destination[2]).toBe(5);expect(state.frustum.fov).toBeCloseTo(2*Math.atan(Math.tan(Math.PI/6)/(180/320)));
+ expect(state.view.destination[2]).toBe(3);expect(state.frustum.fov).toBeCloseTo(2*Math.atan(Math.tan(Math.PI/6)/(180/320)));
  await page.getByRole('button',{name:'추정 방향을 설정에 반영',exact:true}).click();await expect(page.getByText('저장된 영상·지형 추정',{exact:true})).toBeVisible();
  await range(page,'가상 방위각',45);await expect(page.getByRole('button',{name:'추정 방향을 설정에 반영',exact:true})).toBeDisabled();await apply(page);
  await page.getByRole('button',{name:'일반 지도 보기',exact:true}).click();await expect(page.getByRole('button',{name:'추정 방향을 설정에 반영',exact:true})).toBeDisabled();await expect.poll(()=>frame.evaluate('ws3d.viewer.scene.screenSpaceCameraController.enableInputs')).toBe(true);

@@ -1,5 +1,6 @@
 import {useEffect,useRef,useState} from 'react';
 import type {Landmark,ManualOrientation,Pose} from './calibration-model';
+import {DEFAULT_TRIAL_CAMERA_HEIGHT_M} from './calibration-model';
 import type {Position} from './map-model';
 
 export type PreviewRequest = {position:Position;pose:Pose;groundElevationM:number|null;aspectRatio:number|null};
@@ -9,7 +10,7 @@ type Props = {position:Position;ready:boolean;previewEpoch:number;onPreview:(req
 
 export function TerrainCalibration({position,ready,previewEpoch,onPreview,onAspect,onSave,onExit}:Props){
   const previous=position.orientation;
-  const [pose,setPose]=useState<Pose>({headingDeg:previous?.headingDeg??0,pitchDeg:previous?.pitchDeg??0,horizontalFovDeg:previous?.horizontalFovDeg??60,cameraHeightM:previous?.cameraHeightM??5});
+  const [pose,setPose]=useState<Pose>({headingDeg:previous?.headingDeg??0,pitchDeg:previous?.pitchDeg??0,horizontalFovDeg:previous?.horizontalFovDeg??60,cameraHeightM:previous?.cameraHeightM??DEFAULT_TRIAL_CAMERA_HEIGHT_M});
   const [image,setImage]=useState<ImageReference|null>(null),[landmarks,setLandmarks]=useState<Landmark[]>([]);
   const [capturedAt,setCapturedAt]=useState(''),[groundInput,setGroundInput]=useState('');
   const [applied,setApplied]=useState<PreviewGround|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('');
@@ -85,7 +86,7 @@ export function TerrainCalibration({position,ready,previewEpoch,onPreview,onAspe
       <label>가상 설치 높이(m)<input aria-label="가상 설치 높이(m)" type="number" min={.5} max={100} step={.5} value={pose.cameraHeightM} onChange={e=>control('cameraHeightM',Number(e.target.value))}/></label>
       <label>지도 지면 높이(m, 선택 입력)<input type="number" min={-500} max={9000} value={groundInput} onChange={e=>{invalidate();setGroundInput(e.target.value);}} placeholder="비우면 로드된 지도 지형 사용"/></label>
     </div>
-    <p className="help">초기 각도는 가상 시험값입니다. 시점 적용 중 지도 마우스 이동은 잠기며 일반 지도 보기로 해제합니다.</p>
+    <p className="help">초기 각도와 새 시점의 설치 높이 3m는 가상 시험값입니다. 시점 적용 중 지도 마우스 이동은 잠기며 일반 지도 보기로 해제합니다.</p>
     <div className="calibration-actions"><button disabled={!ready||busy||!Number.isFinite(pose.cameraHeightM)||pose.cameraHeightM<.5||pose.cameraHeightM>100} onClick={()=>void preview()}>가상 시점 적용</button><button disabled={!applied||!image||!ready||busy||position.positionSource!=='operator'} onClick={save}>추정 방향을 설정에 반영</button><button onClick={()=>{setAutoApply(false);invalidate();onExit();}}>일반 지도 보기</button></div>
     {applied&&<p>지도 지면 높이 {applied.groundElevationM.toFixed(1)}m · {applied.groundElevationSource==='map-terrain'?'로드된 지형 참고값':'사용자 입력값'}</p>}
     {error&&<p role="alert" className="error">{error}</p>}{message&&<p role="status">{message}</p>}
