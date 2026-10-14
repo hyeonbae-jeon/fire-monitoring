@@ -89,7 +89,7 @@ function App() {
     <header><p className="eyebrow">중앙 PTZ Bridge · Camera Inventory</p><h1>산불감시 모니터링</h1>
       <p>카메라 목록을 확인하고 사용할 대상을 UUID 기준으로 저장합니다.</p></header>
     <nav className="tabs" aria-label="기능 선택"><button aria-pressed={tab === "inventory"} onClick={() => setTab("inventory")}>카메라 목록</button><button aria-pressed={tab === "map"} onClick={() => setTab("map")}>지도 모니터링</button><button aria-pressed={tab === "capture"} onClick={() => setTab("capture")}>실시간 화면 시험</button></nav>
-    <div hidden={tab !== "map"}><MonitoringMap active={tab==='map'} /></div>
+    <div hidden={tab !== "map"}><MonitoringMap active={tab==='map'} desktopDemo={desktopDemo} /></div>
     <div hidden={tab !== "capture"}><LiveCapture active={tab==='capture'} desktopDemo={desktopDemo}/></div>
     <main hidden={tab !== "inventory"}>
       <ReportImport version={inventory?.version ?? null} writeKey={writeKey} dirty={dirty} onImported={async () => { setWriteKey(""); await load(); }} />
