@@ -1,0 +1,12 @@
+[
+  {
+    "file": "WebServiceStub.dll",
+    "bytes": 228352,
+    "sha256": "fed28b1f8e3dfb5ce3b73e02646f29a12f5951f9e91664b05189b770f36c4b5f"
+  },
+  {
+    "file": "HTW.SSM.ConsoleStudio.Services.ControllerService.dll",
+    "bytes": 28672,
+    "sha256": "675b72a244e196d573a6ae8518b8dba72feb530e558152d462800d784cbf5ad3"
+  }
+]

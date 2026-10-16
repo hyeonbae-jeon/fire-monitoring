@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>VWorld 지도 뷰어</title></head>
+<body><script>
+'use strict';
+// Keep an actual HTTPS document address for SDKs that inspect location/referrer.
+// Key-bearing HTML arrives only in memory from the same-origin parent, never in this URL.
+function initialize(event){
+ if(parent===window||event.source!==parent||event.origin!==location.origin||
+    event.data?.scope!=='vworld-bootstrap'||event.data.type!=='initialize'||
+    typeof event.data.html!=='string'||event.data.html.length>500000)return;
+ removeEventListener('message',initialize);
+ document.open();document.write(event.data.html);document.close();
+}
+addEventListener('message',initialize);
+</script></body></html>
