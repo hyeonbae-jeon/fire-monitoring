@@ -1,4 +1,4 @@
-import {useEffect,useRef,useState} from 'react';
+import {useEffect,useId,useRef,useState} from 'react';
 import type {Landmark,ManualOrientation,Pose} from './calibration-model';
 import {DEFAULT_TRIAL_CAMERA_HEIGHT_M} from './calibration-model';
 import type {Position} from './map-model';
@@ -13,17 +13,21 @@ export function TerrainCalibration({position,ready,previewEpoch,onPreview,onAspe
   const [pose,setPose]=useState<Pose>({headingDeg:previous?.headingDeg??0,pitchDeg:previous?.pitchDeg??0,horizontalFovDeg:previous?.horizontalFovDeg??60,cameraHeightM:previous?.cameraHeightM??DEFAULT_TRIAL_CAMERA_HEIGHT_M});
   const [image,setImage]=useState<ImageReference|null>(null),[landmarks,setLandmarks]=useState<Landmark[]>([]);
   const [capturedAt,setCapturedAt]=useState(''),[groundInput,setGroundInput]=useState('');
+  const [groundMode,setGroundMode]=useState<'map'|'operator'>('map');
+  const inputId=useId();
+  const validCameraHeight=Number.isFinite(pose.cameraHeightM)&&pose.cameraHeightM>=.5&&pose.cameraHeightM<=100;
+  const validGround=groundMode==='map'||(groundInput.trim()!==''&&Number.isFinite(Number(groundInput))&&Number(groundInput)>=-500&&Number(groundInput)<=9000);
   const [applied,setApplied]=useState<PreviewGround|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('');
   const [autoApply,setAutoApply]=useState(false);
   const generation=useRef(0),url=useRef<string|null>(null),mounted=useRef(true);
   useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;generation.current++;if(url.current)URL.revokeObjectURL(url.current);onAspect(null);};},[]);
   useEffect(()=>{generation.current++;setApplied(null);setBusy(false);},[ready,previewEpoch]);
   useEffect(()=>{
-    if(!autoApply||!ready)return;
+    if(!autoApply||!ready||!validCameraHeight||!validGround)return;
     const timer=setTimeout(()=>void preview(),250);
     return()=>clearTimeout(timer);
-  },[autoApply,ready,pose,groundInput,image]);
-  function invalidate(){generation.current++;setApplied(null);setBusy(false);setMessage('');}
+  },[autoApply,ready,pose,groundMode,groundInput,image]);
+  function invalidate(){generation.current++;setApplied(null);setBusy(false);setError('');setMessage('');}
   async function loadImage(file?:File){
     if(!file)return;const ticket=++generation.current;setApplied(null);setError('');setMessage('');setBusy(false);
     let nextUrl:string|null=null;
@@ -42,8 +46,9 @@ export function TerrainCalibration({position,ready,previewEpoch,onPreview,onAspe
   async function preview(){
     const ticket=++generation.current;setBusy(true);setApplied(null);setError('');setMessage('');
     try{
-      const ground=groundInput.trim()===''?null:Number(groundInput);
-      if(ground!==null&&(!Number.isFinite(ground)||ground< -500||ground>9000))throw new Error('지도 지면 높이는 -500~9000m 범위여야 합니다.');
+      if(!validCameraHeight)throw new Error('설치 높이를 0.5~100m로 입력하세요.');
+      if(!validGround)throw new Error('지도 지면 고도는 -500~9000m 범위의 숫자를 입력하세요.');
+      const ground=groundMode==='map'?null:Number(groundInput);
       const result=await onPreview({position,pose,groundElevationM:ground,aspectRatio:image?image.width/image.height:null});
       if(mounted.current&&generation.current===ticket){setApplied(result);setMessage('가상 시점 적용 완료 · 지형/기준점을 화면과 대조하세요.');}
     }catch(e){if(mounted.current&&generation.current===ticket)setError((e as Error).message);}
@@ -83,11 +88,17 @@ export function TerrainCalibration({position,ready,previewEpoch,onPreview,onAspe
       <label>가상 방위각 {pose.headingDeg}° · 북=0°, 동=90°<input aria-label="가상 방위각" type="range" min={0} max={359} step={1} value={pose.headingDeg} onChange={e=>control('headingDeg',Number(e.target.value))}/></label>
       <label>가상 기울기 {pose.pitchDeg}° · 위=양수, 아래=음수<input aria-label="가상 기울기" type="range" min={-80} max={80} step={1} value={pose.pitchDeg} onChange={e=>control('pitchDeg',Number(e.target.value))}/></label>
       <label>가상 수평 화각 {pose.horizontalFovDeg}°<input aria-label="가상 수평 화각" type="range" min={5} max={120} value={pose.horizontalFovDeg} onChange={e=>control('horizontalFovDeg',Number(e.target.value))}/></label>
-      <label>가상 설치 높이(m)<input aria-label="가상 설치 높이(m)" type="number" min={.5} max={100} step={.5} value={pose.cameraHeightM} onChange={e=>control('cameraHeightM',Number(e.target.value))}/></label>
-      <label>지도 지면 높이(m, 선택 입력)<input type="number" min={-500} max={9000} value={groundInput} onChange={e=>{invalidate();setGroundInput(e.target.value);}} placeholder="비우면 로드된 지도 지형 사용"/></label>
+      <label>가상 설치 높이(m) · 지면에서 렌즈까지<input aria-label="가상 설치 높이(m)" aria-invalid={!validCameraHeight} aria-describedby={inputId+'-lens-help'} type="number" min={.5} max={100} step={.5} value={Number.isFinite(pose.cameraHeightM)?pose.cameraHeightM:''} onChange={e=>control('cameraHeightM',e.target.value===''?NaN:Number(e.target.value))}/></label>
+      <p id={inputId+'-lens-help'} className={validCameraHeight?'help':'error'}>{validCameraHeight?'지면 고도와 별개입니다. 실제 높이를 모르면 시험값으로 비교하세요.':'설치 높이를 0.5~100m로 입력하세요. 빈칸이나 0m에서는 시점을 적용하지 않습니다.'}</p>
+      <fieldset className="ground-height-mode"><legend>지도 지면 고도 설정</legend>
+        <label className="inline"><input type="radio" name={inputId+'-ground-mode'} checked={groundMode==='map'} onChange={()=>{invalidate();setGroundMode('map');}}/>지도에서 자동 조회 (권장)</label>
+        <label className="inline"><input type="radio" name={inputId+'-ground-mode'} checked={groundMode==='operator'} onChange={()=>{invalidate();setGroundMode('operator');}}/>직접 고도 입력</label>
+        {groundMode==='operator'&&<><label>지도 지면 고도(m)<input aria-invalid={!validGround} type="number" min={-500} max={9000} value={groundInput} onChange={e=>{invalidate();setGroundInput(e.target.value);}} placeholder="지도 기준 지면 고도"/></label><p className={validGround?'help':'error'}>{validGround?'0m는 지도 기준 고도 0m를 직접 지정합니다. 자동 조회가 아닙니다.':'지도 지면 고도를 -500~9000m로 입력하거나 자동 조회를 선택하세요.'}</p></>}
+        <p className="help">지도 기준 지면의 고도입니다. 위의 렌즈 설치 높이와 다릅니다. 자동 조회에 실패하면 높이를 임의로 채우지 않습니다.</p>
+      </fieldset>
     </div>
     <p className="help">초기 각도와 새 시점의 설치 높이 3m는 가상 시험값입니다. 시점 적용 중 지도 마우스 이동은 잠기며 일반 지도 보기로 해제합니다.</p>
-    <div className="calibration-actions"><button disabled={!ready||busy||!Number.isFinite(pose.cameraHeightM)||pose.cameraHeightM<.5||pose.cameraHeightM>100} onClick={()=>void preview()}>가상 시점 적용</button><button disabled={!applied||!image||!ready||busy||position.positionSource!=='operator'} onClick={save}>추정 방향을 설정에 반영</button><button onClick={()=>{setAutoApply(false);invalidate();onExit();}}>일반 지도 보기</button></div>
+    <div className="calibration-actions"><button disabled={!ready||busy||!validCameraHeight||!validGround} onClick={()=>void preview()}>가상 시점 적용</button><button disabled={!applied||!image||!ready||busy||position.positionSource!=='operator'} onClick={save}>추정 방향을 설정에 반영</button><button onClick={()=>{setAutoApply(false);invalidate();onExit();}}>일반 지도 보기</button></div>
     {applied&&<p>지도 지면 높이 {applied.groundElevationM.toFixed(1)}m · {applied.groundElevationSource==='map-terrain'?'로드된 지형 참고값':'사용자 입력값'}</p>}
     {error&&<p role="alert" className="error">{error}</p>}{message&&<p role="status">{message}</p>}
     {previous&&<div className="saved-orientation"><p><strong>{previous.status==='stale'?'보정 무효 · 방향 UNKNOWN':'저장된 영상·지형 추정'}</strong> · 방위 {previous.headingDeg}° / 기울기 {previous.pitchDeg}° / 화각 {previous.horizontalFovDeg}°<br/>참조 화면 {new Date(previous.reference.capturedAt).toLocaleString()} · 정확도 미검증 · 실시간 방향 확인 안 됨</p><button disabled={previous.status==='stale'} onClick={()=>{invalidate();onSave({...previous,status:'stale'});}}>화면 방향·줌 변경으로 보정 무효화</button></div>}

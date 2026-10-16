@@ -14,6 +14,7 @@
 .map-workspace .reference-panel{right:16px;top:86px;max-height:calc((100% - 148px)/2)}.map-workspace .pose-panel{right:16px;bottom:46px;max-height:calc((100% - 148px)/2)}
 .map-workspace .reference-placeholder{height:70px;font-size:12px}.map-workspace .reference-image{border-radius:5px}.map-workspace .pose-controls{grid-template-columns:1fr;gap:0}.map-workspace .pose-controls label{margin:6px 0}.map-workspace .pose-controls input[type=range]{width:100%;margin:0}
 .map-workspace .landmarks>div{gap:6px}.map-workspace .landmarks button{margin-bottom:10px}.map-workspace .calibration-actions{gap:5px}.map-workspace .error{font-size:12px;padding:10px}.map-workspace .saved-orientation{margin-top:10px}
+.map-workspace .ground-height-mode{min-width:0;margin:12px 0;padding:10px;border:1px solid #bdcdd5;border-radius:5px}.map-workspace .ground-height-mode legend{font-weight:650;padding:0 4px}.map-workspace .pose-controls>.ground-height-mode,.map-workspace .pose-controls>p{grid-column:1/-1}
 .map-error{position:absolute;z-index:5;left:272px;right:342px;top:86px;margin:0;box-shadow:0 4px 12px #0003}
 .map-bottom-status{position:absolute;bottom:0;left:0;right:0;z-index:4;padding:9px 18px;background:#102937ee;font-size:12px;pointer-events:none}
 .map-only header{padding:14px 24px;max-width:none}.map-only h1{font-size:18px;margin:0}.map-only .map-workspace{margin:0 12px 12px;height:calc(100dvh - 68px)}

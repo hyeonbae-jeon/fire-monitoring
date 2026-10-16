@@ -52,3 +52,30 @@ test('map marker selection updates the panel and retains the same viewer on came
  expect(page.frames().find(f=>f!==page.mainFrame())).toBe(frame);
  await expect.poll(()=>frame.evaluate('flies.at(-1).destination')).toEqual([126.97798,37.65868,4500]);
 });
+
+test('Pages camera height recovery uses map altitude without a blank-field convention or company API',async({page})=>{
+ const companyRequests:string[]=[];
+ page.on('request',r=>{if(new URL(r.url()).pathname.startsWith('/api/'))companyRequests.push(r.url());});
+ await page.route('https://map.vworld.kr/**',r=>r.fulfill({contentType:'application/javascript',body:sdk}));
+ await page.goto('./');await expect(page.getByText(/VWorld 3D 뷰어 초기화 완료 ·/)).toBeVisible();
+ await page.getByRole('button',{name:/^숨은벽/}).click();
+ const frame=page.frames().find(f=>f!==page.mainFrame())!;
+ const height=page.getByLabel('가상 설치 높이(m)',{exact:true});
+ const apply=page.getByRole('button',{name:'가상 시점 적용',exact:true});
+ await expect(page.getByLabel('지도에서 자동 조회 (권장)',{exact:true})).toBeChecked();
+ await expect(page.getByLabel('지도 지면 고도(m)',{exact:true})).toHaveCount(0);
+ await height.fill('');await expect(height).toHaveValue('');await expect(apply).toBeDisabled();
+ await height.fill('0');await expect(apply).toBeDisabled();
+ await height.fill('20');await apply.click();
+ await expect(page.getByText('지도 지면 높이 700.0m · 로드된 지형 참고값')).toBeVisible();
+ expect(await frame.evaluate('views.at(-1).destination')).toEqual([126.97638,37.66294,720]);
+ await page.getByLabel('직접 고도 입력',{exact:true}).check();await expect(apply).toBeDisabled();
+ await page.getByLabel('지도 지면 고도(m)',{exact:true}).fill('0');await apply.click();
+ await expect(page.getByText('지도 지면 높이 0.0m · 사용자 입력값')).toBeVisible();
+ expect(await frame.evaluate('views.at(-1).destination[2]')).toBe(20);
+ await page.getByLabel('지도에서 자동 조회 (권장)',{exact:true}).check();await apply.click();
+ await expect(page.getByText('지도 지면 높이 700.0m · 로드된 지형 참고값')).toBeVisible();
+ expect(await frame.evaluate('views.at(-1).destination[2]')).toBe(720);
+ await expect(page.getByRole('button',{name:'추정 방향을 설정에 반영',exact:true})).toBeDisabled();
+ expect(companyRequests).toEqual([]);
+});

@@ -74,12 +74,52 @@ test('missing terrain stays unknown; explicit zero height and portrait field of 
  await setup(page,null);await image(page,180,320);await evidence(page);
  await page.getByRole('button',{name:'가상 시점 적용',exact:true}).click();await expect(page.getByRole('alert')).toContainText('지도 지형 높이를 아직 읽지 못했습니다');
  await expect(page.getByRole('button',{name:'추정 방향을 설정에 반영',exact:true})).toBeDisabled();
- await page.getByLabel('지도 지면 높이(m, 선택 입력)',{exact:true}).fill('0');await apply(page);
+ await page.getByLabel('직접 고도 입력',{exact:true}).check();
+ await page.getByLabel('지도 지면 고도(m)',{exact:true}).fill('0');await apply(page);
  const frame=page.frames().find(f=>f!==page.mainFrame())!;const state=await frame.evaluate('({view:views.at(-1),frustum:ws3d.viewer.camera.frustum})');
  expect(state.view.destination[2]).toBe(3);expect(state.frustum.fov).toBeCloseTo(2*Math.atan(Math.tan(Math.PI/6)/(180/320)));
  await page.getByRole('button',{name:'추정 방향을 설정에 반영',exact:true}).click();await expect(page.getByText('저장된 영상·지형 추정',{exact:true})).toBeVisible();
  await range(page,'가상 방위각',45);await expect(page.getByRole('button',{name:'추정 방향을 설정에 반영',exact:true})).toBeDisabled();await apply(page);
  await page.getByRole('button',{name:'일반 지도 보기',exact:true}).click();await expect(page.getByRole('button',{name:'추정 방향을 설정에 반영',exact:true})).toBeDisabled();await expect.poll(()=>frame.evaluate('ws3d.viewer.scene.screenSpaceCameraController.enableInputs')).toBe(true);
+});
+test('clearing lens height stays blank, blocks automatic preview and recovers with the entered trial height',async({page})=>{
+ await setup(page);await image(page);await evidence(page);await apply(page);
+ const frame=page.frames().find(f=>f!==page.mainFrame())!;
+ const height=page.getByLabel('가상 설치 높이(m)',{exact:true});
+ const applyButton=page.getByRole('button',{name:'가상 시점 적용',exact:true});
+ const saveButton=page.getByRole('button',{name:'추정 방향을 설정에 반영',exact:true});
+ await height.fill('');await expect(height).toHaveValue('');await expect(height).toHaveAttribute('aria-invalid','true');
+ await expect(applyButton).toBeDisabled();await expect(saveButton).toBeDisabled();
+ await expect(page.getByText('설치 높이를 0.5~100m로 입력하세요. 빈칸이나 0m에서는 시점을 적용하지 않습니다.')).toBeVisible();
+ const count=await frame.evaluate('views.length');
+ await page.getByLabel('슬라이더 자동 적용').check();
+ // Wait beyond the preview debounce to ensure invalid input never reaches the SDK.
+ await page.waitForTimeout(450);expect(await frame.evaluate('views.length')).toBe(count);
+ for(const invalid of ['0','101']){await height.fill(invalid);await expect(applyButton).toBeDisabled();}
+ await height.fill('20');await expect.poll(()=>frame.evaluate('views.at(-1).destination[2]')).toBe(720);
+ await expect(page.getByText('지도 지면 높이 700.0m · 로드된 지형 참고값')).toBeVisible();
+ await saveButton.click();await page.getByLabel('지도 저장 키',{exact:true}).fill(saveKey);await page.getByRole('button',{name:'중앙 지도 설정 저장',exact:true}).click();
+ await expect(page.getByLabel('지도 저장 키',{exact:true})).toHaveValue('');
+});
+test('explicit terrain source separates missing, zero, manual altitude and map lookup',async({page,request})=>{
+ await setup(page);await image(page);await evidence(page);
+ const applyButton=page.getByRole('button',{name:'가상 시점 적용',exact:true});
+ const ground=page.getByLabel('지도 지면 고도(m)',{exact:true});
+ const frame=page.frames().find(f=>f!==page.mainFrame())!;
+ await expect(page.getByLabel('지도에서 자동 조회 (권장)',{exact:true})).toBeChecked();await expect(ground).toHaveCount(0);
+ await page.getByLabel('가상 설치 높이(m)',{exact:true}).fill('20');
+ await page.getByLabel('직접 고도 입력',{exact:true}).check();await expect(ground).toHaveValue('');await expect(applyButton).toBeDisabled();
+ await ground.fill('0');await apply(page);expect(await frame.evaluate('views.at(-1).destination[2]')).toBe(20);
+ await expect(page.getByText('지도 지면 높이 0.0m · 사용자 입력값')).toBeVisible();
+ await ground.fill('');await expect(ground).toHaveValue('');await expect(applyButton).toBeDisabled();
+ await ground.fill('600');await apply(page);expect(await frame.evaluate('views.at(-1).destination[2]')).toBe(620);
+ await page.getByLabel('지도에서 자동 조회 (권장)',{exact:true}).check();await expect(ground).toHaveCount(0);
+ await expect(page.getByRole('button',{name:'추정 방향을 설정에 반영',exact:true})).toBeDisabled();
+ await apply(page);expect(await frame.evaluate('views.at(-1).destination[2]')).toBe(720);
+ await page.getByRole('button',{name:'추정 방향을 설정에 반영',exact:true}).click();
+ await page.getByLabel('지도 저장 키',{exact:true}).fill(saveKey);await page.getByRole('button',{name:'중앙 지도 설정 저장',exact:true}).click();await expect(page.getByLabel('지도 저장 키',{exact:true})).toHaveValue('');
+ const saved=await (await request.get('/api/map-configuration')).json();
+ expect(saved.configuration.positions[0].orientation).toMatchObject({cameraHeightM:20,groundElevationM:700,groundElevationSource:'map-terrain',source:'manual-calibration',status:'estimate',confidence:'unvalidated'});
 });
 test('a matched view alone cannot be saved without capture time and two landmarks',async({page})=>{
  await setup(page);await image(page);await apply(page);
