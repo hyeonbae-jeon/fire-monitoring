@@ -1,14 +1,15 @@
 import {useEffect,useId,useRef,useState} from 'react';
-import type {Landmark,ManualOrientation,Pose} from './calibration-model';
+import type {Landmark,ManualOrientation,Pose,GeographicFit,MapControlPoint} from './calibration-model';
 import {DEFAULT_TRIAL_CAMERA_HEIGHT_M} from './calibration-model';
 import type {Position} from './map-model';
+import {GeographicCalibration,type GeographicCandidate} from './GeographicCalibration';
 
-export type PreviewRequest = {position:Position;pose:Pose;groundElevationM:number|null;aspectRatio:number|null};
+export type PreviewRequest = {position:Position;pose:Pose;groundElevationM:number|null;groundElevationSource?:'map-terrain'|'operator';aspectRatio:number|null};
 export type PreviewGround = {groundElevationM:number;groundElevationSource:'map-terrain'|'operator'};
 type ImageReference = {url:string;sha256:string;width:number;height:number};
-type Props = {position:Position;ready:boolean;previewEpoch:number;onPreview:(request:PreviewRequest)=>Promise<PreviewGround>;onAspect:(aspect:number|null)=>void;onSave:(orientation:ManualOrientation)=>void;onExit:()=>void};
+type Props = {position:Position;ready:boolean;previewEpoch:number;onPreview:(request:PreviewRequest)=>Promise<PreviewGround>;onReadGround:(request:PreviewRequest)=>Promise<PreviewGround>;onPickPoint:(signal:AbortSignal)=>Promise<MapControlPoint>;onAspect:(aspect:number|null)=>void;onSave:(orientation:ManualOrientation)=>void;onExit:()=>void};
 
-export function TerrainCalibration({position,ready,previewEpoch,onPreview,onAspect,onSave,onExit}:Props){
+export function TerrainCalibration({position,ready,previewEpoch,onPreview,onReadGround,onPickPoint,onAspect,onSave,onExit}:Props){
   const previous=position.orientation;
   const [pose,setPose]=useState<Pose>({headingDeg:previous?.headingDeg??0,pitchDeg:previous?.pitchDeg??0,horizontalFovDeg:previous?.horizontalFovDeg??60,cameraHeightM:previous?.cameraHeightM??DEFAULT_TRIAL_CAMERA_HEIGHT_M});
   const [image,setImage]=useState<ImageReference|null>(null),[landmarks,setLandmarks]=useState<Landmark[]>([]);
@@ -19,6 +20,10 @@ export function TerrainCalibration({position,ready,previewEpoch,onPreview,onAspe
   const validGround=groundMode==='map'||(groundInput.trim()!==''&&Number.isFinite(Number(groundInput))&&Number(groundInput)>=-500&&Number(groundInput)<=9000);
   const [applied,setApplied]=useState<PreviewGround|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('');
   const [autoApply,setAutoApply]=useState(false);
+  const [geographicFit,setGeographicFit]=useState<GeographicFit|undefined>(undefined);
+  const enlarged=useRef<HTMLDialogElement>(null);
+  const [largeOpen,setLargeOpen]=useState(false);
+  useEffect(()=>{if(largeOpen)enlarged.current?.showModal();else enlarged.current?.close();},[largeOpen]);
   const generation=useRef(0),url=useRef<string|null>(null),mounted=useRef(true);
   useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;generation.current++;if(url.current)URL.revokeObjectURL(url.current);onAspect(null);};},[]);
   useEffect(()=>{generation.current++;setApplied(null);setBusy(false);},[ready,previewEpoch]);
@@ -27,9 +32,9 @@ export function TerrainCalibration({position,ready,previewEpoch,onPreview,onAspe
     const timer=setTimeout(()=>void preview(),250);
     return()=>clearTimeout(timer);
   },[autoApply,ready,pose,groundMode,groundInput,image]);
-  function invalidate(){generation.current++;setApplied(null);setBusy(false);setError('');setMessage('');}
+  function invalidate(){generation.current++;setApplied(null);setBusy(false);setError('');setMessage('');setGeographicFit(undefined);}
   async function loadImage(file?:File){
-    if(!file)return;const ticket=++generation.current;setApplied(null);setError('');setMessage('');setBusy(false);
+    if(!file)return;const ticket=++generation.current;setApplied(null);setError('');setMessage('');setBusy(false);setGeographicFit(undefined);
     let nextUrl:string|null=null;
     try{
       if(file.size>10*1024*1024||!['image/png','image/jpeg','image/webp'].includes(file.type))throw new Error('10MB 이하의 PNG/JPEG/WebP 원본 화면을 선택하세요.');
@@ -44,7 +49,7 @@ export function TerrainCalibration({position,ready,previewEpoch,onPreview,onAspe
     }catch(e){if(nextUrl)URL.revokeObjectURL(nextUrl);if(mounted.current&&generation.current===ticket)setError((e as Error).message);}
   }
   async function preview(){
-    const ticket=++generation.current;setBusy(true);setApplied(null);setError('');setMessage('');
+    const ticket=++generation.current;setBusy(true);setApplied(null);setError('');setMessage('');setGeographicFit(undefined);
     try{
       if(!validCameraHeight)throw new Error('설치 높이를 0.5~100m로 입력하세요.');
       if(!validGround)throw new Error('지도 지면 고도는 -500~9000m 범위의 숫자를 입력하세요.');
@@ -61,24 +66,37 @@ export function TerrainCalibration({position,ready,previewEpoch,onPreview,onAspe
       if(landmarks.length<2||landmarks.some(p=>!p.label.trim()))throw new Error('화면에서 식별한 기준점 2개 이상과 이름을 기록하세요.');
       onSave({...pose,...applied,source:'manual-calibration',status:'estimate',confidence:'unvalidated',
         positionAtCalibration:{lat:position.lat,lon:position.lon},calibratedAt:new Date().toISOString(),
-        reference:{sha256:image.sha256,capturedAt:time.toISOString(),width:image.width,height:image.height},landmarks});
+        reference:{sha256:image.sha256,capturedAt:time.toISOString(),width:image.width,height:image.height},landmarks,...(geographicFit?{geographicFit}:{})});
       setError('');setMessage('영상·지형 추정값을 지도 설정에 반영했습니다. 중앙 저장 또는 JSON 다운로드로 보관하세요.');
     }catch(e){setError((e as Error).message);}
   }
   const control=(field:keyof Pose,value:number)=>{invalidate();setPose(p=>({...p,[field]:value}));};
+  const editLandmarks=(points:Landmark[])=>{if(geographicFit||busy)invalidate();else{setMessage('');setError('');}setLandmarks(points);};
+  const readGround=()=>onReadGround({position,pose,groundElevationM:groundMode==='map'?null:Number(groundInput),aspectRatio:image?image.width/image.height:null});
+  async function applyGeographic(candidate:GeographicCandidate){
+    if(!image||!candidate.acceptable)return;
+    invalidate();const ticket=++generation.current;setBusy(true);setAutoApply(false);
+    try{
+      const result=await onPreview({position,pose:candidate.pose,...candidate.ground,aspectRatio:image.width/image.height});
+      if(!mounted.current||generation.current!==ticket)throw new Error('보정 입력이 변경돼 계산 후보 적용을 취소했습니다.');
+      setPose(candidate.pose);setApplied(result);setGeographicFit(candidate.fit);setMessage('지도 기준점 계산 후보를 적용했습니다. 참조 시각과 기준점 대응을 확인한 뒤 설정에 반영하세요.');
+    }finally{if(mounted.current&&generation.current===ticket)setBusy(false);}
+  }
+  const referenceImage=(large=false)=>image?<div className="reference-image" style={{aspectRatio:image.width/image.height}} onClick={e=>{
+    if(landmarks.length>=20)return;const box=e.currentTarget.getBoundingClientRect(),x=Math.max(0,Math.min(1,(e.clientX-box.left)/box.width)),y=Math.max(0,Math.min(1,(e.clientY-box.top)/box.height));
+    if(landmarks.some(p=>Math.hypot(p.x-x,p.y-y)<.002))return;
+    editLandmarks([...landmarks,{label:'기준점 '+(landmarks.length+1),x,y}]);
+  }}><img src={image.url} alt={large?'확대한 참조 CCTV 화면':'보정용 참조 CCTV 화면'} draggable={false}/>{landmarks.map((p,i)=><span key={i} className="reference-point" style={{left:p.x*100+'%',top:p.y*100+'%'}}>{i+1}</span>)}</div>:null;
   return <section className="calibration map-stage" aria-label="영상 지형 보정">
     <details className="map-floating reference-panel" open><summary>참조 영상 · {position.name}</summary>
     <p className="help">현재 방향은 미확인입니다. 참조 화면의 지형을 지도와 대조하세요.</p>
     <label>참조 CCTV 이미지<input type="file" accept="image/png,image/jpeg,image/webp" onChange={e=>{void loadImage(e.target.files?.[0]);e.target.value='';}}/></label>
     <p className="help">이미지는 이 브라우저에서 표시하며 이 앱이 업로드하지 않습니다. 설정에는 이미지 해시·크기·촬영 시각과 기준점만 남습니다.</p>
-    <div className="reference-view">{image?<div className="reference-image" style={{aspectRatio:image.width/image.height}} onClick={e=>{
-      if(landmarks.length>=20)return;const box=e.currentTarget.getBoundingClientRect();
-      const x=Math.max(0,Math.min(1,(e.clientX-box.left)/box.width)),y=Math.max(0,Math.min(1,(e.clientY-box.top)/box.height));
-      if(landmarks.some(p=>Math.hypot(p.x-x,p.y-y)<.002))return;
-      setLandmarks(p=>[...p,{label:'기준점 '+(p.length+1),x,y}]);setMessage('');
-    }}><img src={image.url} alt="보정용 참조 CCTV 화면" draggable={false}/>{landmarks.map((p,i)=><span key={i} className="reference-point" style={{left:p.x*100+'%',top:p.y*100+'%'}}>{i+1}</span>)}</div>:<div className="reference-placeholder">단독 주간 화면을 선택하면 여기에 표시됩니다.</div>}</div>
+    <div className="reference-view">{image?referenceImage():<div className="reference-placeholder">단독 주간 화면을 선택하면 여기에 표시됩니다.</div>}</div>
+    {image&&<><button onClick={()=>setLargeOpen(true)}>참조 영상 크게 보기</button><dialog className="reference-dialog" ref={enlarged} onClose={()=>setLargeOpen(false)}><button onClick={()=>setLargeOpen(false)}>확대 화면 닫기</button><p>같은 지물의 정확한 지점을 클릭하세요. 기준점은 원래 화면과 함께 갱신됩니다.</p>{largeOpen&&referenceImage(true)}</dialog></>}
     {image&&<><label>참조 화면 촬영 시각<input type="datetime-local" value={capturedAt} onChange={e=>setCapturedAt(e.target.value)}/></label>
-      <div className="landmarks">{landmarks.map((p,i)=><div key={i}><label>{i+1}번 기준점 이름<input value={p.label} maxLength={100} onChange={e=>setLandmarks(points=>points.map((point,index)=>index===i?{...point,label:e.target.value}:point))}/></label><button onClick={()=>setLandmarks(points=>points.filter((_,index)=>index!==i))}>기준점 {i+1} 삭제</button></div>)}</div></>}
+      <div className="landmarks">{landmarks.map((p,i)=><div key={i}><label>{i+1}번 기준점 이름<input value={p.label} maxLength={100} onChange={e=>editLandmarks(landmarks.map((point,index)=>index===i?{...point,label:e.target.value}:point))}/></label><button onClick={()=>editLandmarks(landmarks.filter((_,index)=>index!==i))}>기준점 {i+1} 삭제</button></div>)}</div>
+      <GeographicCalibration landmarks={landmarks} onLandmarks={editLandmarks} ready={ready} validInputs={validCameraHeight&&validGround&&position.positionSource==='operator'} context={JSON.stringify([position.lat,position.lon,image.sha256,pose.cameraHeightM,groundMode,groundInput])} site={{lat:position.lat,lon:position.lon,cameraHeightM:pose.cameraHeightM}} width={image.width} height={image.height} readGround={readGround} pickPoint={onPickPoint} onApply={applyGeographic}/></>}
     </details>
     <details className="map-floating pose-panel" open><summary>지도 안에서 가상 시점 조정</summary>
     <p className="help">브라우저 지도만 조정합니다. 카메라를 움직이지 않습니다.</p>

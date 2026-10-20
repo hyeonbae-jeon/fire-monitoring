@@ -52,8 +52,55 @@ public sealed class MapConfiguration(IConfiguration config)
             var points = new HashSet<(double, double)>();
             foreach (var point in o.Landmarks)
                 if (point is null || string.IsNullOrWhiteSpace(point.Label) || point.Label.Length > 100 ||
-                    !Range(point.X, 0, 1) || !Range(point.Y, 0, 1) || !points.Add((point.X, point.Y))) throw new JsonException();
+                    !Range(point.X, 0, 1) || !Range(point.Y, 0, 1) || !points.Add((point.X, point.Y)) ||
+                    point.MapPoint is { } map && (!Range(map.Lat, -90, 90) || !Range(map.Lon, -180, 180) ||
+                        !Range(map.HeightM, -500, 9000) || map.Source != "map-surface")) throw new JsonException();
+            if (o.GeographicFit is { } fit && (fit.Method != "geographic-control-points-v1" ||
+                !Range(fit.FitRmsPx, 0, 5) || !Range(fit.ValidationRmsPx, 0, 10) || !Range(fit.MaxErrorPx, 0, 15) ||
+                !Range(fit.ConditionNumber, 1, 1000) ||
+                o.Landmarks.Count(m => m.MapPoint is not null && m.UseForValidation != true) < 3 ||
+                !o.Landmarks.Any(m => m.MapPoint is not null && m.UseForValidation == true))) throw new JsonException();
+            if (o.GeographicFit is not null && !MatchesGeographicEvidence(o)) throw new JsonException();
         }
+    }
+
+    private static bool MatchesGeographicEvidence(ManualOrientation o)
+    {
+        const double rad = Math.PI / 180;
+        static (double X, double Y, double Z) Ecef(double lat, double lon, double height)
+        {
+            lat *= Math.PI / 180; lon *= Math.PI / 180;
+            var n = 6378137 / Math.Sqrt(1 - .0066943799901413165 * Math.Pow(Math.Sin(lat), 2));
+            return ((n + height) * Math.Cos(lat) * Math.Cos(lon), (n + height) * Math.Cos(lat) * Math.Sin(lon),
+                (n * (1 - .0066943799901413165) + height) * Math.Sin(lat));
+        }
+        var lat = o.PositionAtCalibration.Lat * rad; var lon = o.PositionAtCalibration.Lon * rad;
+        var eye = Ecef(o.PositionAtCalibration.Lat, o.PositionAtCalibration.Lon, o.GroundElevationM + o.CameraHeightM);
+        var heading = o.HeadingDeg * rad; var pitch = o.PitchDeg * rad;
+        double fitSum = 0, validationSum = 0, max = 0; int fitCount = 0, validationCount = 0;
+        foreach (var m in o.Landmarks.Where(m => m.MapPoint is not null))
+        {
+            var point = m.MapPoint!; var p = Ecef(point.Lat, point.Lon, point.HeightM);
+            var x = p.X - eye.X; var y = p.Y - eye.Y; var z = p.Z - eye.Z;
+            var east = -Math.Sin(lon) * x + Math.Cos(lon) * y;
+            var north = -Math.Sin(lat) * Math.Cos(lon) * x - Math.Sin(lat) * Math.Sin(lon) * y + Math.Cos(lat) * z;
+            var up = Math.Cos(lat) * Math.Cos(lon) * x + Math.Cos(lat) * Math.Sin(lon) * y + Math.Sin(lat) * z;
+            var forward = east * Math.Sin(heading) * Math.Cos(pitch) + north * Math.Cos(heading) * Math.Cos(pitch) + up * Math.Sin(pitch);
+            if (forward <= Math.Sqrt(east * east + north * north + up * up) * .01) return false;
+            var right = east * Math.Cos(heading) - north * Math.Sin(heading);
+            var vertical = -east * Math.Sin(heading) * Math.Sin(pitch) - north * Math.Cos(heading) * Math.Sin(pitch) + up * Math.Cos(pitch);
+            var tangent = Math.Tan(o.HorizontalFovDeg * rad / 2);
+            var px = (.5 + right / (2 * forward * tangent) - m.X) * o.Reference.Width;
+            var py = (.5 - vertical * o.Reference.Width / o.Reference.Height / (2 * forward * tangent) - m.Y) * o.Reference.Height;
+            var squared = px * px + py * py;
+            if (!double.IsFinite(squared)) return false;
+            max = Math.Max(max, Math.Sqrt(squared));
+            if (m.UseForValidation == true) { validationSum += squared; validationCount++; }
+            else { fitSum += squared; fitCount++; }
+        }
+        var f = o.GeographicFit!;
+        return fitCount >= 3 && validationCount >= 1 && Math.Abs(Math.Sqrt(fitSum / fitCount) - f.FitRmsPx) <= .1 &&
+            Math.Abs(Math.Sqrt(validationSum / validationCount) - f.ValidationRmsPx) <= .1 && Math.Abs(max - f.MaxErrorPx) <= .1;
     }
 
     public async Task<MapSnapshot> ReadAsync(CancellationToken ct)

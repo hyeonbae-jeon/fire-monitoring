@@ -2,7 +2,7 @@ import {useEffect,useMemo,useRef,useState,type CSSProperties} from 'react';
 import template from './vworld-frame.html?raw';
 import {sample,parseConfiguration,sector,type MapConfiguration,type Position} from './map-model';
 import {TerrainCalibration,type PreviewGround,type PreviewRequest} from './TerrainCalibration';
-import type {ManualOrientation} from './calibration-model';
+import {validMapControlPoint,type ManualOrientation,type MapControlPoint} from './calibration-model';
 import {parseMapBundle,layerLines,MAX_MAP_FILE_BYTES,type MapLayer} from './map-layers';
 import {publishedMap} from './default-map';
 import {CoverageControls,readSavedCoverage} from './CoverageControls';
@@ -37,6 +37,9 @@ export function MonitoringMap({active=true,standalone=false,desktopDemo=false}:{
  const [key,setKey]=useState(''),[frame,setFrame]=useState<{html:string;session:string}|null>(null),[ready,setReady]=useState(false);
  const [appliedKey,setAppliedKey]=useState(''),[locationPoint,setLocationPoint]=useState<SelectedLocation|null>(null),[locationPicking,setLocationPicking]=useState(false),[locationError,setLocationError]=useState('');
  const pickingRef=useRef(locationPicking);pickingRef.current=locationPicking;
+ const [geoPicking,setGeoPicking]=useState<string|null>(null),[geoPickError,setGeoPickError]=useState('');
+ const geoPending=useRef<{id:string;cameraId:string;resolve:(point:MapControlPoint)=>void;reject:(error:Error)=>void;cleanup:()=>void}|null>(null);
+ const selectedRef=useRef(selected);selectedRef.current=selected;
  const [status,setStatus]=useState('좌표 배치도 · VWorld 미연결'),[error,setError]=useState('');
  const [simulation,setSimulation]=useState(false),[heading,setHeading]=useState(0),[fov,setFov]=useState(60),[range,setRange]=useState(1000),[showEstimate,setShowEstimate]=useState(true);
  const [savedCoverage]=useState(readSavedCoverage),[coveragePlans,setCoveragePlans]=useState(savedCoverage.plans),[coverageStorageStatus,setCoverageStorageStatus]=useState(savedCoverage.status),[coverageHidden,setCoverageHidden]=useState(false),[coverageSelectedOnly,setCoverageSelectedOnly]=useState(false),[coverageRenderError,setCoverageRenderError]=useState('');
@@ -78,7 +81,18 @@ export function MonitoringMap({active=true,standalone=false,desktopDemo=false}:{
  useEffect(()=>{if(active&&deploymentKey&&!autoConnected.current){autoConnected.current=true;connect(deploymentKey);}},[active,deploymentKey]);
  function cancelPending(message:string){pending.current.forEach(p=>{clearTimeout(p.timer);p.reject(new Error(message));});pending.current.clear();}
  function post(type:string,data:object={}){if(frame)iframe.current?.contentWindow?.postMessage({scope:'vworld-prototype',session:frame.session,type,...data},location.origin);}
- function exitPreview(){cancelPending('가상 시점 요청이 취소됐습니다.');setPreviewEpoch(v=>v+1);setCalibrating(false);post('end-calibration');post('draw',{positions,selected,sector:null,flyTo:true});}
+ function cancelGeoPick(message:string){const pending=geoPending.current;if(!pending)return;geoPending.current=null;pending.cleanup();pending.reject(new Error(message));setGeoPicking(null);setGeoPickError('');post('geo-point-mode',{enabled:false});}
+ useEffect(()=>{if(!active||tools!=='cameras')cancelGeoPick('지도 도구가 변경돼 기준점 지정을 취소했습니다.');},[active,tools]);
+ function exitPreview(){cancelGeoPick('지도 시점이 변경돼 기준점 지정을 취소했습니다.');cancelPending('가상 시점 요청이 취소됐습니다.');setPreviewEpoch(v=>v+1);setCalibrating(false);post('end-calibration');post('draw',{positions,selected,sector:null,flyTo:true});}
+ function pickGeoPoint(signal:AbortSignal):Promise<MapControlPoint>{
+  if(!frame||!ready||!active||signal.aborted)return Promise.reject(new Error('VWorld 지도에 연결한 뒤 기준점을 지정하세요.'));
+  exitPreview();setLocationPicking(false);pickingRef.current=false;setTools('cameras');
+  return new Promise((resolve,reject)=>{
+   const id=crypto.randomUUID(),abort=()=>cancelGeoPick('기준점 지정을 취소했습니다.');
+   signal.addEventListener('abort',abort,{once:true});geoPending.current={id,cameraId:selectedRef.current,resolve,reject,cleanup:()=>signal.removeEventListener('abort',abort)};
+   setGeoPicking(id);setGeoPickError('');post('geo-point-mode',{enabled:true,requestId:id});
+  });
+ }
  function selectPosition(id:string){exitPreview();setSelected(id);post('draw',{positions:positionsRef.current,selected:id,sector:null,flyTo:true});}
  useEffect(()=>{
   if(!frame)return;let completed=false;
@@ -98,6 +112,13 @@ export function MonitoringMap({active=true,standalone=false,desktopDemo=false}:{
     else{setLocationPoint(null);setLocationError('지도 좌표 응답을 확인할 수 없습니다. 다시 지점을 선택하세요.');}
    }
    if(e.data.type==='location-error'&&pickingRef.current){setLocationPoint(null);setLocationError('지도 표면 위치를 읽지 못했습니다. 지형이 로딩된 곳을 다시 선택하거나 좌표를 직접 입력하세요.');setTools('location');}
+   if(['geo-point-picked','geo-point-error'].includes(e.data.type)){
+    const pending=geoPending.current;
+    if(pending&&e.data.requestId===pending.id&&pending.cameraId===selectedRef.current){
+     if(e.data.type==='geo-point-picked'&&validMapControlPoint(e.data.point)){geoPending.current=null;pending.cleanup();setGeoPicking(null);setGeoPickError('');post('geo-point-mode',{enabled:false});pending.resolve(e.data.point);}
+     else setGeoPickError('지도 표면의 같은 지형을 선택하세요. 하늘이나 로딩되지 않은 지점은 사용할 수 없습니다.');
+    }
+   }
    if(e.data.type==='calibration-ready'||e.data.type==='calibration-error'){
     const p=pending.current.get(e.data.requestId);if(!p)return;clearTimeout(p.timer);pending.current.delete(e.data.requestId);
     if(e.data.type==='calibration-error')p.reject(new Error(String(e.data.message)));
@@ -105,7 +126,7 @@ export function MonitoringMap({active=true,standalone=false,desktopDemo=false}:{
     else p.reject(new Error('지도 높이 응답을 확인하세요.'));
    }
   };
-  window.addEventListener('message',listener);return()=>{clearTimeout(timer);window.removeEventListener('message',listener);cancelPending('지도 연결이 바뀌었습니다.');};
+  window.addEventListener('message',listener);return()=>{clearTimeout(timer);window.removeEventListener('message',listener);cancelGeoPick('지도 연결이 바뀌었습니다.');cancelPending('지도 연결이 바뀌었습니다.');};
  },[frame]);
  useEffect(()=>{if(frame&&ready)post('draw',{positions,selected,sector:polygon});},[frame,ready,configuration,selected,simulation,heading,fov,range,showEstimate,calibrating,coverageShapes]);
  useEffect(()=>{if(frame&&ready)post('layers',{revision:layerRevision,layers,visibleIds:visibleLayers});},[frame,ready,layers,layerRevision,visibleLayers]);
@@ -115,12 +136,12 @@ export function MonitoringMap({active=true,standalone=false,desktopDemo=false}:{
  useEffect(()=>{if(frame&&ready&&standalone&&publishedMap&&fittedFrame.current!==frame.session){fittedFrame.current=frame.session;post('fit-layers',{bounds:extent});}},[frame,ready]);
  useEffect(()=>{if(frame&&ready)post('location-mode',{enabled:locationPicking});},[frame,ready,locationPicking]);
  useEffect(()=>{if(frame&&ready)post('location-point',{point:locationPoint});},[frame,ready,locationPoint]);
- function preview(request:PreviewRequest):Promise<PreviewGround>{
+ function preview(request:PreviewRequest,onlyGround=false):Promise<PreviewGround>{
   if(!frame||!ready)return Promise.reject(new Error('VWorld 3D에 먼저 연결하세요.'));
-  cancelPending('새 가상 시점 요청으로 교체됐습니다.');setCalibrating(true);
+  cancelPending('새 가상 시점 요청으로 교체됐습니다.');if(!onlyGround)setCalibrating(true);
   return new Promise((resolve,reject)=>{
    const requestId=crypto.randomUUID(),timer=window.setTimeout(()=>{pending.current.delete(requestId);reject(new Error('가상 시점 응답 시간 초과. 지형 로딩을 확인하세요.'));},15000);
-   pending.current.set(requestId,{resolve,reject,timer});post('calibrate',{requestId,...request});
+   pending.current.set(requestId,{resolve,reject,timer});post(onlyGround?'calibration-ground':'calibrate',{requestId,...request});
   });
  }
  function connect(apiKey=key){
@@ -205,10 +226,11 @@ export function MonitoringMap({active=true,standalone=false,desktopDemo=false}:{
   {!standalone&&active&&tools==='live'&&<aside className="map-floating map-live-panel"><p className="help">선택 지도 위치: {current?.name??'없음'} · 수집 영상과의 장비 일치 미확인</p><LiveCapture active desktopDemo={desktopDemo} embedded/><p className="help">화면을 보며 지도와 비교할 수 있습니다. 촬영 방향 자동 갱신은 미구현이며, 참조 화면 저장 후 촬영 시각·기준점을 확인해 수동 보정할 수 있습니다.</p></aside>}
   <div className="terrain-workspace">
    <div className="map-surface">{mapPanel}</div>
-   {current&&<TerrainCalibration key={current.id+':'+current.lat+':'+current.lon} position={current} ready={ready} previewEpoch={previewEpoch} onPreview={preview} onAspect={setAspect} onSave={saveOrientation} onExit={exitPreview}/>}
+   {current&&<TerrainCalibration key={current.id+':'+current.lat+':'+current.lon} position={current} ready={ready&&active} previewEpoch={previewEpoch} onPreview={preview} onReadGround={request=>preview(request,true)} onPickPoint={pickGeoPoint} onAspect={setAspect} onSave={saveOrientation} onExit={exitPreview}/>}
   </div></div>
   {(coverageShapes.length>0||calibrating&&coveragePlans.length>0)&&<div className="coverage-disclaimer">{coverageRenderError?'범위 시안 표시 실패':calibrating?'가상 시점 보정 중 범위 시안 숨김':displayedVisibility.length?`지형 가림 시안 ${displayedVisibility.length}대 · 초록 비가림 추정 / 빨강 가림 추정 / 노랑 미확인 · 실제 촬영 범위 미검증`:`범위 시안 ${coverageShapes.length}대 · 실제 촬영 범위·지형 가림 미확인`}</div>}
   {locationPicking&&<div className="location-picking-status">위치 선택 중 · 지형 지점을 클릭하세요 <button onClick={()=>setLocationPicking(false)}>종료</button></div>}
+  {geoPicking&&<div className="location-picking-status">기준점 지정 중 · 사진과 같은 지형의 정확한 지점을 지도에서 클릭하세요. {geoPickError}<button onClick={()=>cancelGeoPick('기준점 지정을 취소했습니다.')}>기준점 지정 종료</button></div>}
   <div className="map-bottom-status">{current?.name??'위치 없음'} · {estimate?'영상·지형 추정 · 실시간 확인 안 됨':'현재 방향 미확인'} · CCTV 제어 없음</div>
  </main>;
 }

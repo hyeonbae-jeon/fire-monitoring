@@ -22,7 +22,18 @@ public sealed record CalibrationReference([property: JsonRequired] string Sha256
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record CalibrationLandmark([property: JsonRequired] string Label,
-    [property: JsonRequired] double X, [property: JsonRequired] double Y);
+    [property: JsonRequired] double X, [property: JsonRequired] double Y,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] MapControlPoint? MapPoint = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? UseForValidation = null);
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record MapControlPoint([property: JsonRequired] double Lat, [property: JsonRequired] double Lon,
+    [property: JsonRequired] double HeightM, [property: JsonRequired] string Source);
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record GeographicFit([property: JsonRequired] string Method,
+    [property: JsonRequired] double FitRmsPx, [property: JsonRequired] double ValidationRmsPx,
+    [property: JsonRequired] double MaxErrorPx, [property: JsonRequired] double ConditionNumber);
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record ManualOrientation([property: JsonRequired] string Source,
@@ -33,7 +44,8 @@ public sealed record ManualOrientation([property: JsonRequired] string Source,
     [property: JsonRequired] CalibrationPosition PositionAtCalibration,
     [property: JsonRequired] DateTimeOffset CalibratedAt,
     [property: JsonRequired] CalibrationReference Reference,
-    [property: JsonRequired] List<CalibrationLandmark> Landmarks);
+    [property: JsonRequired] List<CalibrationLandmark> Landmarks,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] GeographicFit? GeographicFit = null);
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record MapSaveRequest([property: JsonRequired] string ConfigurationRevision,

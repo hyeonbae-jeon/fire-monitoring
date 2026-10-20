@@ -343,6 +343,37 @@ class BridgeTests(unittest.TestCase):
             self.assertEqual(self.request('/api/map-configuration', 'PUT', body, key)[0], 401)
         self.assertFalse(self.map_path.exists())
 
+    def test_map_geographic_evidence_round_trip_and_mismatches_preserve_previous_file(self):
+        controls = json.loads((ROOT / 'web/tests/fixtures/geographic-controls.json').read_text())
+        doc = self.map_document(orientation=True)
+        o = doc['positions'][0]['orientation']
+        o.update(controls['expectedPose'])
+        o.update(groundElevationM=700, groundElevationSource='map-terrain', landmarks=controls['landmarks'],
+                 geographicFit={'method': 'geographic-control-points-v1', 'fitRmsPx': 0,
+                                'validationRmsPx': 0, 'maxErrorPx': 0, 'conditionNumber': 3.8})
+        o['reference'].update(width=controls['width'], height=controls['height'])
+        status, saved = self.save_map(doc)
+        self.assertEqual(status, 200)
+        self.assertEqual(saved['configuration']['positions'][0]['orientation']['landmarks'], controls['landmarks'])
+        self.assertEqual(saved['configuration']['positions'][0]['orientation']['geographicFit'], o['geographicFit'])
+        self.stop(); self.start()
+        self.assertEqual(self.request('/api/map-configuration')[1], saved)
+        before = self.map_path.read_bytes()
+        invalid = []
+        changed = copy.deepcopy(doc); changed['positions'][0]['orientation']['headingDeg'] += 1; invalid.append(changed)
+        changed = copy.deepcopy(doc); changed['positions'][0]['orientation']['reference']['width'] += 1; invalid.append(changed)
+        changed = copy.deepcopy(doc); changed['positions'][0]['orientation']['landmarks'][0]['mapPoint']['heightM'] = 10000; invalid.append(changed)
+        changed = copy.deepcopy(doc); changed['positions'][0]['orientation']['landmarks'][0]['mapPoint']['source'] = 'guessed'; invalid.append(changed)
+        changed = copy.deepcopy(doc); changed['positions'][0]['orientation']['geographicFit']['validationRmsPx'] = 11; invalid.append(changed)
+        changed = copy.deepcopy(doc)
+        for point in changed['positions'][0]['orientation']['landmarks']: point['useForValidation'] = False
+        invalid.append(changed)
+        changed = copy.deepcopy(doc); changed['positions'][0]['orientation']['landmarks'][0]['mapPoint']['apiKey'] = 'synthetic-secret'; invalid.append(changed)
+        for index, changed in enumerate(invalid):
+            with self.subTest(index=index):
+                self.assertIn(self.save_map(changed, saved['revision'])[0], [400, 422])
+                self.assertEqual(self.map_path.read_bytes(), before)
+
     def test_map_concurrent_edit_conflict_preserves_winner(self):
         docs = [self.map_document(), self.map_document(orientation=True)]
         with concurrent.futures.ThreadPoolExecutor() as pool:
