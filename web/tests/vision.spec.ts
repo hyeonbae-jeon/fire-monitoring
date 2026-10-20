@@ -130,7 +130,7 @@ test('capture alignment requires same-view confirmation, survives motion, and re
  const panel=page.getByRole('region',{name:'영상 방향 추정 시험'}),align=page.getByRole('button',{name:'캡처 영역 맞추기',exact:true});
  await expect(align).toBeDisabled();await page.getByLabel('수집 화면이 선택한 카메라의 라이브 영상과 일치함을 확인').check();await expect(align).toBeDisabled();
  await page.getByLabel('기준 사진과 현재 영상의 방향·줌이 같음을 확인').check();await align.click();
- await expect(panel).toContainText('캡처 영역 보정 완료',{timeout:20000});await expect(panel).toContainText('캡처 영역 보정 사용 중');
+ await expect(panel).toContainText('캡처 영역 보정 완료',{timeout:20000});await expect(panel).toContainText('캡처 영역 보정 사용 중');await expect(page.getByLabel('기준 사진과 현재 영상의 방향·줌이 같음을 확인')).not.toBeChecked();
  live=Buffer.from(images.first,'base64');await page.getByRole('button',{name:'영상 방향 비교 시작',exact:true}).click();
  await expect(panel).toContainText('영상 대응 추정 · 기준 시점의 정확도 미검증',{timeout:20000});await expect(panel).toContainText(/방위각 18[45]\./);
  const frame=page.frames().find(f=>f!==page.mainFrame())!;expect(await frame.evaluate('views.length')).toBe(0);

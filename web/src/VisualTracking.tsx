@@ -56,11 +56,11 @@ export function VisualTracking(props:Props){
     }else setStatus('방향 미확인 · 다음 수집 화면 대기');
     return;
    }
-   if(e.data.type==='unknown'){if(!prepared.current)setRunning(false);if(aligning)setAligning(false);unknown(String(e.data.reason));return;}
+   if(e.data.type==='unknown'){if(!prepared.current)setRunning(false);if(aligning){setAligning(false);setSameView(false);}unknown(String(e.data.reason));return;}
    const frame=jobFrame.current;jobFrame.current=null;
    if(jobEpoch.current!==analysisEpoch.current||(aligning?(!alignmentWorking.current||!sameViewBinding.current):!working.current)||!binding.current||!fresh(frame)||!fresh(latest.current)||!frame||!latest.current||frame.observation.sessionId!==latest.current.observation.sessionId||frame.observation.cameraLabel!==latest.current.observation.cameraLabel||frame.observation.sequence>latest.current.observation.sequence){if(aligning)setAligning(false);unknown('분석 화면 만료 또는 수집 변경');return;}
    if(e.data.type==='aligned'){
-    setAlignment(e.data.result as CaptureAlignment);setAligning(false);setStatus('캡처 영역 보정 완료 · 영상 방향 비교를 시작하세요.');return;
+    setAlignment(e.data.result as CaptureAlignment);setAligning(false);setSameView(false);setStatus('캡처 영역 보정 완료 · 영상 방향 비교를 시작하세요.');return;
    }
    const estimate=e.data.result as Estimate;
    if(!estimate||!Number.isFinite(estimate.pose?.headingDeg)||!Number.isFinite(estimate.fitRmsPx)){unknown('분석 응답 오류');return;}
@@ -97,7 +97,7 @@ export function VisualTracking(props:Props){
     <button disabled={!alignment||running||aligning} onClick={()=>{setAlignment(null);setSameView(false);unknown('캡처 영역 보정 해제');}}>캡처 영역 보정 해제</button>
     {alignment&&<p role="status">캡처 영역 보정 사용 중 · 계산 RMS {alignment.fitRmsPx.toFixed(2)}px / 검증 RMS {alignment.validationRmsPx.toFixed(2)}px · 영역을 다시 선택하거나 SSM 배치를 바꾸면 다시 맞추세요.</p>}
    </fieldset>
-   <button disabled={!reference||!confirmed||!fresh(props.frame)||running||aligning} onClick={()=>setRunning(true)}>영상 방향 비교 시작</button>{' '}
+   <button disabled={!reference||!confirmed||!fresh(props.frame)||running||aligning} onClick={()=>{setSameView(false);setRunning(true);}}>영상 방향 비교 시작</button>{' '}
    <button disabled={!running&&!aligning} onClick={()=>{setRunning(false);setAligning(false);setAutoMap(false);unknown('비교 중지');}}>영상 방향 비교 중지</button>
    <label className="inline"><input type="checkbox" checked={autoMap} disabled={!running||!props.mapReady} onChange={e=>setAutoMap(e.target.checked)}/>대응 검증 시 지도 시점 자동 갱신</label>
   </>}
