@@ -1,7 +1,7 @@
 import type {Landmark,Pose,GeographicFit} from './calibration-model';
 
 export type CameraSite={lat:number;lon:number;groundElevationM:number;cameraHeightM:number};
-export type GeographicSolution={pose:Pose;fit:GeographicFit;errors:{label:string;validation:boolean;errorPx:number}[];acceptable:boolean;reason:string};
+export type GeographicSolution={pose:Pose;fit:GeographicFit;errors:{label:string;validation:boolean;errorPx:number;dxPx:number|null;dyPx:number|null;predicted:{x:number;y:number}|null}[];acceptable:boolean;reason:string};
 const rad=Math.PI/180,deg=180/Math.PI;
 const norm=(v:number[])=>Math.hypot(...v);
 const dot=(a:number[],b:number[])=>a.reduce((s,v,i)=>s+v*b[i],0);
@@ -22,7 +22,7 @@ export function projectGeographic(vector:number[],pose:Pick<Pose,'headingDeg'|'p
  return {x:.5+right/(2*forward*t),y:.5-up*aspect/(2*forward*t)};
 }
 export function measureGeographicCalibration(camera:CameraSite,width:number,height:number,landmarks:Landmark[],pose:Pose){
- const errors=landmarks.filter(m=>m.mapPoint).map(m=>{const p=projectGeographic(geographicVector(camera,m.mapPoint!),pose,width/height);return {label:m.label,validation:!!m.useForValidation,errorPx:p?Math.hypot((p.x-m.x)*width,(p.y-m.y)*height):Infinity};});
+ const errors=landmarks.filter(m=>m.mapPoint).map(m=>{const p=projectGeographic(geographicVector(camera,m.mapPoint!),pose,width/height);return {label:m.label,validation:!!m.useForValidation,errorPx:p?Math.hypot((p.x-m.x)*width,(p.y-m.y)*height):Infinity,dxPx:p?(p.x-m.x)*width:null,dyPx:p?(p.y-m.y)*height:null,predicted:p};});
  const rms=(validation:boolean)=>{const a=errors.filter(e=>e.validation===validation);return Math.sqrt(a.reduce((s,e)=>s+e.errorPx**2,0)/a.length);};
  return {errors,fitRmsPx:rms(false),validationRmsPx:rms(true),maxErrorPx:Math.max(...errors.map(e=>e.errorPx))};
 }

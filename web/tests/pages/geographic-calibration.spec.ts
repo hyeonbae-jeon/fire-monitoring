@@ -10,6 +10,7 @@ test('independently generated known pose and field of view are recovered; north 
  const result=solveGeographicCalibration(controls.site,controls.width,controls.height,points());
  expect(result.acceptable).toBe(true);expect(result.pose.headingDeg).toBeCloseTo(180,6);expect(result.pose.pitchDeg).toBeCloseTo(4,6);expect(result.pose.horizontalFovDeg).toBeCloseTo(53,6);
  expect(result.fit.fitRmsPx).toBeLessThan(1e-6);expect(result.fit.validationRmsPx).toBeLessThan(1e-6);
+ expect(result.errors.every(e=>e.dxPx!==null&&e.dyPx!==null&&Math.abs(Math.hypot(e.dxPx,e.dyPx)-e.errorPx)<1e-9)).toBe(true);
  expect(projectGeographic([0,1,0],{headingDeg:0,pitchDeg:0,horizontalFovDeg:90},2)).toEqual({x:.5,y:.5});
  expect(projectGeographic([1,1,0],{headingDeg:0,pitchDeg:0,horizontalFovDeg:90},2)!.x).toBeCloseTo(1);
  expect(projectGeographic([0,1,1],{headingDeg:0,pitchDeg:0,horizontalFovDeg:90},2)!.y).toBeLessThan(.5);
@@ -76,8 +77,22 @@ test('map point capture, joint solve, explicit application and private export pr
  await frame.evaluate('window.surface=[127.101,37.485,800];clickHandler({position:{x:1,y:1}})');
  await expect(page.getByText('위도 37.485000 / 경도 127.101000 / 지도 고도 800.0m',{exact:true})).toBeVisible();
  await page.getByRole('button',{name:'기준점으로 방향·화각 계산',exact:true}).click();await expect(page.getByText('후보 적용 불가',{exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'계산 후보를 지도에 적용',exact:true})).toBeDisabled();
+ const diagnosticDownload=page.waitForEvent('download');await page.getByRole('button',{name:'보정 진단 다운로드',exact:true}).click();
+ const diagnosticFile=await diagnosticDownload;expect(diagnosticFile.suggestedFilename()).toBe('calibration-diagnostics.private.json');
+ const diagnosticStream=await diagnosticFile.createReadStream();let diagnosticRaw='';for await(const chunk of diagnosticStream)diagnosticRaw+=chunk.toString();const diagnostic=JSON.parse(diagnosticRaw);
+ expect(diagnostic.kind).toBe('geographic-calibration-diagnostics');expect(diagnostic.status).toBe('rejected');
+ expect(diagnostic.camera).toEqual({id:'synthetic-geo',name:'합성 기준 카메라',lat:37.5,lon:127.1,cameraHeightM:3});
+ expect(diagnostic.landmarks[3].mapPoint).toMatchObject({heightM:800,source:'map-surface'});expect(diagnostic.landmarks[3].mapPoint.lat).toBeCloseTo(37.485,10);expect(diagnostic.landmarks[3].mapPoint.lon).toBeCloseTo(127.101,10);
+ expect(diagnostic.landmarks[3].useForValidation).toBe(true);expect(diagnostic.ground.groundElevationM).toBe(700);expect(diagnostic.result.acceptable).toBe(false);
+ expect(diagnostic.result.errors[3].predicted).not.toBeNull();expect(diagnostic.result.errors[3].errorPx).toBeGreaterThan(15);
+ expect(diagnostic.reference).toMatchObject({width:1000,height:600});expect(diagnostic.reference.sha256).toMatch(/^[a-f0-9]{64}$/);
+ expect(diagnosticRaw).not.toContain('blob:');expect(diagnosticRaw).not.toContain('data:image');expect(diagnosticRaw).not.toContain('synthetic-pages-key');
+ expect(()=>parseConfiguration(diagnosticRaw)).toThrow();expect(requests).toEqual([]);
+ const configurationDownload=page.waitForEvent('download');await page.getByRole('button',{name:'좌표 설정 다운로드',exact:true}).click();const configurationStream=await (await configurationDownload).createReadStream();let configurationRaw='';for await(const chunk of configurationStream)configurationRaw+=chunk.toString();
+ expect(parseConfiguration(configurationRaw).positions[0].orientation!.landmarks[3].mapPoint!.heightM).toBe(650);
  await frame.evaluate('ws3d.viewer.scene.globe.getHeight=()=>undefined');await page.getByRole('button',{name:'기준점으로 방향·화각 계산',exact:true}).click();await expect(page.getByRole('alert')).toContainText('지도 지형 높이를 아직 읽지 못했습니다');
  await page.getByLabel('가상 설치 높이(m)',{exact:true}).fill('20');await expect(page.getByRole('button',{name:'계산 후보를 지도에 적용',exact:true})).toHaveCount(0);await expect(page.getByRole('button',{name:'추정 방향을 설정에 반영',exact:true})).toBeDisabled();
+ const clearedDownload=page.waitForEvent('download');await page.getByRole('button',{name:'보정 진단 다운로드',exact:true}).click();const clearedStream=await (await clearedDownload).createReadStream();let clearedRaw='';for await(const chunk of clearedStream)clearedRaw+=chunk.toString();const cleared=JSON.parse(clearedRaw);expect(cleared.status).toBe('not-calculated');expect(cleared.result).toBeNull();expect(cleared.ground).toBeNull();expect(cleared.camera.cameraHeightM).toBe(20);
 });
 test('sky picks, cancellation, stale messages and camera changes cannot bind the wrong landmark',async({page})=>{
  const frame=await setup(page);await imagePoints(page);
