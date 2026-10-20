@@ -1,16 +1,17 @@
 import cvModule from '@techstark/opencv-js';
 import {fitVisualPose,type FeatureMatch} from './vision-pose';
 import type {Pose} from './calibration-model';
+import {alignCapturePoint,fitCaptureAlignment,type CaptureAlignment} from './capture-alignment';
 
 // Keep the Emscripten thenable inside an object, avoiding recursive assimilation.
 const runtime=new Promise<{cv:any}>(resolve=>{const mod:any=cvModule;if(mod.Mat)resolve({cv:mod});else if(mod instanceof Promise)mod.then(cv=>resolve({cv}));else mod.onRuntimeInitialized=()=>resolve({cv:mod});});
-type Features={points:[number,number][];descriptors:any;width:number;height:number};
-let reference:Features|null=null,pose:Pose|null=null,referenceAspect=0;
+type Features={points:[number,number][];descriptors:any;width:number;height:number;sourceWidth:number;sourceHeight:number};
+let reference:Features|null=null,pose:Pose|null=null,referenceAspect=0,alignment:CaptureAlignment|null=null;
 function release(f:Features|null){f?.descriptors.delete();}
-async function extract(cv:any,blob:Blob):Promise<Features>{
+async function extract(cv:any,blob:Blob,normalizeTo?:Features):Promise<Features>{
  const bitmap=await createImageBitmap(blob);const w=bitmap.width,h=bitmap.height;
  if(w<160||h<120||w*h>36_000_000){bitmap.close();throw new Error('영상 크기를 확인하세요. 최소 160×120, 최대 3,600만 픽셀입니다.');}
- const scale=Math.min(1,960/Math.max(w,h)),width=Math.round(w*scale),height=Math.round(h*scale),canvas=new OffscreenCanvas(width,height),g=canvas.getContext('2d')!;g.drawImage(bitmap,0,0,width,height);bitmap.close();
+ const scale=Math.min(1,960/Math.max(w,h)),width=normalizeTo?.width??Math.round(w*scale),height=normalizeTo?.height??Math.round(h*scale),canvas=new OffscreenCanvas(width,height),g=canvas.getContext('2d')!;g.drawImage(bitmap,0,0,width,height);bitmap.close();
  const rgba=cv.matFromImageData(g.getImageData(0,0,width,height)),gray=new cv.Mat(),mask=cv.Mat.zeros(height,width,cv.CV_8UC1),keys=new cv.KeyPointVector(),descriptors=new cv.Mat();
  const orb=new cv.ORB(3500,1.2,8,31,0,2,0,31,7);let returned=false;
  try{
@@ -22,7 +23,7 @@ async function extract(cv:any,blob:Blob):Promise<Features>{
   orb.detectAndCompute(gray,mask,keys,descriptors);
   const points:[number,number][]=[];for(let i=0;i<keys.size();i++){const p=keys.get(i).pt;points.push([p.x,p.y]);}
   if(points.length<40)throw new Error('지형 특징점이 부족합니다. 선명하고 겹치는 지형이 필요합니다.');
-  returned=true;return {points,descriptors,width,height};
+  returned=true;return {points,descriptors,width,height,sourceWidth:w,sourceHeight:h};
  }finally{rgba.delete();gray.delete();mask.delete();keys.delete();orb.delete();if(!returned)descriptors.delete();}
 }
 function neighbors(cv:any,matcher:any,a:any,b:any){
@@ -35,8 +36,7 @@ function hullArea(points:[number,number][]){
  const half=(arr:[number,number][])=>{const h:[number,number][]=[];for(const p of arr){while(h.length>=2&&cross(h.at(-2)!,h.at(-1)!,p)<=0)h.pop();h.push(p);}h.pop();return h;};
  const h=[...half(a),...half(a.reverse())];return Math.abs(h.reduce((s,p,i)=>s+p[0]*h[(i+1)%h.length][1]-p[1]*h[(i+1)%h.length][0],0))/2;
 }
-function match(cv:any,ref:Features,cur:Features){
- if(Math.abs(cur.width/cur.height/referenceAspect-1)>.02)throw new Error('참조와 수집 영상의 가로·세로 비율이 다릅니다. 동일한 전체 영상 영역을 선택하세요.');
+function correspondences(cv:any,ref:Features,cur:Features){
  const matcher=new cv.BFMatcher(cv.NORM_HAMMING,false);
  let candidates:{a:number;b:number;distance:number}[]=[];
  try{const forward=neighbors(cv,matcher,ref.descriptors,cur.descriptors),backward=neighbors(cv,matcher,cur.descriptors,ref.descriptors);for(const [a,m] of forward)if(backward.get(m.index)?.index===a)candidates.push({a,b:m.index,distance:m.distance});}finally{matcher.delete();}
@@ -56,14 +56,31 @@ function match(cv:any,ref:Features,cur:Features){
   for(const [feature,key] of [[ref,'a'],[cur,'b']] as const){const pts=fitted.map(m=>[feature.points[m[key]][0]/feature.width,feature.points[m[key]][1]/feature.height] as [number,number]);const xs=pts.map(p=>p[0]),ys=pts.map(p=>p[1]);if(hullArea(pts)<.02||Math.max(...xs)-Math.min(...xs)<.25||Math.max(...ys)-Math.min(...ys)<.1)throw new Error('대응점이 좁은 영역에 몰려 방향·화각을 확정할 수 없습니다.');}
   const normalized=(m:{a:number;b:number},validation:boolean):FeatureMatch=>({reference:[ref.points[m.a][0]/ref.width,ref.points[m.a][1]/ref.height],current:[cur.points[m.b][0]/cur.width,cur.points[m.b][1]/cur.height],validation});
   const matches=[...fitted.map(m=>normalized(m,false)),...tested.map(m=>normalized(m,true))];
-  return {...fitVisualPose(pose!,referenceAspect,cur.width,cur.height,matches),features:cur.points.length,mutualCount:unique.length,trainingCount:fitted.length,validationCount:tested.length,analysisWidth:cur.width,analysisHeight:cur.height};
+  return {matches,features:cur.points.length,mutualCount:unique.length,trainingCount:fitted.length,validationCount:tested.length};
  }finally{p.delete();q.delete();mask.delete();homography?.delete();}
+}
+function match(cv:any,ref:Features,cur:Features){
+ if(alignment&&(cur.sourceWidth!==alignment.captureWidth||cur.sourceHeight!==alignment.captureHeight))throw new Error('캡처 크기가 바뀌었습니다. 비교를 중지하고 캡처 영역을 다시 맞추세요.');
+ const {matches,...counts}=correspondences(cv,ref,cur);
+ const corrected=alignment?matches.map(m=>({...m,current:alignCapturePoint(m.current,alignment!)})).filter(m=>m.current.every(v=>v>=0&&v<=1)):matches;
+ const width=alignment?ref.width:cur.width,height=alignment?ref.height:cur.height;
+ return {...fitVisualPose(pose!,referenceAspect,width,height,corrected),...counts,trainingCount:corrected.filter(m=>!m.validation).length,validationCount:corrected.filter(m=>m.validation).length,analysisWidth:width,analysisHeight:height,captureAligned:!!alignment};
 }
 onmessage=async(e:MessageEvent)=>{
  const {id,type,blob}=e.data;
  try{
   const {cv}=await runtime;
-  if(type==='reference'){release(reference);reference=null;pose=e.data.pose;referenceAspect=e.data.aspect;reference=await extract(cv,blob);postMessage({id,type:'ready',features:reference.points.length});}
-  else if(type==='frame'){if(!reference||!pose)throw new Error('기준 영상이 준비되지 않았습니다.');let current:Features|null=null;try{current=await extract(cv,blob);postMessage({id,type:'result',result:match(cv,reference,current)});}finally{release(current);}}
+  if(type==='reference'){release(reference);reference=null;pose=e.data.pose;referenceAspect=e.data.aspect;alignment=e.data.alignment??null;reference=await extract(cv,blob);postMessage({id,type:'ready',features:reference.points.length});}
+  else if(type==='frame'||type==='align'){
+   if(!reference||!pose)throw new Error('기준 영상이 준비되지 않았습니다.');let current:Features|null=null;
+   try{
+    current=await extract(cv,blob,type==='align'||alignment?reference:undefined);
+    if(type==='align'){
+     const {matches}=correspondences(cv,reference,current);
+     const result=fitCaptureAlignment(matches,reference.width,reference.height,current.sourceWidth,current.sourceHeight);
+     postMessage({id,type:'aligned',result});
+    }else postMessage({id,type:'result',result:match(cv,reference,current)});
+   }finally{release(current);}
+  }
  }catch(error){postMessage({id,type:'unknown',reason:error instanceof Error?error.message:'영상 비교 모듈 오류'});}
 };

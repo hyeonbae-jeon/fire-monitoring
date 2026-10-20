@@ -13,7 +13,7 @@ export function referenceRay(x:number,y:number,pose:Pose,aspect:number){
 // Every frame is fitted directly to the fixed reference, never to the last frame.
 // The reference pose is an unvalidated manual estimate, not measured PTZ.
 export function fitVisualPose(reference:Pose,referenceAspect:number,width:number,height:number,matches:FeatureMatch[]):VisualPose{
- if(![reference.headingDeg,reference.pitchDeg,reference.horizontalFovDeg,referenceAspect,width,height].every(Number.isFinite)||reference.horizontalFovDeg<5||reference.horizontalFovDeg>120||referenceAspect<=0||width<1||height<1||Math.abs(width/height/referenceAspect-1)>.02)throw new Error('참조와 수집 영상의 비율·기준 시점을 확인하세요.');
+ if(![reference.headingDeg,reference.pitchDeg,reference.horizontalFovDeg,referenceAspect,width,height].every(Number.isFinite)||reference.horizontalFovDeg<5||reference.horizontalFovDeg>120||referenceAspect<=0||width<1||height<1)throw new Error('참조 영상과 기준 시점의 크기·수치를 확인하세요.');
  if(matches.some(m=>[...m.reference,...m.current].some(v=>!Number.isFinite(v)||v<0||v>1)))throw new Error('특징점 좌표 오류');
  const training=matches.filter(m=>!m.validation),validation=matches.filter(m=>m.validation);
  if(training.length<24||validation.length<8)throw new Error('계산용 또는 독립 검증 특징점 부족');
