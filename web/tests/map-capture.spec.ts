@@ -19,6 +19,7 @@ async function open(page:Page,connectMap=false){
 async function start(page:Page){await page.getByLabel('지도 영상 조회 키').fill(key);await page.getByRole('button',{name:'지도에서 라이브 확인',exact:true}).click();}
 
 test('map and live frames coexist; frames update without camera pose changes, automatic binding or write requests',async({page})=>{
+ await page.addInitScript(()=>{const original=URL.revokeObjectURL;(window as any).revokedUrls=[];URL.revokeObjectURL=url=>{(window as any).revokedUrls.push(url);original(url);};});
  const jpeg=await fixture(page);let sequence=0;const methods:string[]=[];
  page.on('request',r=>methods.push(r.method()));
  await page.route('**/api/screen-capture/status',r=>{expect(r.request().headers()['x-capture-read-key']).toBe(key);return r.fulfill({json:status(++sequence)});});
@@ -26,7 +27,10 @@ test('map and live frames coexist; frames update without camera pose changes, au
  await open(page,true);await start(page);await expect(page.getByRole('img',{name:imageName})).toBeVisible();await expect.poll(()=>sequence).toBeGreaterThanOrEqual(2);
  const frame=page.frames().find(f=>f!==page.mainFrame())!;expect(await frame.evaluate('activeEntities.filter(e=>e.point).length')).toBe(3);expect(await frame.evaluate('views.length')).toBe(0);await expect(page.locator('.map-live-panel')).toContainText('수집 영상과의 장비 일치 미확인');await expect(page.locator('.map-live-panel')).toContainText('현재 방향: 미확인');
  await frame.evaluate('window.picked=activeEntities.filter(e=>e.point)[1];clickHandler({position:{x:1,y:1}})');await expect(page.locator('.map-live-panel')).toContainText('선택 지도 위치: 북한산 시험 B');await expect(page.getByRole('img',{name:imageName})).toBeVisible();expect(await frame.evaluate('views.length')).toBe(0);
- const downloading=page.waitForEvent('download');await page.locator('.map-live-panel').getByRole('link',{name:'참조 화면 저장'}).click();const stream=await (await downloading).createReadStream();const chunks:Buffer[]=[];for await(const part of stream!)chunks.push(Buffer.from(part));expect(Buffer.concat(chunks)).toEqual(jpeg);
+ const displayedUrl=await page.getByRole('img',{name:imageName}).getAttribute('src');
+ const downloading=page.waitForEvent('download');await page.locator('.map-live-panel').getByRole('link',{name:'참조 화면 저장'}).click();const download=await downloading;expect(download.url()).not.toBe(displayedUrl);
+ const beforeNextFrame=sequence;await expect.poll(()=>sequence).toBeGreaterThan(beforeNextFrame);expect(await page.evaluate(url=>(window as any).revokedUrls.includes(url),download.url())).toBe(false);
+ const stream=await download.createReadStream();const chunks:Buffer[]=[];for await(const part of stream!)chunks.push(Buffer.from(part));expect(Buffer.concat(chunks)).toEqual(jpeg);
  expect(methods.every(method=>method==='GET')).toBe(true);expect(await page.evaluate(()=>({local:localStorage.length,session:sessionStorage.length}))).toEqual({local:0,session:0});
 });
 

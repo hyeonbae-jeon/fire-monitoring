@@ -59,7 +59,7 @@ test('scene change is labeled as unknown direction, without claiming PTZ',async(
  const jpeg=await fixture(page);
  await page.route('**/api/screen-capture/status',r=>r.fulfill({json:status({observation:{...status().observation,sceneChanged:true}})}));
  await page.route('**/api/screen-capture/frame?*',r=>r.fulfill({contentType:'image/jpeg',body:jpeg}));
- await open(page);await expect(page.getByText('화면 변화 감지 · 기존 사진의 보정값을 현재 방향으로 사용할 수 없습니다. 새 방향은 미확인입니다.')).toBeVisible();
+ await open(page);await expect(page.getByText(/화면 변화 감지 · 기준 사진 시점/)).toBeVisible();await expect(page.getByText(/장비에서 받은 새 방향은 미확인입니다/)).toBeVisible();
 });
 test('read errors clear image and show an actionable error',async({page})=>{
  await page.route('**/api/screen-capture/status',r=>r.fulfill({status:401,json:{error:'synthetic denied'}}));
