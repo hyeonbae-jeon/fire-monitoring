@@ -34,3 +34,5 @@
 @media(max-width:750px){.map-workspace .location-panel{top:12px;left:12px;width:min(260px,calc(100% - 24px));max-height:460px}.location-picking-status{position:relative;bottom:auto;left:auto;transform:none;margin:12px}}
 @media(max-width:750px){.map-workspace .smoke-alert-panel{top:12px;left:12px;width:min(280px,calc(100% - 24px));max-height:460px}}
 @media(max-width:750px){.map-workspace .map-live-panel{top:12px;left:12px;width:min(360px,calc(100% - 24px));max-height:460px}}
+
+.visual-tracking{border-top:1px solid #bdcdd5;margin-top:16px;padding-top:10px}.visual-tracking input[type=file]{width:100%}.visual-tracking button{margin:5px 5px 5px 0}

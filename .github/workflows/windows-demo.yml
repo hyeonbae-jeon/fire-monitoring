@@ -23,6 +23,8 @@ on:
       - 'config/inventory.example.json'
       - 'docs/windows-demo.md'
       - 'docs/terrain-calibration.md'
+      - 'docs/geographic-calibration.md'
+      - 'docs/visual-tracking.md'
       - 'docs/vworld-monitoring.md'
       - 'docs/video-direction-feasibility.md'
       - 'docs/screen-capture.md'
@@ -127,4 +129,4 @@ jobs:
           echo "Extract the artifact ZIP, then the package ZIP. Double-click WisenetPtzBridge.exe." >> "$GITHUB_STEP_SUMMARY"
           echo "SSM is not connected. Uses synthetic cameras only. Demo save key: local-demo-only." >> "$GITHUB_STEP_SUMMARY"
           echo "Manual image/terrain calibration and map settings persistence are included. Direction accuracy and live VWorld terrain remain unverified." >> "$GITHUB_STEP_SUMMARY"
-          echo "On the SSM display PC, run 화면캡처.cmd and select a single video region, then open 실시간 화면 시험 in the browser. Direction tracking is not implemented." >> "$GITHUB_STEP_SUMMARY"
+          echo "On the SSM display PC, run 화면캡처.cmd and select a single video region, then open 실시간 화면 시험 in the browser. Optional local reference-image matching and map-view estimates are included; field accuracy is unverified. See docs/visual-tracking.md." >> "$GITHUB_STEP_SUMMARY"

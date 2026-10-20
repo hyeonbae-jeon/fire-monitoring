@@ -12,7 +12,8 @@ import {validLocation,type SelectedLocation} from './location-model';
 import {useTerrainVisibility} from './useTerrainVisibility';
 import {TerrainVisibilityControls} from './TerrainVisibilityControls';
 import {SmokeAlerts} from './SmokeAlerts';
-import {LiveCapture} from './LiveCapture';
+import {LiveCapture,type CapturedFrame} from './LiveCapture';
+import {VisualTracking,type LiveVisualView} from './VisualTracking';
 import {buildAlertMarkers,type AlertBinding,type SmokeAlertDocument} from './smoke-alert-model';
 import './MapWorkspace.css';
 
@@ -48,6 +49,8 @@ export function MonitoringMap({active=true,standalone=false,desktopDemo=false}:{
  const alarmRequest=useRef('');
  const [alertDocument,setAlertDocument]=useState<SmokeAlertDocument|null>(null),[alertBindings,setAlertBindings]=useState<AlertBinding[]>([]),[alertsHidden,setAlertsHidden]=useState(false),[alarmRenderError,setAlarmRenderError]=useState('');
  const [aspect,setAspect]=useState<number|null>(null),[previewEpoch,setPreviewEpoch]=useState(0),[calibrating,setCalibrating]=useState(false);
+ const [captureFrame,setCaptureFrame]=useState<CapturedFrame|null>(null),[liveView,setLiveView]=useState<LiveVisualView|null>(null);
+ const liveViewOwner=useRef(false),liveViewTicket=useRef(0);
  const edits=useRef(0),iframe=useRef<HTMLIFrameElement>(null),pending=useRef(new Map<string,{resolve:(ground:PreviewGround)=>void;reject:(error:Error)=>void;timer:number}>());
  const positions=configuration.positions,current=positions.find(p=>p.id===selected);
  const positionsRef=useRef(positions);positionsRef.current=positions;
@@ -144,6 +147,19 @@ export function MonitoringMap({active=true,standalone=false,desktopDemo=false}:{
    pending.current.set(requestId,{resolve,reject,timer});post(onlyGround?'calibration-ground':'calibrate',{requestId,...request});
   });
  }
+ function stopLiveView(){
+  liveViewTicket.current++;
+  if(!liveViewOwner.current)return;
+  liveViewOwner.current=false;cancelPending('영상 추정 시점 갱신이 중지됐습니다.');setLiveView(null);setCalibrating(false);setPreviewEpoch(v=>v+1);post('end-calibration');
+ }
+ async function updateLiveView(view:LiveVisualView){
+  if(!current?.orientation||!ready||!active||tools!=='live')throw new Error('지도와 수동 기준 시점을 확인하세요.');
+  const captureTime=Date.parse(view.capturedAt);if(!Number.isFinite(captureTime)||Date.now()-captureTime>=4000)throw new Error('추정 화면이 만료됐습니다.');
+  const id=++liveViewTicket.current;liveViewOwner.current=true;const selectedId=current.id;
+  await preview({position:current,pose:view.pose,groundElevationM:current.orientation.groundElevationM,groundElevationSource:current.orientation.groundElevationSource,aspectRatio:view.aspect});
+  if(liveViewTicket.current!==id||selectedRef.current!==selectedId||Date.now()-captureTime>=4000){if(liveViewTicket.current===id)stopLiveView();return;}
+  setLiveView(view);
+ }
  function connect(apiKey=key){
   autoConnected.current=true;
   const session=crypto.randomUUID(),url='https://map.vworld.kr/js/webglMapInit.js.do?version=3.0&apiKey='+encodeURIComponent(apiKey.trim());
@@ -189,7 +205,8 @@ export function MonitoringMap({active=true,standalone=false,desktopDemo=false}:{
    if(ticket===edits.current){setConfiguration(result.configuration);setDirty(false);}setRevision(result.revision);setWriteKey('');setStorageStatus(ticket===edits.current?'중앙 지도 설정 저장 완료 · 다른 브라우저에서 다시 불러올 수 있습니다.':'이전 설정 저장 완료 · 이후 변경은 추가 저장이 필요합니다.');
   }catch(e){setError((e as Error).message);}finally{setSaving(false);}
  }
- const mapPanel=<div className="map-panel" data-reference={aspect?'true':undefined} style={aspect?{height:'auto',aspectRatio:aspect,'--reference-aspect':aspect} as CSSProperties:undefined}>{frame?<iframe key={frame.session} title="VWorld 3D 지도" ref={iframe} src={import.meta.env.BASE_URL+'vworld-viewer.html'} sandbox="allow-scripts allow-same-origin" onLoad={()=>iframe.current?.contentWindow?.postMessage({scope:'vworld-bootstrap',type:'initialize',html:frame.html},location.origin)}/>:<><p className="schematic-label">좌표 배치도 · 실제 지형 아님 · 북쪽 ↑</p><svg viewBox="0 0 800 480" role="img" aria-label="북한산 시험 카메라 좌표 배치도">{displayedLines.map(({layer,lines})=><g key={layer.id} data-layer={layer.id}>{lines.map((line,i)=><polyline key={i} points={line.map(([lon,lat])=>xy(lon,lat).join(',')).join(' ')} fill="none" stroke={layer.kind==='boundary'?'#71f2cf':'#ffca68'} strokeWidth={layer.kind==='boundary'?2.5:1.5}/>)}</g>)}{coverageShapes.map(shape=><g key={shape.cameraId} data-coverage={shape.cameraId} onClick={()=>selectPosition(shape.cameraId)}><polygon points={shape.coordinates.map(([lon,lat])=>xy(lon,lat).join(',')).join(' ')} fill={shape.color} fillOpacity={shape.cameraId===selected?'.28':'.16'} stroke={shape.color} strokeWidth={shape.cameraId===selected?2:1}/><polyline points={shape.centerline.map(([lon,lat])=>xy(lon,lat).join(',')).join(' ')} stroke={shape.color} strokeDasharray="5 4"/></g>)}{polygon&&<polygon points={polygon.map(([lon,lat])=>xy(lon,lat).join(',')).join(' ')} fill="#f5a623" fillOpacity=".35" stroke="#f5a623"/>}{positions.map(p=>{const[x,y]=xy(p.lon,p.lat),alarm=alertMarkers.find(a=>a.cameraId===p.id);return <g key={p.id} data-alert={alarm?.cameraId} onClick={()=>selectPosition(p.id)}>{alarm&&<><title>{`알림 자료 ${alarm.count}건 · ${p.name} · 카메라 위치 · 연기 위치 미확인`}</title><circle cx={x} cy={y} r={16} fill="none" stroke="#ff7474" strokeWidth={3}/></>}<circle cx={x} cy={y} r={p.id===selected?10:6} fill="#55deed"/><text x={x+14} y={y+5} fill="white" fontSize="16">{p.name}</text></g>;})}</svg></>}</div>;
+ const mapAspect=liveView?.aspect??aspect;
+ const mapPanel=<div className="map-panel" data-reference={mapAspect?'true':undefined} style={mapAspect?{height:'auto',aspectRatio:mapAspect,'--reference-aspect':mapAspect} as CSSProperties:undefined}>{frame?<iframe key={frame.session} title="VWorld 3D 지도" ref={iframe} src={import.meta.env.BASE_URL+'vworld-viewer.html'} sandbox="allow-scripts allow-same-origin" onLoad={()=>iframe.current?.contentWindow?.postMessage({scope:'vworld-bootstrap',type:'initialize',html:frame.html},location.origin)}/>:<><p className="schematic-label">좌표 배치도 · 실제 지형 아님 · 북쪽 ↑</p><svg viewBox="0 0 800 480" role="img" aria-label="북한산 시험 카메라 좌표 배치도">{displayedLines.map(({layer,lines})=><g key={layer.id} data-layer={layer.id}>{lines.map((line,i)=><polyline key={i} points={line.map(([lon,lat])=>xy(lon,lat).join(',')).join(' ')} fill="none" stroke={layer.kind==='boundary'?'#71f2cf':'#ffca68'} strokeWidth={layer.kind==='boundary'?2.5:1.5}/>)}</g>)}{coverageShapes.map(shape=><g key={shape.cameraId} data-coverage={shape.cameraId} onClick={()=>selectPosition(shape.cameraId)}><polygon points={shape.coordinates.map(([lon,lat])=>xy(lon,lat).join(',')).join(' ')} fill={shape.color} fillOpacity={shape.cameraId===selected?'.28':'.16'} stroke={shape.color} strokeWidth={shape.cameraId===selected?2:1}/><polyline points={shape.centerline.map(([lon,lat])=>xy(lon,lat).join(',')).join(' ')} stroke={shape.color} strokeDasharray="5 4"/></g>)}{polygon&&<polygon points={polygon.map(([lon,lat])=>xy(lon,lat).join(',')).join(' ')} fill="#f5a623" fillOpacity=".35" stroke="#f5a623"/>}{positions.map(p=>{const[x,y]=xy(p.lon,p.lat),alarm=alertMarkers.find(a=>a.cameraId===p.id);return <g key={p.id} data-alert={alarm?.cameraId} onClick={()=>selectPosition(p.id)}>{alarm&&<><title>{`알림 자료 ${alarm.count}건 · ${p.name} · 카메라 위치 · 연기 위치 미확인`}</title><circle cx={x} cy={y} r={16} fill="none" stroke="#ff7474" strokeWidth={3}/></>}<circle cx={x} cy={y} r={p.id===selected?10:6} fill="#55deed"/><text x={x+14} y={y+5} fill="white" fontSize="16">{p.name}</text></g>;})}</svg></>}</div>;
  return <main className="monitoring map-workspace">
   <div className="map-topbar"><div><strong>VWorld 3D · 산불감시 지도</strong><span role="status">{status}</span></div><div className="map-tool-tabs" aria-label="지도 도구"><button aria-pressed={tools==='cameras'} onClick={()=>setTools(tools==='cameras'?'':'cameras')}>카메라·설정</button><button aria-pressed={tools==='alerts'} onClick={()=>setTools(tools==='alerts'?'':'alerts')}>AI 감지 알림</button>{!standalone&&<button aria-pressed={tools==='live'} onClick={()=>setTools(tools==='live'?'':'live')}>실시간 영상</button>}<button aria-pressed={tools==='coverage'} onClick={()=>setTools(tools==='coverage'?'':'coverage')}>관측 범위</button><button aria-pressed={tools==='layers'} onClick={()=>setTools(tools==='layers'?'':'layers')}>지도 레이어</button><button aria-pressed={tools==='location'} onClick={()=>setTools(tools==='location'?'':'location')}>위치·지번</button><button aria-pressed={tools==='connection'} onClick={()=>setTools(tools==='connection'?'':'connection')}>지도 연결</button></div></div>
   {error&&<p role="alert" className="error map-error">{error}</p>}
@@ -223,7 +240,7 @@ export function MonitoringMap({active=true,standalone=false,desktopDemo=false}:{
   </aside>
   <aside className="map-floating location-panel" hidden={tools!=='location'}><LocationLookup point={locationPoint} picking={locationPicking} ready={ready} apiKey={appliedKey} pickError={locationError} onPicking={v=>{setLocationPicking(v);setLocationError('');}} onPoint={p=>{setLocationPoint(p);setLocationError('');}}/></aside>
   <aside className="map-floating smoke-alert-panel" hidden={tools!=='alerts'}>{calibrating&&<p className="help">가상 시점 보정 중 알림 카메라 표시 숨김</p>}<SmokeAlerts document={alertDocument} bindings={alertBindings} positions={positions} hidden={alertsHidden} onDocument={setAlertDocument} onBindings={setAlertBindings} onHidden={setAlertsHidden} onSelect={selectPosition} renderError={alarmRenderError}/></aside>
-  {!standalone&&active&&tools==='live'&&<aside className="map-floating map-live-panel"><p className="help">선택 지도 위치: {current?.name??'없음'} · 수집 영상과의 장비 일치 미확인</p><LiveCapture active desktopDemo={desktopDemo} embedded/><p className="help">화면을 보며 지도와 비교할 수 있습니다. 촬영 방향 자동 갱신은 미구현이며, 참조 화면 저장 후 촬영 시각·기준점을 확인해 수동 보정할 수 있습니다.</p></aside>}
+  {!standalone&&active&&tools==='live'&&<aside className="map-floating map-live-panel"><p className="help">선택 지도 위치: {current?.name??'없음'} · 수집 영상과의 장비 일치 미확인</p><LiveCapture active desktopDemo={desktopDemo} embedded onFrame={setCaptureFrame}/><VisualTracking key={JSON.stringify([current?.id,current?.lat,current?.lon,current?.orientation])} position={current} frame={captureFrame} mapReady={ready} onView={updateLiveView} onStop={stopLiveView}/><p className="help">영상 추정 시점은 화면 비교 시험용이며 지도 설정에 자동 저장하지 않습니다.</p></aside>}
   <div className="terrain-workspace">
    <div className="map-surface">{mapPanel}</div>
    {current&&<TerrainCalibration key={current.id+':'+current.lat+':'+current.lon} position={current} ready={ready&&active} previewEpoch={previewEpoch} onPreview={preview} onReadGround={request=>preview(request,true)} onPickPoint={pickGeoPoint} onAspect={setAspect} onSave={saveOrientation} onExit={exitPreview}/>}
@@ -231,6 +248,6 @@ export function MonitoringMap({active=true,standalone=false,desktopDemo=false}:{
   {(coverageShapes.length>0||calibrating&&coveragePlans.length>0)&&<div className="coverage-disclaimer">{coverageRenderError?'범위 시안 표시 실패':calibrating?'가상 시점 보정 중 범위 시안 숨김':displayedVisibility.length?`지형 가림 시안 ${displayedVisibility.length}대 · 초록 비가림 추정 / 빨강 가림 추정 / 노랑 미확인 · 실제 촬영 범위 미검증`:`범위 시안 ${coverageShapes.length}대 · 실제 촬영 범위·지형 가림 미확인`}</div>}
   {locationPicking&&<div className="location-picking-status">위치 선택 중 · 지형 지점을 클릭하세요 <button onClick={()=>setLocationPicking(false)}>종료</button></div>}
   {geoPicking&&<div className="location-picking-status">기준점 지정 중 · 사진과 같은 지형의 정확한 지점을 지도에서 클릭하세요. {geoPickError}<button onClick={()=>cancelGeoPick('기준점 지정을 취소했습니다.')}>기준점 지정 종료</button></div>}
-  <div className="map-bottom-status">{current?.name??'위치 없음'} · {estimate?'영상·지형 추정 · 실시간 확인 안 됨':'현재 방향 미확인'} · CCTV 제어 없음</div>
+  <div className="map-bottom-status">{current?.name??'위치 없음'} · {liveView?'영상 대응 추정 · 기준 정확도 미검증':estimate?'영상·지형 추정 · 실시간 확인 안 됨':'현재 방향 미확인'} · CCTV 제어 없음</div>
  </main>;
 }

@@ -43,7 +43,7 @@ with tempfile.TemporaryDirectory() as temporary:
     (package / 'portable-demo.json').write_text(json.dumps({'mode': 'synthetic-demo'}), encoding='utf-8')
     (package / '사용방법.txt').write_text((ROOT / 'docs/windows-demo.md').read_text(encoding='utf-8'), encoding='utf-8-sig')
     (package / 'docs').mkdir()
-    for name in ['vworld-monitoring.md', 'terrain-calibration.md', 'video-direction-feasibility.md', 'ssm-report-import.md', 'screen-capture.md']:
+    for name in ['vworld-monitoring.md', 'terrain-calibration.md', 'geographic-calibration.md', 'visual-tracking.md', 'video-direction-feasibility.md', 'ssm-report-import.md', 'screen-capture.md']:
         shutil.copyfile(ROOT / 'docs' / name, package / 'docs' / name)
     (package / '문제진단.cmd').write_bytes(b'@echo off\r\ncd /d "%~dp0"\r\nWisenetPtzBridge.exe --no-browser\r\npause\r\n')
     (package / '화면캡처.cmd').write_bytes(b'@echo off\r\ncd /d "%~dp0"\r\nstart "" "capture\\SsmScreenCapture.exe" --output-dir "%~dp0data\\capture.private"\r\n')
@@ -53,6 +53,7 @@ with tempfile.TemporaryDirectory() as temporary:
     notices.mkdir()
     for name in ['react', 'react-dom', 'scheduler']:
         shutil.copyfile(ROOT / 'web/node_modules' / name / 'LICENSE', notices / (name + '-LICENSE.txt'))
+    shutil.copyfile(ROOT / 'web/node_modules/@techstark/opencv-js/LICENSE', notices / 'opencv-js-LICENSE.txt')
     sdk_root = Path(shutil.which(dotnet) or dotnet).resolve().parent
     for name in ['LICENSE.txt', 'ThirdPartyNotices.txt']:
         if (sdk_root / name).exists():

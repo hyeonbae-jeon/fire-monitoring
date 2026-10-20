@@ -26,7 +26,7 @@ export function measureGeographicCalibration(camera:CameraSite,width:number,heig
  const rms=(validation:boolean)=>{const a=errors.filter(e=>e.validation===validation);return Math.sqrt(a.reduce((s,e)=>s+e.errorPx**2,0)/a.length);};
  return {errors,fitRmsPx:rms(false),validationRmsPx:rms(true),maxErrorPx:Math.max(...errors.map(e=>e.errorPx))};
 }
-function solveLinear(a:number[][],b:number[]):number[]|null{
+export function solveLinear(a:number[][],b:number[]):number[]|null{
  const m=a.map((row,i)=>[...row,b[i]]),n=b.length;
  for(let c=0;c<n;c++){
   let pivot=c;for(let r=c+1;r<n;r++)if(Math.abs(m[r][c])>Math.abs(m[pivot][c]))pivot=r;
@@ -36,7 +36,7 @@ function solveLinear(a:number[][],b:number[]):number[]|null{
  }
  return m.map(row=>row[n]);
 }
-function condition(a:number[][]):number{
+export function condition(a:number[][]):number{
  const m=a.map(row=>[...row]);
  for(let it=0;it<40;it++){
   let p=0,q=1;for(let i=0;i<3;i++)for(let j=i+1;j<3;j++)if(Math.abs(m[i][j])>Math.abs(m[p][q])){p=i;q=j;}
