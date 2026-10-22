@@ -31,6 +31,30 @@ test('failed authentication clears the password without claiming a received imag
  await page.goto('/');await page.getByRole('button',{name:'실시간 화면 시험',exact:true}).click();await page.getByLabel('영상 조회 키',{exact:true}).fill('synthetic-read-key');await fill(page);await page.getByRole('button',{name:'JPEG 연결 시험·수신 시작',exact:true}).click();
  await expect(page.getByRole('alert')).toContainText('장비 인증 또는 접근 권한이 거절');await expect(page.getByLabel('카메라 장비 PW')).toHaveValue('');await expect(page.getByRole('img',{name:'읽기 전용으로 수집한 최신 CCTV 화면'})).toHaveCount(0);
 });
+test('opted-in native PTZ is displayed separately, expires and never becomes a map heading',async({page})=>{
+ let sequence=0,nativeError=false;
+ const receivedAt=new Date().toISOString();
+ let sample={panDeg:12.5,tiltDeg:-4.25,zoom:2,zoomPulse:0,requestStartedAt:receivedAt,receivedAt,sequence:1};
+ await page.route('**/health',r=>r.fulfill({json:{ok:true,localDesktopDemo:true}}));
+ await page.route('**/api/camera-snapshot/session',r=>{
+  expect(r.request().postDataJSON()).toEqual({cameraLabel:'합성 직접 카메라',snapshotUrl:url,username,password,readDevicePtz:true});
+  const now=new Date().toISOString();sample={...sample,requestStartedAt:now,receivedAt:now};
+  return r.fulfill({json:status(++sequence)});
+ });
+ await page.route('**/api/camera-snapshot/status',r=>r.fulfill({json:{...status(++sequence),devicePtz:{enabled:true,status:nativeError?'error':'live',reasonCode:nativeError?'ptz-invalid-response':'ptz-received',sample:nativeError?null:sample}}}));
+ await page.route('**/api/camera-snapshot/frame?*',r=>r.fulfill({contentType:'image/png',body:current}));
+ await page.goto('/');await page.getByRole('button',{name:'실시간 화면 시험',exact:true}).click();await fill(page);
+ const checkbox=page.getByLabel('장비 Pan·Tilt·Zoom 함께 조회');await expect(checkbox).not.toBeChecked();await checkbox.check();
+ await page.getByRole('button',{name:'JPEG 연결 시험·수신 시작',exact:true}).click();
+ const panel=page.getByRole('region',{name:'장비 PTZ 수신 상태'});
+ await expect(panel).toContainText('Pan 12.50° · Tilt -4.25° · Zoom 2.00 · ZoomPulse 0');
+ await expect(panel).toContainText('지도 방위각 미보정');await expect(checkbox).toBeDisabled();
+ await expect(panel).toContainText('최근 장비 값이 만료됐습니다.',{timeout:7000});await expect(panel).not.toContainText('Pan 12.50°');
+ await expect(page.getByRole('img',{name:'읽기 전용으로 수집한 최신 CCTV 화면'})).toBeVisible();
+ nativeError=true;await expect(panel).toContainText('604 오류도 이 상태로 처리합니다.');await expect(panel).toContainText('영상 수신은 계속됩니다.');
+ expect(await page.evaluate(()=>({local:localStorage.length,session:sessionStorage.length}))).toEqual({local:0,session:0});
+ await page.getByRole('button',{name:'라이브 표시 중지',exact:true}).click();await expect(panel).toHaveCount(0);
+});
 test('direct snapshots feed reference comparison and only opted-in map updates',async({page})=>{
  test.setTimeout(45000);let sequence=0,failed=false;
  await page.route('https://map.vworld.kr/**',r=>r.fulfill({contentType:'application/javascript',body:sdk}));

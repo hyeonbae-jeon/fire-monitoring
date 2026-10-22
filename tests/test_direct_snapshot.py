@@ -21,12 +21,18 @@ ROOT = Path(__file__).resolve().parents[1]
 DLL = ROOT / 'bridge/WisenetPtzBridge/bin/Release/net8.0/WisenetPtzBridge.dll'
 JPEG = bytes.fromhex('ffd8ffc00008080050006401ffd9')
 PATH = '/stw-cgi/video.cgi?msubmenu=snapshot&action=view&Profile=1'
+PTZ_PATH = '/stw-cgi/ptzcontrol.cgi?msubmenu=query&action=view&Query=Pan,Tilt,Zoom'
+PTZ_BODY = b'Pan=12.5\r\nTilt=-4.25\r\nZoom=2\r\nZoomPulse=0\r\nChannel.0.Pan=12.5\r\nChannel.0.Tilt=-4.25\r\nChannel.0.Zoom=2\r\nChannel.0.ZoomPulse=0\r\n'
 USER, PASSWORD = 'synthetic-camera-user', 'synthetic-camera-password'
 
 
 class Camera(BaseHTTPRequestHandler):
     requests = []
     behavior = 'jpeg'
+    ptz_body = PTZ_BODY
+    ptz_mode = 'ok'
+    ptz_entered = threading.Event()
+    ptz_gate = threading.Event()
     def log_message(self, *_): pass
     def do_GET(self):
         Camera.requests.append((self.command, self.path, self.headers.get('Authorization', '')))
@@ -43,6 +49,18 @@ class Camera(BaseHTTPRequestHandler):
             self.send_response(401)
             self.send_header('WWW-Authenticate', 'Digest realm="synthetic-realm", nonce="synthetic-nonce", algorithm=MD5, qop="auth"')
             self.send_header('Content-Length', '0'); self.end_headers(); return
+        if self.path == PTZ_PATH:
+            Camera.ptz_entered.set()
+            if Camera.ptz_mode == 'hold': Camera.ptz_gate.wait(timeout=8)
+            if Camera.ptz_mode == 'forbidden': self.send_response(403); self.end_headers(); return
+            if Camera.ptz_mode == 'redirect':
+                self.send_response(302); self.send_header('Location', '/must-not-follow-ptz'); self.end_headers(); return
+            body = Camera.ptz_body
+            self.send_response(200); self.send_header('Content-Type', 'text/plain')
+            self.send_header('Content-Length', str(len(body))); self.end_headers()
+            try: self.wfile.write(body)
+            except (BrokenPipeError, ConnectionResetError): pass
+            return
         if Camera.behavior == 'forbidden': self.send_response(403); self.end_headers(); return
         if Camera.behavior == 'redirect':
             self.send_response(302); self.send_header('Location', '/must-not-follow'); self.end_headers(); return
@@ -92,6 +110,73 @@ class DirectSnapshotTests(unittest.TestCase):
         current = json.loads(self.request()[1]); session = (current.get('observation') or {}).get('sessionId', '')
         self.request('session?' + urllib.parse.urlencode({'sessionId': session}), 'DELETE')
         Camera.behavior = 'jpeg'; Camera.requests.clear()
+        Camera.ptz_body = PTZ_BODY; Camera.ptz_mode = 'ok'; Camera.ptz_gate.set(); Camera.ptz_entered.clear()
+    def wait_ptz(self, expected='live', timeout=4):
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
+            status = json.loads(self.request()[1])
+            if status['devicePtz']['status'] == expected: return status
+            time.sleep(.05)
+        self.fail('PTZ status did not become ' + expected)
+    def test_ptz_exact_read_only_query_uses_existing_digest_session_and_preserves_zero(self):
+        self.assertEqual(self.start(readDevicePtz=True)[0], 200)
+        status = self.wait_ptz(); sample = status['devicePtz']['sample']
+        self.assertEqual([sample[k] for k in ['panDeg','tiltDeg','zoom','zoomPulse']], [12.5,-4.25,2,0])
+        self.assertLessEqual(sample['requestStartedAt'], sample['receivedAt'])
+        self.assertFalse(status['devicePtz']['geographicHeadingCalibrated']); self.assertFalse(status['devicePtz']['imageSynchronized'])
+        self.assertEqual(status['directionStatus'], 'unknown'); self.assertFalse(status['automaticDirectionTrackingImplemented'])
+        time.sleep(1.2); after = self.wait_ptz(); self.assertGreater(after['devicePtz']['sample']['sequence'], sample['sequence'])
+        self.assertTrue(all(method == 'GET' and path in [PATH, PTZ_PATH] for method,path,_ in Camera.requests))
+        for secret in [USER,PASSWORD,self.camera_base,'Authorization',PTZ_BODY.decode()]: self.assertNotIn(secret,json.dumps(after))
+    def test_ptz_zero_angles_and_channel_only_response(self):
+        Camera.ptz_body = b'Channel.0.Pan=0\nChannel.0.Tilt=0\nChannel.0.Zoom=1\nChannel.0.ZoomPulse=0\n'
+        self.start(readDevicePtz=True); sample = self.wait_ptz()['devicePtz']['sample']
+        self.assertEqual([sample[k] for k in ['panDeg','tiltDeg','zoom','zoomPulse']], [0,0,1,0])
+    def test_ptz_bad_responses_stop_angle_reads_but_keep_jpeg(self):
+        for body in [b'NG\nError Code: 604\nInvalid Input Value(s)', PTZ_BODY.replace(b'Channel.0.Pan=12.5',b'Channel.0.Pan=99'),
+                     b'Pan=NaN\nTilt=0\nZoom=1',b'Pan=1\nTilt=0',b'Pan=1\nPan=1\nTilt=0\nZoom=1',
+                     b'Pan=1\nChannel.0.Tilt=0\nZoom=1',b'<html>login</html>',b'x'*8193]:
+            Camera.ptz_body=body; self.start(readDevicePtz=True)
+            status = self.wait_ptz('error'); self.assertEqual(status['devicePtz']['reasonCode'],'ptz-invalid-response')
+            self.assertIsNone(status['devicePtz']['sample']); self.assertTrue(status['liveFrameAvailable'])
+            count = sum(path == PTZ_PATH for _,path,_ in Camera.requests); sequence = status['observation']['sequence']
+            time.sleep(1.1); after = json.loads(self.request()[1])
+            self.assertGreater(after['observation']['sequence'],sequence)
+            self.assertEqual(sum(path == PTZ_PATH for _,path,_ in Camera.requests),count)
+    def test_ptz_access_errors_clear_previous_angles_without_redirect_or_retry(self):
+        for mode,reason in [('forbidden','ptz-authentication-denied'),('redirect','ptz-redirect-rejected')]:
+            Camera.ptz_mode='ok'; self.start(readDevicePtz=True); self.wait_ptz()
+            Camera.ptz_mode=mode; status=self.wait_ptz('error')
+            self.assertEqual(status['devicePtz']['reasonCode'],reason); self.assertIsNone(status['devicePtz']['sample'])
+            count = sum(path == PTZ_PATH for _,path,_ in Camera.requests); time.sleep(1.1)
+            self.assertEqual(sum(path == PTZ_PATH for _,path,_ in Camera.requests),count)
+            self.assertTrue(json.loads(self.request()[1])['liveFrameAvailable'])
+        self.assertFalse(any(path == '/must-not-follow-ptz' for _,path,_ in Camera.requests))
+    def test_ptz_expiry_and_timeout_do_not_freeze_video(self):
+        self.start(readDevicePtz=True); first=self.wait_ptz()
+        Camera.ptz_mode='hold'; Camera.ptz_gate.clear(); Camera.ptz_entered.clear()
+        self.assertTrue(Camera.ptz_entered.wait(3))
+        try:
+            status=self.wait_ptz('stale',timeout=5); self.assertIsNone(status['devicePtz']['sample']); self.assertTrue(status['liveFrameAvailable'])
+            after=self.wait_ptz('error',timeout=4); self.assertEqual(after['devicePtz']['reasonCode'],'ptz-timeout')
+            self.assertGreater(after['observation']['sequence'], first['observation']['sequence'])
+        finally: Camera.ptz_gate.set()
+    def test_late_ptz_response_cannot_attach_to_replacement_session(self):
+        Camera.ptz_mode='hold'; Camera.ptz_gate.clear(); self.start(readDevicePtz=True)
+        self.assertTrue(Camera.ptz_entered.wait(3))
+        try:
+            code,new=self.start(); self.assertEqual(code,200)
+            Camera.ptz_gate.set(); time.sleep(.3); status=json.loads(self.request()[1])
+            self.assertEqual(status['observation']['sessionId'],new['observation']['sessionId'])
+            self.assertFalse(status['devicePtz']['enabled']); self.assertIsNone(status['devicePtz']['sample'])
+        finally: Camera.ptz_gate.set()
+    def test_ptz_stops_with_session_and_rejects_other_video_channels(self):
+        self.assertEqual(self.start(readDevicePtz=True,snapshotUrl=self.camera_base+PATH+'&Channel=1')[0],400)
+        self.assertEqual(Camera.requests,[])
+        _,started=self.start(readDevicePtz=True); self.wait_ptz()
+        self.request('session?sessionId='+started['observation']['sessionId'],'DELETE')
+        count=len(Camera.requests); time.sleep(1.1); self.assertEqual(len(Camera.requests),count)
+        status=json.loads(self.request()[1]); self.assertFalse(status['devicePtz']['enabled']); self.assertIsNone(status['devicePtz']['sample'])
     def test_digest_snapshot_and_identity_guarded_frames(self):
         code, status = self.start(); self.assertEqual(code, 200); self.assertTrue(status['liveFrameAvailable'])
         self.assertEqual(status['frameSource'], 'hanwha-jpeg-snapshot'); self.assertEqual(status['directionStatus'], 'unknown')
@@ -159,7 +244,7 @@ class DirectSnapshotTests(unittest.TestCase):
         count = len(Camera.requests); time.sleep(1.2); self.assertEqual(len(Camera.requests), count)
         self.assertEqual(self.request('frame?sessionId=' + status['observation']['sessionId'] + '&sequence=1')[0], 409)
     def test_idle_viewer_expires_credentials_without_persisting_them(self):
-        self.start(); time.sleep(16.5)
+        self.start(readDevicePtz=True); time.sleep(16.5)
         status = json.loads(self.request()[1]); self.assertFalse(status['liveFrameAvailable']); self.assertEqual(status['reasonCode'], 'viewer-inactive')
         count = len(Camera.requests); time.sleep(1.2); self.assertEqual(len(Camera.requests), count)
         self.log.flush(); raw = self.log_path.read_text()

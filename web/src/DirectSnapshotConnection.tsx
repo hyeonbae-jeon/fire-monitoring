@@ -4,6 +4,7 @@ type Props={active:boolean;readKey:string;cameraLabel?:string;sessionId:string;v
 export function DirectSnapshotConnection({active,readKey,cameraLabel,sessionId,viewing,onConnected,onDisconnected}:Props){
  const [label,setLabel]=useState(cameraLabel??''),[url,setUrl]=useState(''),[username,setUsername]=useState(''),[password,setPassword]=useState('');
  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState(''),[ownedSession,setOwnedSession]=useState('');
+ const [readDevicePtz,setReadDevicePtz]=useState(false);
  const controller=useRef<AbortController|null>(null),mounted=useRef(true);
  const enabled=useRef(active);enabled.current=active;
  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;controller.current?.abort();};},[]);
@@ -16,7 +17,7 @@ export function DirectSnapshotConnection({active,readKey,cameraLabel,sessionId,v
    if(device.pathname==='/'||device.pathname==='/wmf/index.html'){
     device.pathname='/stw-cgi/video.cgi';device.search='?msubmenu=snapshot&action=view&Profile=1';device.hash='';
    }
-   const response=await fetch('/api/camera-snapshot/session',{method:'POST',headers:{'Content-Type':'application/json','X-Capture-Read-Key':readKey},cache:'no-store',signal:abort.signal,body:JSON.stringify({cameraLabel:label,snapshotUrl:device.href,username,password})});
+   const response=await fetch('/api/camera-snapshot/session',{method:'POST',headers:{'Content-Type':'application/json','X-Capture-Read-Key':readKey},cache:'no-store',signal:abort.signal,body:JSON.stringify({cameraLabel:label,snapshotUrl:device.href,username,password,...(readDevicePtz?{readDevicePtz:true}:{})})});
    const data=await response.json();if(!response.ok)throw new Error(data.error??`직접 영상 연결 실패 (HTTP ${response.status})`);
    if(!mounted.current||!enabled.current)return;setOwnedSession(data.observation.sessionId);setUsername('');setMessage('JPEG 수신 성공 · 지도에서 사용할 카메라가 맞는지 확인하세요.');onConnected();
   }catch(e){if(mounted.current&&!abort.signal.aborted)setError((e as Error).message);}
@@ -37,6 +38,8 @@ export function DirectSnapshotConnection({active,readKey,cameraLabel,sessionId,v
   <label>카메라 웹 접속 주소<input type="url" autoComplete="off" placeholder="http://장비주소:포트" value={url} disabled={busy||viewing} onChange={e=>setUrl(e.target.value)}/></label>
   <label>카메라 장비 ID<input autoComplete="off" value={username} maxLength={128} disabled={busy||viewing} onChange={e=>setUsername(e.target.value)}/></label>
   <label>카메라 장비 PW<input type="password" autoComplete="off" value={password} maxLength={512} disabled={busy||viewing} onChange={e=>setPassword(e.target.value)}/></label>
+  <label><input type="checkbox" checked={readDevicePtz} disabled={busy||viewing} onChange={e=>setReadDevicePtz(e.target.checked)}/>장비 Pan·Tilt·Zoom 함께 조회</label>
+  <p className="help">숨은벽에서 확인한 현재 값 조회를 사용합니다. 회전 명령은 보내지 않습니다. 지도 방위각·기울기·화각 보정은 다음 단계입니다.</p>
   <button disabled={busy||viewing||!readKey||!label.trim()||!url||!username.trim()||!password} onClick={()=>void connect()}>JPEG 연결 시험·수신 시작</button>{' '}
   <button disabled={busy||!readKey||!(sessionId||ownedSession)} onClick={()=>void disconnect()}>직접 연결 종료</button>
   <p className="help">ID/PW는 이 PC의 실행 프로그램 메모리에서만 사용하며 파일·지도 JSON·브라우저 저장소에 보관하지 않습니다. 영상 조회가 약 15초 동안 없으면 직접 연결을 자동 종료합니다. 현재 한 번에 한 대를 시험합니다.</p>

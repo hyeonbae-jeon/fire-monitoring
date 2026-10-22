@@ -4,7 +4,7 @@ using ScreenCapture.Core;
 
 namespace WisenetPtzBridge.Services;
 
-public sealed record DirectSnapshotRequest(string CameraLabel, string SnapshotUrl, string Username, string Password);
+public sealed record DirectSnapshotRequest(string CameraLabel, string SnapshotUrl, string Username, string Password, bool ReadDevicePtz = false);
 public sealed class SnapshotException(string code, string message, int statusCode = 400) : Exception(message)
 {
     public string Code { get; } = code;
@@ -12,7 +12,7 @@ public sealed class SnapshotException(string code, string message, int statusCod
 }
 
 // One operator-selected camera, read-only JPEGs, credentials and frames in memory.
-// No redirects, discovery, fallback paths, PTZ, cookies or persistent credentials.
+// No redirects, discovery, fallback paths, movement, cookies or persistent credentials.
 public sealed class DirectSnapshotSource : IAsyncDisposable
 {
     private readonly object sync = new();
@@ -20,7 +20,7 @@ public sealed class DirectSnapshotSource : IAsyncDisposable
     private Session? session;
     private string state = "disconnected", reason = "not-connected";
     public bool Configured { get; }
-    private sealed class Session(HttpClient client, Uri uri, string label)
+    private sealed class Session(HttpClient client, Uri uri, string label, bool readDevicePtz)
     {
         public HttpClient Client { get; } = client;
         public Uri Uri { get; } = uri;
@@ -28,6 +28,11 @@ public sealed class DirectSnapshotSource : IAsyncDisposable
         public string Id { get; } = Guid.NewGuid().ToString("N");
         public CancellationTokenSource Cancellation { get; } = new();
         public Task? Loop { get; set; }
+        public bool ReadDevicePtz { get; } = readDevicePtz;
+        public string PtzState { get; set; } = readDevicePtz ? "waiting" : "disabled";
+        public string PtzReason { get; set; } = readDevicePtz ? "waiting" : "not-enabled";
+        public DevicePtzSample? PtzSample { get; set; }
+        public long PtzSequence { get; set; }
         public DateTimeOffset LeaseUntil { get; set; } = DateTimeOffset.UtcNow.AddSeconds(15);
         public long Sequence { get; set; }
         public Queue<Frame> Frames { get; } = new();
@@ -54,6 +59,8 @@ public sealed class DirectSnapshotSource : IAsyncDisposable
             (query.TryGetValue("Channel", out var channel) && (!int.TryParse(channel[0], out var c) || c < 0 || c > 15)) ||
             (query.TryGetValue("Profile", out var profile) && (!int.TryParse(profile[0], out var p) || p < 1 || p > 10)))
             throw new SnapshotException("snapshot-only", "현재 시험은 확인된 snapshot / view JPEG 조회만 허용합니다. 설정·제어 경로는 요청하지 않습니다.");
+        if (request.ReadDevicePtz && query.TryGetValue("Channel", out var ptzChannel) && ptzChannel[0] != "0")
+            throw new SnapshotException("ptz-channel-unsupported", "현재 장비 각도 조회는 단일 카메라의 Channel 0 영상에만 연결합니다.");
         return uri;
     }
     public async Task<object> StartAsync(DirectSnapshotRequest request, CancellationToken ct)
@@ -71,14 +78,14 @@ public sealed class DirectSnapshotSource : IAsyncDisposable
             if (uri.Scheme == "https") credentials.Add(authority, "Basic", credential);
             var handler = new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false, Credentials = credentials, PreAuthenticate = false };
             var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(6) };
-            var next = new Session(client, uri, request.CameraLabel.Trim());
+            var next = new Session(client, uri, request.CameraLabel.Trim(), request.ReadDevicePtz);
             lock (sync) { state = "connecting"; reason = "connecting"; }
             try
             {
                 var frame = await ReadAsync(next, ct);
                 ct.ThrowIfCancellationRequested();
                 lock (sync) { session = next; Publish(next, frame); }
-                next.Loop = PollAsync(next);
+                next.Loop = RunAsync(next);
                 return Status();
             }
             catch (Exception error)
@@ -90,6 +97,41 @@ public sealed class DirectSnapshotSource : IAsyncDisposable
             }
         }
         finally { changes.Release(); }
+    }
+    private async Task RunAsync(Session current)
+    {
+        try
+        {
+            await Task.WhenAll(PollAsync(current), current.ReadDevicePtz ? PollPtzAsync(current) : Task.CompletedTask);
+        }
+        finally { current.Client.Dispose(); current.Cancellation.Dispose(); }
+    }
+    private async Task PollPtzAsync(Session current)
+    {
+        try
+        {
+            while (!current.Cancellation.IsCancellationRequested)
+            {
+                var sample = await DevicePtzReader.ReadAsync(current.Client, current.Uri, current.Cancellation.Token);
+                lock (sync)
+                {
+                    if (session != current || current.Cancellation.IsCancellationRequested) return;
+                    current.PtzSample = sample with { Sequence = ++current.PtzSequence };
+                    current.PtzState = "live"; current.PtzReason = "ptz-received";
+                }
+                await Task.Delay(1000, current.Cancellation.Token);
+            }
+        }
+        catch (OperationCanceledException) when (current.Cancellation.IsCancellationRequested) { }
+        catch (Exception error)
+        {
+            lock (sync) if (session == current)
+            {
+                current.PtzSample = null; current.PtzState = "error";
+                current.PtzReason = error is SnapshotException failure ? failure.Code : error is OperationCanceledException ? "ptz-timeout" : "ptz-unreachable";
+            }
+            // Optional angle reads stop on failure; the independent JPEG loop continues.
+        }
     }
     public async Task StopAsync(string sessionId)
     {
@@ -140,7 +182,7 @@ public sealed class DirectSnapshotSource : IAsyncDisposable
             }
         }
         catch (OperationCanceledException) when (current.Cancellation.IsCancellationRequested) { }
-        finally { current.Client.Dispose(); current.Cancellation.Dispose(); }
+        finally { current.Cancellation.Cancel(); }
     }
     private void Publish(Session current, Frame frame)
     {
@@ -155,6 +197,7 @@ public sealed class DirectSnapshotSource : IAsyncDisposable
             if (renewLease && session is not null) session.LeaseUntil = DateTimeOffset.UtcNow.AddSeconds(15);
             var frame = session?.Frames.LastOrDefault();
             var fresh = frame is not null && frame.ReceivedAt >= DateTimeOffset.UtcNow.AddSeconds(-4);
+            var ptzFresh = session?.PtzSample is { } ptz && ptz.ReceivedAt >= DateTimeOffset.UtcNow.AddSeconds(-4);
             return new { configured = Configured, status = state == "live" && !fresh ? "stale" : state,
                 reasonCode = reason, liveFrameAvailable = state == "live" && fresh,
                 observation = frame is null || session is null ? null : new {
@@ -162,6 +205,11 @@ public sealed class DirectSnapshotSource : IAsyncDisposable
                     capturedAt = frame.ReceivedAt, sequence = frame.Sequence, width = frame.Width, height = frame.Height,
                     sceneChanged = false, lowContrast = false, referenceDifference = (double?)null },
                 directionStatus = "unknown", automaticDirectionTrackingImplemented = false,
+                devicePtz = new { enabled = session?.ReadDevicePtz ?? false,
+                    status = session?.PtzState == "live" && !ptzFresh ? "stale" : session?.PtzState ?? "disabled",
+                    reasonCode = session?.PtzState == "live" && !ptzFresh ? "ptz-stale" : session?.PtzReason ?? "not-connected",
+                    sample = ptzFresh ? session?.PtzSample : null,
+                    timestampSource = "local-receive-clock", geographicHeadingCalibrated = false, imageSynchronized = false },
                 frameSource = "hanwha-jpeg-snapshot", captureTimestampSource = "local-receive-clock", underlyingStreamFreshnessVerified = false };
         }
     }
