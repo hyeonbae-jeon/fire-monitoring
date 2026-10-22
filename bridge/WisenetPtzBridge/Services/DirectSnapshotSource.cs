@@ -13,7 +13,7 @@ public sealed class SnapshotException(string code, string message, int statusCod
 
 // One operator-selected camera, read-only JPEGs, credentials and frames in memory.
 // No redirects, discovery, fallback paths, movement, cookies or persistent credentials.
-public sealed class DirectSnapshotSource : IAsyncDisposable
+public sealed partial class DirectSnapshotSource : IAsyncDisposable
 {
     private readonly object sync = new();
     private readonly SemaphoreSlim changes = new(1, 1);
@@ -33,6 +33,7 @@ public sealed class DirectSnapshotSource : IAsyncDisposable
         public string PtzReason { get; set; } = readDevicePtz ? "waiting" : "not-enabled";
         public DevicePtzSample? PtzSample { get; set; }
         public long PtzSequence { get; set; }
+        public bool ReferenceBusy { get; set; }
         public DateTimeOffset LeaseUntil { get; set; } = DateTimeOffset.UtcNow.AddSeconds(15);
         public long Sequence { get; set; }
         public Queue<Frame> Frames { get; } = new();

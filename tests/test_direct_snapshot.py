@@ -1,5 +1,7 @@
 """Direct JPEG adapter against a synthetic Digest camera only. No real devices."""
 import hashlib
+import concurrent.futures
+import io
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
@@ -16,6 +18,7 @@ import unittest
 import urllib.error
 import urllib.parse
 import urllib.request
+import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 DLL = ROOT / 'bridge/WisenetPtzBridge/bin/Release/net8.0/WisenetPtzBridge.dll'
@@ -33,6 +36,7 @@ class Camera(BaseHTTPRequestHandler):
     ptz_mode = 'ok'
     ptz_entered = threading.Event()
     ptz_gate = threading.Event()
+    ptz_after_snapshot = None
     def log_message(self, *_): pass
     def do_GET(self):
         Camera.requests.append((self.command, self.path, self.headers.get('Authorization', '')))
@@ -65,6 +69,7 @@ class Camera(BaseHTTPRequestHandler):
         if Camera.behavior == 'redirect':
             self.send_response(302); self.send_header('Location', '/must-not-follow'); self.end_headers(); return
         body = b'<html>synthetic login</html>' if Camera.behavior == 'html' else b'not a jpeg' if Camera.behavior == 'corrupt' else JPEG
+        if Camera.ptz_after_snapshot is not None: Camera.ptz_body = Camera.ptz_after_snapshot
         self.send_response(200)
         self.send_header('Content-Type', 'text/html' if Camera.behavior == 'html' else 'image/jpeg')
         self.send_header('Content-Length', str(len(body))); self.end_headers(); self.wfile.write(body)
@@ -111,6 +116,65 @@ class DirectSnapshotTests(unittest.TestCase):
         self.request('session?' + urllib.parse.urlencode({'sessionId': session}), 'DELETE')
         Camera.behavior = 'jpeg'; Camera.requests.clear()
         Camera.ptz_body = PTZ_BODY; Camera.ptz_mode = 'ok'; Camera.ptz_gate.set(); Camera.ptz_entered.clear()
+        Camera.ptz_after_snapshot = None
+    def reference(self, session):
+        return self.request('reference', 'POST', {'sessionId':session})
+    def test_reference_zip_contains_original_hash_bracketed_ptz_and_no_connection_secrets(self):
+        _,started=self.start(readDevicePtz=True); self.wait_ptz(); session=started['observation']['sessionId']
+        code,raw,headers=self.reference(session); self.assertEqual(code,200)
+        self.assertEqual(headers['Content-Type'],'application/zip'); self.assertEqual(headers['Cache-Control'],'no-store')
+        self.assertIn('.zip',headers['Content-Disposition'])
+        with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+            self.assertEqual(set(archive.namelist()),{'reference.jpg','reference-metadata.private.json'})
+            jpeg=archive.read('reference.jpg'); metadata=archive.read('reference-metadata.private.json'); d=json.loads(metadata)
+        self.assertEqual(jpeg,JPEG); self.assertEqual(d['kind'],'camera-ptz-reference'); self.assertEqual(d['sessionId'],session)
+        self.assertEqual(d['reference']['sha256'],hashlib.sha256(jpeg).hexdigest())
+        self.assertEqual((d['reference']['width'],d['reference']['height']),(100,80))
+        self.assertEqual(d['reference']['snapshotSelection'],{'channel':None,'profile':1})
+        before,after=d['devicePtz']['before'],d['devicePtz']['after']
+        self.assertEqual((before['panDeg'],after['panDeg'],after['zoomPulse']),(12.5,12.5,0))
+        self.assertLessEqual(before['receivedAt'],d['reference']['requestStartedAt'])
+        self.assertLessEqual(d['reference']['requestStartedAt'],d['reference']['receivedAt'])
+        self.assertLessEqual(d['reference']['receivedAt'],after['requestStartedAt'])
+        self.assertTrue(d['stability']['passed']); self.assertFalse(d['synchronization']['sensorCaptureTimeKnown'])
+        self.assertFalse(d['synchronization']['underlyingStreamFreshnessVerified']); self.assertFalse(d['geographicHeadingCalibrated'])
+        for secret in [USER,PASSWORD,self.camera_base,'Authorization',self.key]: self.assertNotIn(secret,metadata.decode())
+        self.assertTrue(all(method=='GET' and path in [PATH,PTZ_PATH] for method,path,_ in Camera.requests))
+        self.assertTrue(json.loads(self.request()[1])['liveFrameAvailable'])
+    def test_reference_rejects_changed_pan_tilt_zoom_and_zoom_pulse(self):
+        for old,new in [(b'Pan=12.5',b'Pan=12.9'),(b'Tilt=-4.25',b'Tilt=-4.8'),(b'Zoom=2',b'Zoom=3'),(b'ZoomPulse=0',b'ZoomPulse=1')]:
+            Camera.ptz_after_snapshot=None; Camera.ptz_body=PTZ_BODY
+            _,started=self.start(readDevicePtz=True);self.wait_ptz();Camera.ptz_after_snapshot=PTZ_BODY.replace(old,new)
+            code,raw,headers=self.reference(started['observation']['sessionId'])
+            self.assertEqual(code,409);self.assertEqual(json.loads(raw)['code'],'reference-moving');self.assertNotEqual(headers['Content-Type'],'application/zip')
+    def test_reference_treats_pan_wrap_as_small_difference(self):
+        Camera.ptz_body=PTZ_BODY.replace(b'Pan=12.5',b'Pan=359.96')
+        _,started=self.start(readDevicePtz=True);self.wait_ptz();Camera.ptz_after_snapshot=PTZ_BODY.replace(b'Pan=12.5',b'Pan=0.02')
+        code,raw,_=self.reference(started['observation']['sessionId']);self.assertEqual(code,200)
+        with zipfile.ZipFile(io.BytesIO(raw)) as archive:d=json.loads(archive.read('reference-metadata.private.json'))
+        self.assertAlmostEqual(d['stability']['panDifferenceDeg'],.06,places=6)
+    def test_reference_requires_key_origin_current_session_and_enabled_ptz(self):
+        body={'sessionId':'wrong'}
+        self.assertEqual(self.request('reference','POST',body,key=False)[0],401)
+        self.assertEqual(self.request('reference','POST',body,headers={'Origin':'https://unrelated.invalid'})[0],403)
+        self.assertEqual(self.reference('wrong')[0],409);self.assertEqual(Camera.requests,[])
+        _,started=self.start();code,raw,_=self.reference(started['observation']['sessionId'])
+        self.assertEqual(code,409);self.assertEqual(json.loads(raw)['code'],'reference-not-ready')
+    def test_reference_bad_ptz_does_not_create_an_archive(self):
+        _,started=self.start(readDevicePtz=True);self.wait_ptz();Camera.ptz_body=b'NG\nError Code: 604\n'
+        code,raw,headers=self.reference(started['observation']['sessionId'])
+        self.assertEqual(code,502);self.assertEqual(json.loads(raw)['code'],'ptz-invalid-response');self.assertNotEqual(headers['Content-Type'],'application/zip')
+    def test_reference_in_flight_cancels_on_session_end_and_parallel_export_is_rejected(self):
+        _,started=self.start(readDevicePtz=True);self.wait_ptz();session=started['observation']['sessionId']
+        Camera.ptz_mode='hold';Camera.ptz_gate.clear();Camera.ptz_entered.clear()
+        try:
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                pending=pool.submit(self.reference,session);self.assertTrue(Camera.ptz_entered.wait(3))
+                code,raw,_=self.reference(session);self.assertEqual(code,409);self.assertEqual(json.loads(raw)['code'],'reference-busy')
+                self.request('session?sessionId='+session,'DELETE')
+                code,raw,headers=pending.result(timeout=4);self.assertEqual(code,409);self.assertEqual(json.loads(raw)['code'],'session-changed')
+                self.assertNotEqual(headers['Content-Type'],'application/zip')
+        finally:Camera.ptz_gate.set()
     def wait_ptz(self, expected='live', timeout=4):
         end = time.monotonic() + timeout
         while time.monotonic() < end:

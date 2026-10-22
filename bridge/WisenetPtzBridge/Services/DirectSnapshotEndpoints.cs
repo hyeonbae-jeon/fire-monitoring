@@ -39,6 +39,16 @@ public static class DirectSnapshotEndpoints
             try { await source.StopAsync(sessionId); return Results.Ok(source.Status()); }
             catch (SnapshotException ex) { return Results.Json(new { error = ex.Message, code = ex.Code }, statusCode: ex.StatusCode); }
         });
+        app.MapPost("/api/camera-snapshot/reference", async (HttpContext context, SnapshotReferenceRequest request, DirectSnapshotSource source, IConfiguration config, CancellationToken ct) =>
+        {
+            if (Access(context, source, config) is { } rejected) return rejected;
+            try
+            {
+                var archive = await source.CreateReferenceAsync(request.SessionId, ct);
+                return Results.File(archive.Bytes, "application/zip", archive.FileName);
+            }
+            catch (SnapshotException ex) { return Results.Json(new { error = ex.Message, code = ex.Code }, statusCode: ex.StatusCode); }
+        });
         app.MapGet("/api/camera-snapshot/status", (HttpContext context, DirectSnapshotSource source, IConfiguration config) =>
             Access(context, source, config) ?? Results.Ok(source.Status(renewLease: true)));
         app.MapGet("/api/camera-snapshot/frame", (HttpContext context, string sessionId, long sequence, DirectSnapshotSource source, IConfiguration config) =>

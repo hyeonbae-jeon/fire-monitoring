@@ -11,6 +11,39 @@ async function fill(page:Page){
  await page.getByLabel('영상 입력 방식').filter({visible:true}).selectOption('direct');
  await page.getByLabel('직접 연결 카메라 이름').fill('합성 직접 카메라');await page.getByLabel('카메라 웹 접속 주소').fill(root+'/wmf/index.html#/uni/channel');await page.getByLabel('카메라 장비 ID').fill(username);await page.getByLabel('카메라 장비 PW').fill(password);
 }
+async function mockNativeConnection(page:Page){
+ let sequence=0;
+ await page.route('**/health',r=>r.fulfill({json:{ok:true,localDesktopDemo:true}}));
+ await page.route('**/api/camera-snapshot/session',r=>r.fulfill({json:status(++sequence)}));
+ await page.route('**/api/camera-snapshot/status',r=>r.fulfill({json:{...status(++sequence),devicePtz:{enabled:true,status:'live',reasonCode:'ptz-received',sample:{panDeg:12.5,tiltDeg:-4.25,zoom:2,zoomPulse:0,requestStartedAt:new Date().toISOString(),receivedAt:new Date().toISOString(),sequence}}}}));
+ await page.route('**/api/camera-snapshot/frame?*',r=>r.fulfill({contentType:'image/png',body:current}));
+ await page.goto('/');await page.getByRole('button',{name:'실시간 화면 시험',exact:true}).click();await fill(page);await page.getByLabel('장비 Pan·Tilt·Zoom 함께 조회').check();await page.getByRole('button',{name:'JPEG 연결 시험·수신 시작',exact:true}).click();
+ await expect(page.getByRole('button',{name:'영상·PTZ 기준 묶음 저장',exact:true})).toBeEnabled();
+}
+test('reference bundle downloads only from a keyed POST; movement errors preserve the live feed',async({page})=>{
+ let moving=false;const downloads:string[]=[],archive=Buffer.from('synthetic ZIP response body; actual archive format is checked by the API tests');
+ page.on('download',d=>downloads.push(d.suggestedFilename()));
+ await page.route('**/api/camera-snapshot/reference',r=>{
+  expect(r.request().method()).toBe('POST');expect(r.request().headers()['x-capture-read-key']).toBe('local-demo-only');expect(r.request().postDataJSON()).toEqual({sessionId:'synthetic-direct-session'});
+  return moving?r.fulfill({status:409,json:{code:'reference-moving',error:'저장 전후 PTZ가 달라 기준 묶음을 만들지 않았습니다.'}}):r.fulfill({contentType:'application/zip',body:archive});
+ });
+ await mockNativeConnection(page);
+ const pending=page.waitForEvent('download');await page.getByRole('button',{name:'영상·PTZ 기준 묶음 저장',exact:true}).click();const download=await pending;
+ expect(download.suggestedFilename()).toMatch(/^cctv-ptz-reference-.*\.zip$/);expect(readFileSync((await download.path())!)).toEqual(archive);
+ await expect(page.getByText('영상·PTZ 기준 묶음을 저장했습니다. 같은 방식으로 다른 시점도 저장하세요.',{exact:true})).toBeVisible();
+ moving=true;await page.getByRole('button',{name:'영상·PTZ 기준 묶음 저장',exact:true}).click();await expect(page.getByRole('alert')).toContainText('저장 전후 PTZ가 달라');
+ expect(downloads).toHaveLength(1);await expect(page.getByRole('img',{name:'읽기 전용으로 수집한 최신 CCTV 화면'})).toBeVisible();
+ expect(await page.evaluate(()=>({local:localStorage.length,session:sessionStorage.length}))).toEqual({local:0,session:0});
+});
+test('stopping live display aborts an in-flight reference bundle and prevents a late download',async({page})=>{
+ let release:()=>void=()=>{};const gate=new Promise<void>(resolve=>release=resolve);let requests=0,downloads=0;
+ page.on('download',()=>downloads++);
+ await page.route('**/api/camera-snapshot/reference',async r=>{requests++;await gate;await r.fulfill({contentType:'application/zip',body:'synthetic late archive'}).catch(()=>{});});
+ await mockNativeConnection(page);await page.getByRole('button',{name:'영상·PTZ 기준 묶음 저장',exact:true}).click();await expect.poll(()=>requests).toBe(1);
+ const cancelled=page.waitForEvent('requestfailed',{predicate:r=>r.url().endsWith('/api/camera-snapshot/reference')});
+ await page.getByRole('button',{name:'라이브 표시 중지',exact:true}).click();await cancelled;release();
+ await expect(page.getByRole('button',{name:'영상·PTZ 기준 묶음 저장',exact:true})).toBeDisabled();expect(downloads).toBe(0);
+});
 test('direct credentials use a localhost POST only; frames refresh and disconnect clears images',async({page})=>{
  let active=false,sequence=0;const external:string[]=[],methods:string[]=[];
  page.on('request',r=>{if(!r.url().startsWith('http://127.0.0.1:5081/')&&!r.url().startsWith('blob:'))external.push(r.url());});
