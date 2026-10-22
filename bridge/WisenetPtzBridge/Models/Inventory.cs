@@ -9,7 +9,8 @@ public sealed record InventoryDocument(int SchemaVersion, bool Complete, int Tot
     DateTimeOffset CapturedAt, string Provenance, List<InventoryCamera> Cameras);
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
-public sealed record InventoryCamera(Guid Uuid, string Name, string? Channel, string? Device, string? PtzCap)
+public sealed record InventoryCamera(Guid Uuid, string Name, string? Channel, string? Device, string? PtzCap,
+    string? Model = null, bool? ReportedPtzSupported = null)
 {
     // uint64 masks cross the JSON boundary as decimal strings, never JS numbers.
     [JsonIgnore] public ulong? Capability => PtzCap is null ? null : ulong.Parse(PtzCap, CultureInfo.InvariantCulture);
@@ -25,3 +26,5 @@ public sealed class InventoryException(int statusCode, string message) : Excepti
 {
     public int StatusCode { get; } = statusCode;
 }
+
+public sealed record InventoryImportRequest(InventoryDocument Document, string? InventoryVersion);

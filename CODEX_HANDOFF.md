@@ -1,5 +1,14 @@
 # CODEX HANDOFF — Wisenet SSM 산불 CCTV 3D 감시영역 시스템
 
+## 현재 사용자 결정 (2026-10-10, 아래 초기 순서보다 우선)
+
+현재 PTZ 인증·권한 원인을 단정하지 않고 **영상·지형 수동 보정**으로 작업 방향을 변경했습니다.
+첫 대상은 백운대이며 사용자는 제공 좌표가 실제 설치 위치임을 확인했습니다. 위치/UUID는 private 자료에만 보관합니다.
+가상 지도 시점 비교와 추정 설정의 중앙 저장을 구현하며 단독 주간 원본 화면·촬영 시각을 받아 실제 정합을 확인합니다.
+v5 현장 시험/CONTROL 구현은 보류합니다. 최종 중앙 Bridge + VWorld 브라우저 구조와 읽기 전용 원칙은 유지합니다.
+아래는 초기 handoff와 향후 PTZ 작업 목표입니다. 실제 수신/방향 정확도/가시영역 구현 완료로 해석하지 않습니다.
+[현재 보정 방법과 검증 범위](docs/terrain-calibration.md).
+
 ## 0. Codex가 가장 먼저 읽을 것
 이 프로젝트의 목표는 **Wisenet SSM에 등록된 산불감시 CCTV 중 필요한 카메라(현재 9대)의 실시간 PTZ(Pan/Tilt/Zoom)를 얻어, 국립공원별로 분류하고 VWorld 3D 지도에 현재 감시방향/시야영역을 표시**하는 것이다.
 
@@ -168,6 +177,17 @@ RequestEX(requestObj);
 ```
 
 `ControlSession.Request(RequestObj)`에서 `REQ_TYPE.PTZ_CONTROL`은 `MakeRequestPacket(..., MessageType.Command)` 후 `BeginSend(...)`로 네트워크 전송된다.
+
+추가 인수인계(`docs/PTZ_CODE_TRACE_STATUS.md`)에 따르면
+`MediaService.RequestEx(ref RequestObj, Guid)`는 카메라 UUID의 Media Gateway/CONTROL session을
+찾아 `ControlSession.Request()`로 전달한다. 절대 위치 설정 메서드의 정확한 위치는
+`PTZPanel.Function_Request(float,float,float)`로 보고되었다.
+이는 전달된 정적 분석 결과이며 외부 인증·세션 생성 또는 MapTile.OnRequest subscriber가
+확인됐다는 의미가 아니다. 해당 제어 메서드를 실행 Bridge에 추가하거나 시험 호출하지 않는다.
+
+`SetObjectPTZAngle()`은 Zoom을 사용하지 않는다고 추가 문서에 명시돼 있다.
+GROUND/CEILING 보정은 SSM 지도 표시 규칙이며 실제 북쪽 방위각 및 광학 FOV에는
+실장비 값 검증과 설치 방향 캘리브레이션이 필요하다.
 
 ## 11. VERIFIED — SSM REST/Web 구조 단서
 `WebServiceStub.dll`에서 카메라/채널/프리셋 관련 REST 경로 확인:

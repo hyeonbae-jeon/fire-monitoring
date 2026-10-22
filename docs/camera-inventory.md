@@ -47,6 +47,7 @@ scaffold 문제:
 - `capturedAt`: 출처에서 목록을 수집한 시각 (시간대 포함)
 - `provenance`: 검증된 수집 방식/출처 설명. 인증 정보는 넣지 않음
 - `cameras`: `uuid`, `name`, nullable `channel`, nullable `device`, nullable `ptzCap`
+- 선택 필드 `model`, `reportedPtzSupported`: 보고서 모델과 PTZ 지원 표시. PtzCap 비트와 구분
 - `ptzCap`: unsigned 64비트 **10진 문자열**. JSON 숫자는 JS 정밀도 손실 때문에 거부
 - 알 수 없는 필드는 `null`. capability=0은 확인된 비트 없음이며 UNKNOWN과 구분
 
@@ -95,6 +96,11 @@ capability와 enabled만 갱신합니다. 새 카메라의 미확인 위치·보
 
 ## 실제 SSM 어댑터를 구현하기 전에 확인할 것
 
+추가 코드 추적 문서와 비교 결과는 [ptz-trace-review.md](ptz-trace-review.md) 참조.
+다음 정적 분석 후보는 DataService/관련 모델, WebServiceStub의 실제 채널 조회,
+MediaService/ControlSession 초기화 및 MapTile.OnRequest subscriber임.
+내부 RequestEx 경로가 보고됐어도 전체 목록 계약이나 외부 인증이 확인된 것은 아님.
+
 1. 지원되는 외부 인터페이스(공식 SDK/API/검증된 export), 버전 및 사용·재배포 조건
 2. 로그인/세션/계정 권한/TLS 방식. 비밀값은 채팅이나 소스에 남기지 않음
 3. 정확한 camera UUID와 channel/device 관계, 이름, uint64 PtzCap 필드 매핑
@@ -112,3 +118,9 @@ HTTP 통합 테스트는 실제 .NET 프로세스와 임시 파일을 사용합�
 테스트는 uint64 최대값, UNKNOWN, 잘못된/부분 목록, 선택 검증, 인증, 메타데이터 보존,
 재시작 지속성, 동시 저장/오래된 목록 충돌, 손상 파일 보존과 웹 선택 흐름을 확인합니다.
 실제 SSM 전체 조회, PTZ, VWorld, 여러 운영 PC 접속 및 운영 배포는 미검증입니다.
+
+## SSM 장치 설정 리포트 입력
+
+Excel XML .xls를 브라우저에서 읽어 허용한 필드만 중앙 목록 파일에 가져올 수 있습니다.
+PTZ 지원 표시와 capability 비트는 별도이며 전체 여부·수집 시각은 운영자 확인이 필요합니다.
+실제 리포트 원본/정규화 데이터는 GitHub에 포함하지 않습니다. [실행 및 확인 범위](ssm-report-import.md).
