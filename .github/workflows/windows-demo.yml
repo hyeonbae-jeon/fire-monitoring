@@ -18,6 +18,7 @@ on:
       - 'tests/serve_e2e.py'
       - 'tests/serve_map_preview.py'
       - 'tests/test_screen_capture.py'
+      - 'tests/test_direct_snapshot.py'
       - 'tests/ScreenCaptureChecks/**'
       - 'tests/WindowsCaptureSmoke/**'
       - 'config/inventory.example.json'
@@ -77,6 +78,7 @@ jobs:
         run: |
           dotnet run --project tests/ScreenCaptureChecks -c Release
           python3 tests/test_screen_capture.py
+          python3 tests/test_direct_snapshot.py
           python3 tests/test_inventory.py
           python3 tests/test_portable_demo.py
       - name: Test browser inventory, map and terrain calibration (mock SDK)

@@ -35,6 +35,7 @@ class PortableDemoTests(unittest.TestCase):
             env.update(INVENTORY_FILE=str(work / 'nonexistent-operational-inventory.json'),
                        CAMERA_CONFIG_FILE=str(untouched), MAP_CONFIG_FILE=str(untouched), INVENTORY_WRITE_KEY='unusable-operational-placeholder',
                        CAPTURE_SOURCE_DIR=str(work / 'operational-screen-input'), CAPTURE_READ_KEY='unusable-operational-read-placeholder',
+                       DIRECT_CAMERA_SNAPSHOT_ENABLED='false',
                        ASPNETCORE_URLS='http://0.0.0.0:1')
             env['ASPNETCORE_ENVIRONMENT'] = 'Production'
             operational_screen = work / 'operational-screen-input'
@@ -78,6 +79,13 @@ class PortableDemoTests(unittest.TestCase):
                 self.assertTrue(capture_status['configured'])
                 self.assertEqual(capture_status['status'], 'waiting')
                 self.assertFalse(capture_status['liveFrameAvailable'])
+                direct_request = urllib.request.Request(base + '/api/camera-snapshot/status',
+                    headers={'X-Capture-Read-Key': 'local-demo-only'})
+                with urllib.request.urlopen(direct_request, timeout=5) as direct_response:
+                    direct_status = json.load(direct_response)
+                self.assertTrue(direct_status['configured'])
+                self.assertEqual(direct_status['status'], 'disconnected')
+                self.assertFalse(direct_status['liveFrameAvailable'])
                 self.assertIn(b'<div id="root">', request(base, '/'))
                 inv = json.loads(request(base, '/api/inventory'))
                 self.assertEqual(inv['totalCount'], 3)

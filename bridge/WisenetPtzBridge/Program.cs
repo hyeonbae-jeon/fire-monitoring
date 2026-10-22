@@ -23,12 +23,14 @@ if (desktopDemo)
     builder.Configuration["INVENTORY_WRITE_KEY"] = "local-demo-only";
     builder.Configuration["CAPTURE_SOURCE_DIR"] = Path.Combine(AppContext.BaseDirectory, "data", "capture.private");
     builder.Configuration["CAPTURE_READ_KEY"] = "local-demo-only";
+    builder.Configuration["DIRECT_CAMERA_SNAPSHOT_ENABLED"] = "true";
 }
 builder.Services.AddSingleton<FileCameraInventorySource>();
 builder.Services.AddSingleton<ICameraInventorySource>(services => services.GetRequiredService<FileCameraInventorySource>());
 builder.Services.AddSingleton<CameraConfiguration>();
 builder.Services.AddSingleton<MapConfiguration>();
 builder.Services.AddSingleton<ScreenFrameSource>();
+builder.Services.AddSingleton<DirectSnapshotSource>();
 builder.WebHost.ConfigureKestrel(options =>
 {
     options.Limits.MaxRequestBodySize = 1024 * 1024;
@@ -48,6 +50,7 @@ app.Use(async (context, next) =>
 });
 app.UseDefaultFiles();
 app.UseStaticFiles();
+app.MapDirectSnapshotEndpoints();
 app.MapGet("/health", () => Results.Ok(new
 {
     ok = true, service = "WisenetPtzBridge", phase = "camera-inventory",
