@@ -45,6 +45,8 @@ public sealed class DirectSnapshotSource : IAsyncDisposable
             !Uri.TryCreate(request.SnapshotUrl, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https") ||
             uri.UserInfo.Length != 0 || uri.Fragment.Length != 0 || uri.AbsolutePath != "/stw-cgi/video.cgi")
             throw new SnapshotException("snapshot-url-required", "확인한 한화 JPEG 요청의 전체 주소를 입력하세요. DDNS·로그인·영상 페이지 주소는 스냅샷 주소가 아닙니다.");
+        if (uri.Host.Equals("ddns.hanwha-security.com", StringComparison.OrdinalIgnoreCase))
+            throw new SnapshotException("device-address-required", "DDNS 포털에는 장비 계정을 보내지 않습니다. 웹뷰어에 최종 표시된 카메라 장비 주소를 입력하세요.");
         var query = QueryHelpers.ParseQuery(uri.Query);
         if (!query.TryGetValue("msubmenu", out var submenu) || submenu.Count != 1 || submenu[0] != "snapshot" ||
             !query.TryGetValue("action", out var action) || action.Count != 1 || action[0] != "view" ||
