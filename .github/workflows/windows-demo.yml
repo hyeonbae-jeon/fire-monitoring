@@ -52,7 +52,7 @@ jobs:
           exit $LASTEXITCODE
   package:
     needs: windows-capture-check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
       DOTNET_CLI_TELEMETRY_OPTOUT: '1'
@@ -81,11 +81,20 @@ jobs:
           python3 tests/test_direct_snapshot.py
           python3 tests/test_inventory.py
           python3 tests/test_portable_demo.py
-      - name: Test browser inventory, map and terrain calibration (mock SDK)
+      - name: Install Chromium and browser dependencies
+        timeout-minutes: 4
         run: |
           cd web
           npx playwright install --with-deps chromium
+      - name: Test browser inventory, map and terrain calibration (mock SDK)
+        timeout-minutes: 4
+        run: |
+          cd web
           PLAYWRIGHT_JSON_OUTPUT_FILE=../artifacts/browser-normal-results.json npm run test:e2e -- --reporter=line,json
+      - name: Test Pages map and numerical calibration (mock SDK)
+        timeout-minutes: 4
+        run: |
+          cd web
           VITE_MAP_ONLY=true VITE_BASE_PATH=/fire-monitoring/ VITE_VWORLD_API_KEY=synthetic-pages-key npm run build
           PLAYWRIGHT_JSON_OUTPUT_FILE=../artifacts/browser-pages-results.json npx playwright test --config playwright.pages.config.ts --reporter=line,json
       - name: Report browser failures through check annotations
