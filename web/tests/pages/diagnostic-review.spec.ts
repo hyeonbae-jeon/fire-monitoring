@@ -62,3 +62,28 @@ test('invalid files retain the previous review and diagnostic overlays are hidde
  expect(await frame.evaluate('renderedShows.at(-1).every(v=>v===false)')).toBe(true);
  await expect.poll(()=>frame.evaluate('activeEntities.filter(e=>e.properties?.diagnosticControl).length')).toBe(4);
 });
+test('diagnostic reference dimensions control layout and projection without an image; loaded originals take precedence',async({page})=>{
+ const frame=await setup(page);await upload(page);
+ const panel=page.locator('.map-panel');
+ await expect(panel).toHaveAttribute('data-reference','true');
+ let box=(await panel.boundingBox())!;expect(box.width/box.height).toBeCloseTo(1000/600,2);
+ await page.getByRole('button',{name:'가상 시점 적용',exact:true}).click();
+ await expect.poll(()=>frame.evaluate('ws3d.viewer.camera.frustum.aspectRatio')).toBeCloseTo(1000/600);
+ await page.getByRole('button',{name:'진단 기준점 숨기기',exact:true}).click();
+ await expect(panel).not.toHaveAttribute('data-reference');
+ await expect.poll(()=>frame.evaluate('ws3d.viewer.scene.screenSpaceCameraController.enableInputs')).toBe(true);
+ const portrait=diagnostic();portrait.reference.width=600;portrait.reference.height=1000;await upload(page,portrait);
+ await page.getByRole('button',{name:'가상 시점 적용',exact:true}).click();
+ await expect.poll(()=>frame.evaluate('ws3d.viewer.camera.frustum.aspectRatio')).toBeCloseTo(.6);
+ expect(await frame.evaluate('ws3d.viewer.camera.frustum.fov')).toBeCloseTo(2*Math.atan(Math.tan(Math.PI/6)/.6));
+ const png=await page.evaluate(()=>{const c=document.createElement('canvas');c.width=1200;c.height=600;return c.toDataURL('image/png').split(',')[1];});
+ await page.getByLabel('참조 CCTV 이미지',{exact:true}).setInputFiles({name:'synthetic-wide.png',mimeType:'image/png',buffer:Buffer.from(png,'base64')});
+ await expect(page.locator('.reference-image')).toBeVisible();
+ box=(await panel.boundingBox())!;expect(box.width/box.height).toBeCloseTo(2,2);
+ await page.getByRole('button',{name:'가상 시점 적용',exact:true}).click();
+ await expect.poll(()=>frame.evaluate('ws3d.viewer.camera.frustum.aspectRatio')).toBe(2);
+ await page.getByRole('button',{name:'진단 기준점 숨기기',exact:true}).click();
+ await expect(panel).toHaveAttribute('data-reference','true');
+ expect(await frame.evaluate('ws3d.viewer.scene.screenSpaceCameraController.enableInputs')).toBe(false);
+ expect(await frame.evaluate('ws3d.viewer.camera.frustum.aspectRatio')).toBe(2);
+});

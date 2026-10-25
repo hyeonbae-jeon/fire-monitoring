@@ -57,6 +57,8 @@ export function MonitoringMap({active=true,standalone=false,desktopDemo=false}:{
  const liveViewOwner=useRef(false),liveViewTicket=useRef(0);
  const edits=useRef(0),iframe=useRef<HTMLIFrameElement>(null),pending=useRef(new Map<string,{resolve:(ground:PreviewGround)=>void;reject:(error:Error)=>void;timer:number}>());
  const positions=configuration.positions,current=positions.find(p=>p.id===selected);
+ const diagnosticAspect=diagnostic&&matchesDiagnosticCamera(diagnostic,current)?diagnostic.reference.width/diagnostic.reference.height:null;
+ const previousDiagnosticAspect=useRef(diagnosticAspect);
  const diagnosticPoints=useMemo(()=>active&&tools==='cameras'&&diagnostic&&matchesDiagnosticCamera(diagnostic,current)?diagnostic.points:[],[active,tools,diagnostic,current]);
  const positionsRef=useRef(positions);positionsRef.current=positions;
  const estimate=current?.orientation?.status==='estimate'?current.orientation:null;
@@ -150,12 +152,18 @@ export function MonitoringMap({active=true,standalone=false,desktopDemo=false}:{
   if(!ready||!matchesDiagnosticCamera(review,current))return;
   cancelGeoPick('진단 기준점 전체 보기로 전환했습니다.');cancelPending('진단 기준점 전체 보기로 전환했습니다.');setPreviewEpoch(v=>v+1);setCalibrating(false);post('fit-layers',{bounds:diagnosticBounds(review),overhead:true});
  }
+ useEffect(()=>{
+  if(previousDiagnosticAspect.current===diagnosticAspect)return;
+  previousDiagnosticAspect.current=diagnosticAspect;
+  if(aspect!==null)return;
+  cancelPending('진단 사진 비율이 변경돼 가상 시점 요청을 취소했습니다.');setPreviewEpoch(v=>v+1);setCalibrating(false);post('end-calibration');
+ },[diagnosticAspect]);
  function preview(request:PreviewRequest,onlyGround=false):Promise<PreviewGround>{
   if(!frame||!ready)return Promise.reject(new Error('VWorld 3D에 먼저 연결하세요.'));
   cancelPending('새 가상 시점 요청으로 교체됐습니다.');if(!onlyGround)setCalibrating(true);
   return new Promise((resolve,reject)=>{
    const requestId=crypto.randomUUID(),timer=window.setTimeout(()=>{pending.current.delete(requestId);reject(new Error('가상 시점 응답 시간 초과. 지형 로딩을 확인하세요.'));},15000);
-   pending.current.set(requestId,{resolve,reject,timer});post(onlyGround?'calibration-ground':'calibrate',{requestId,...request});
+   pending.current.set(requestId,{resolve,reject,timer});post(onlyGround?'calibration-ground':'calibrate',{requestId,...request,aspectRatio:request.aspectRatio??diagnosticAspect});
   });
  }
  function stopLiveView(){
@@ -216,7 +224,7 @@ export function MonitoringMap({active=true,standalone=false,desktopDemo=false}:{
    if(ticket===edits.current){setConfiguration(result.configuration);setDirty(false);}setRevision(result.revision);setWriteKey('');setStorageStatus(ticket===edits.current?'중앙 지도 설정 저장 완료 · 다른 브라우저에서 다시 불러올 수 있습니다.':'이전 설정 저장 완료 · 이후 변경은 추가 저장이 필요합니다.');
   }catch(e){setError((e as Error).message);}finally{setSaving(false);}
  }
- const mapAspect=liveView?.aspect??aspect;
+ const mapAspect=liveView?.aspect??aspect??diagnosticAspect;
  const mapPanel=<div className="map-panel" data-reference={mapAspect?'true':undefined} style={mapAspect?{height:'auto',aspectRatio:mapAspect,'--reference-aspect':mapAspect} as CSSProperties:undefined}>{frame?<iframe key={frame.session} title="VWorld 3D 지도" ref={iframe} src={import.meta.env.BASE_URL+'vworld-viewer.html'} sandbox="allow-scripts allow-same-origin" onLoad={()=>iframe.current?.contentWindow?.postMessage({scope:'vworld-bootstrap',type:'initialize',html:frame.html},location.origin)}/>:<><p className="schematic-label">좌표 배치도 · 실제 지형 아님 · 북쪽 ↑</p><svg viewBox="0 0 800 480" role="img" aria-label="북한산 시험 카메라 좌표 배치도">{displayedLines.map(({layer,lines})=><g key={layer.id} data-layer={layer.id}>{lines.map((line,i)=><polyline key={i} points={line.map(([lon,lat])=>xy(lon,lat).join(',')).join(' ')} fill="none" stroke={layer.kind==='boundary'?'#71f2cf':'#ffca68'} strokeWidth={layer.kind==='boundary'?2.5:1.5}/>)}</g>)}{coverageShapes.map(shape=><g key={shape.cameraId} data-coverage={shape.cameraId} onClick={()=>selectPosition(shape.cameraId)}><polygon points={shape.coordinates.map(([lon,lat])=>xy(lon,lat).join(',')).join(' ')} fill={shape.color} fillOpacity={shape.cameraId===selected?'.28':'.16'} stroke={shape.color} strokeWidth={shape.cameraId===selected?2:1}/><polyline points={shape.centerline.map(([lon,lat])=>xy(lon,lat).join(',')).join(' ')} stroke={shape.color} strokeDasharray="5 4"/></g>)}{polygon&&<polygon points={polygon.map(([lon,lat])=>xy(lon,lat).join(',')).join(' ')} fill="#f5a623" fillOpacity=".35" stroke="#f5a623"/>}{diagnosticPoints.map(p=>{const[x,y]=xy(p.lon,p.lat);return <g key={p.number} data-diagnostic={p.number}><circle cx={x} cy={y} r={7} fill={p.validation?'#bc8aff':'#ee984b'}/><text x={x+10} y={y-10} fill="white" fontSize="13">{p.number+' · '+p.label}</text></g>;})}{positions.map(p=>{const[x,y]=xy(p.lon,p.lat),alarm=alertMarkers.find(a=>a.cameraId===p.id);return <g key={p.id} data-alert={alarm?.cameraId} onClick={()=>selectPosition(p.id)}>{alarm&&<><title>{`알림 자료 ${alarm.count}건 · ${p.name} · 카메라 위치 · 연기 위치 미확인`}</title><circle cx={x} cy={y} r={16} fill="none" stroke="#ff7474" strokeWidth={3}/></>}<circle cx={x} cy={y} r={p.id===selected?10:6} fill="#55deed"/><text x={x+14} y={y+5} fill="white" fontSize="16">{p.name}</text></g>;})}</svg></>}</div>;
  return <main className="monitoring map-workspace" data-live={tools==='live'?'true':undefined}>
   <div className="map-topbar"><div><strong>VWorld 3D · 산불감시 지도</strong><span role="status">{status}</span></div><div className="map-tool-tabs" aria-label="지도 도구"><button aria-pressed={tools==='cameras'} onClick={()=>setTools(tools==='cameras'?'':'cameras')}>카메라·설정</button><button aria-pressed={tools==='alerts'} onClick={()=>setTools(tools==='alerts'?'':'alerts')}>AI 감지 알림</button>{!standalone&&<button aria-pressed={tools==='live'} onClick={()=>setTools(tools==='live'?'':'live')}>실시간 영상</button>}<button aria-pressed={tools==='coverage'} onClick={()=>setTools(tools==='coverage'?'':'coverage')}>관측 범위</button><button aria-pressed={tools==='layers'} onClick={()=>setTools(tools==='layers'?'':'layers')}>지도 레이어</button><button aria-pressed={tools==='location'} onClick={()=>setTools(tools==='location'?'':'location')}>위치·지번</button><button aria-pressed={tools==='connection'} onClick={()=>setTools(tools==='connection'?'':'connection')}>지도 연결</button></div></div>

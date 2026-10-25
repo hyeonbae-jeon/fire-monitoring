@@ -23,6 +23,7 @@ export function DiagnosticReview({position,ready,onDocument,onFit,renderError}:{
    <button disabled={!ready} onClick={()=>onFit(review)}>기준점 전체 보기</button>{' '}
    <button onClick={()=>{generation.current++;setReview(null);setError('');onDocument(null);}}>진단 기준점 숨기기</button>
    <ul>{review.points.map(p=><li key={p.number}>{p.number}번 · {p.label} · {p.validation?'검증':'계산'}<small>위도 {p.lat.toFixed(6)} / 경도 {p.lon.toFixed(6)} / 고도 {p.heightM.toFixed(1)}m</small></li>)}</ul>
+   <p className="help">참조 이미지를 열지 않았으면 진단 사진의 가로·세로 비율로 지도를 표시합니다. 파일을 바꾼 뒤에는 가상 시점을 다시 적용하세요. 실제 원본 사진을 열면 그 사진의 비율을 우선합니다.</p>
    <p className="help">이 보기의 기준점은 좌표 설정 다운로드·중앙 저장에 추가하지 않습니다. 파일은 이 브라우저에서만 읽습니다.</p>
   </>}
   {error&&<p role="alert" className="error">{error}</p>}{renderError&&review&&<p role="alert" className="error">{renderError}</p>}
