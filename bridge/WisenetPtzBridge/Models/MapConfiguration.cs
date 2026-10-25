@@ -10,7 +10,25 @@ public sealed record MapDocument([property: JsonRequired] int SchemaVersion,
 public sealed record MapPosition([property: JsonRequired] string Id, [property: JsonRequired] string Name,
     [property: JsonRequired] double Lat, [property: JsonRequired] double Lon,
     [property: JsonRequired] Guid? SsmUuid, [property: JsonRequired] string PositionSource,
-    [property: JsonRequired] ManualOrientation? Orientation);
+    [property: JsonRequired] ManualOrientation? Orientation,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NativeTrackingProfile? NativeTracking = null);
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record NativeTrackingProfile([property: JsonRequired] string Source,
+    [property: JsonRequired] string Confidence, [property: JsonRequired] DateTimeOffset SavedAt,
+    [property: JsonRequired] CalibrationPosition PositionAtCalibration,
+    [property: JsonRequired] NativeTrackingAngles DeviceAnchor,
+    [property: JsonRequired] NativeTrackingPose Pose, [property: JsonRequired] double? GroundElevationM,
+    [property: JsonRequired] bool ZoomScale);
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record NativeTrackingAngles([property: JsonRequired] double PanDeg,
+    [property: JsonRequired] double TiltDeg, [property: JsonRequired] double Zoom);
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record NativeTrackingPose([property: JsonRequired] double HeadingDeg,
+    [property: JsonRequired] double PitchDeg, [property: JsonRequired] double HorizontalFovDeg,
+    [property: JsonRequired] double CameraHeightM);
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record CalibrationPosition([property: JsonRequired] double Lat, [property: JsonRequired] double Lon);

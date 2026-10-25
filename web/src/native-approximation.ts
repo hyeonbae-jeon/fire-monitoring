@@ -1,8 +1,9 @@
 import type {Pose} from './calibration-model';
 import type {DevicePtz} from './DevicePtzStatus';
 export type NativeSample=NonNullable<DevicePtz['sample']>;
-export type NativeAnchor={sample:NativeSample;pose:Pose};
-export function approximateNativePose(anchor:NativeAnchor,sample:NativeSample,zoomScale:boolean):Pose{
+export type NativeAngles=Pick<NativeSample,'panDeg'|'tiltDeg'|'zoom'>;
+export type NativeAnchor={sample:NativeAngles;pose:Pose};
+export function approximateNativePose(anchor:NativeAnchor,sample:NativeAngles,zoomScale:boolean):Pose{
  const p=anchor.pose,a=anchor.sample;
  if(![a.panDeg,a.tiltDeg,a.zoom,sample.panDeg,sample.tiltDeg,sample.zoom,p.headingDeg,p.pitchDeg,p.horizontalFovDeg,p.cameraHeightM].every(Number.isFinite)||a.zoom<=0||sample.zoom<=0)throw new Error('장비 값과 기준 각도를 확인하세요.');
  const delta=((sample.panDeg-a.panDeg+180)%360+360)%360-180;

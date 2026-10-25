@@ -337,6 +337,34 @@ class BridgeTests(unittest.TestCase):
         self.stop(); self.start()
         self.assertEqual(self.request('/api/map-configuration')[1], saved)
 
+    def test_native_tracking_profile_round_trip_restart_and_invalid_updates_preserve_file(self):
+        doc = self.map_document()
+        profile = {'source': 'operator-ptz-anchor', 'confidence': 'approximate',
+                   'savedAt': '2026-10-25T10:00:00+00:00', 'positionAtCalibration': {'lat': 37.5, 'lon': 127.1},
+                   'deviceAnchor': {'panDeg': 359, 'tiltDeg': -4, 'zoom': 1},
+                   'pose': {'headingDeg': 138, 'pitchDeg': 14, 'horizontalFovDeg': 59, 'cameraHeightM': 20},
+                   'groundElevationM': None, 'zoomScale': True}
+        doc['positions'][0]['nativeTracking'] = profile
+        status, saved = self.save_map(doc)
+        self.assertEqual(status, 200)
+        self.assertEqual(saved['configuration'], doc)
+        self.stop(); self.start()
+        self.assertEqual(self.request('/api/map-configuration')[1], saved)
+        before = self.map_path.read_bytes()
+        variants = []
+        for key, value in [('source', 'surveyed'), ('confidence', 'verified'), ('zoomScale', None),
+                           ('groundElevationM', 10000), ('savedAt', None),
+                           ('positionAtCalibration', {'lat': 37.6, 'lon': 127.1})]:
+            bad = copy.deepcopy(doc); bad['positions'][0]['nativeTracking'][key] = value; variants.append(bad)
+        for group, key, value in [('deviceAnchor', 'zoom', 0), ('deviceAnchor', 'panDeg', 361),
+                                  ('pose', 'cameraHeightM', 0), ('pose', 'horizontalFovDeg', 0),
+                                  ('deviceAnchor', 'password', 'synthetic-secret')]:
+            bad = copy.deepcopy(doc); bad['positions'][0]['nativeTracking'][group][key] = value; variants.append(bad)
+        bad = copy.deepcopy(doc); del bad['positions'][0]['nativeTracking']['zoomScale']; variants.append(bad)
+        for bad in variants:
+            self.assertIn(self.save_map(bad, saved['revision'])[0], [400, 422])
+            self.assertEqual(self.map_path.read_bytes(), before)
+
     def test_map_write_key_required(self):
         body = {'configurationRevision': 'none', 'configuration': self.map_document()}
         for key in [None, 'wrong']:

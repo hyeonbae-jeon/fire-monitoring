@@ -1,5 +1,6 @@
 import {parseOrientation,type ManualOrientation} from './calibration-model';
-export type Position = {id:string;name:string;lat:number;lon:number;ssmUuid:string|null;positionSource:'synthetic'|'operator';orientation:ManualOrientation|null};
+import {parseNativeProfile,type NativeProfile} from './native-profile';
+export type Position = {id:string;name:string;lat:number;lon:number;ssmUuid:string|null;positionSource:'synthetic'|'operator';orientation:ManualOrientation|null;nativeTracking?:NativeProfile};
 export type MapConfiguration = {schemaVersion:1;crs:'EPSG:4326';positions:Position[]};
 export const sample:MapConfiguration={schemaVersion:1,crs:'EPSG:4326',positions:[
 {id:'demo-1',name:'북한산 시험 A',lat:37.6585,lon:126.977,ssmUuid:null,positionSource:'synthetic',orientation:null},
@@ -12,7 +13,7 @@ export function parseConfiguration(text:string):MapConfiguration {
  const ids=new Set<string>(),uuids=new Set<string>();
  const positions:Position[]=v.positions.map((p:Position)=>{
  if(!p||typeof p.id!=='string'||!p.id.trim()||p.id.length>100||ids.has(p.id)||typeof p.name!=='string'||!p.name.trim()||p.name.length>200||!Number.isFinite(p.lat)||p.lat< -90||p.lat>90||!Number.isFinite(p.lon)||p.lon< -180||p.lon>180||!['synthetic','operator'].includes(p.positionSource)||!(p.ssmUuid===null||(typeof p.ssmUuid==='string'&&/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(p.ssmUuid)&&!/^0{8}(-0{4}){3}-0{12}$/.test(p.ssmUuid)&&!uuids.has(p.ssmUuid.toLowerCase()))))throw new Error('중복 ID/UUID, 이름, 위도/경도 또는 출처를 확인하세요.');
- ids.add(p.id);if(p.ssmUuid)uuids.add(p.ssmUuid.toLowerCase());return {id:p.id,name:p.name,lat:p.lat,lon:p.lon,ssmUuid:p.ssmUuid,positionSource:p.positionSource,orientation:parseOrientation(p.orientation,p)};});
+ ids.add(p.id);if(p.ssmUuid)uuids.add(p.ssmUuid.toLowerCase());return {id:p.id,name:p.name,lat:p.lat,lon:p.lon,ssmUuid:p.ssmUuid,positionSource:p.positionSource,orientation:parseOrientation(p.orientation,p),...(p.nativeTracking!=null?{nativeTracking:parseNativeProfile(p.nativeTracking,p)}:{})};});
  return {schemaVersion:1,crs:'EPSG:4326',positions};
 }
 // Illustrative horizontal sector, no terrain visibility calculation.

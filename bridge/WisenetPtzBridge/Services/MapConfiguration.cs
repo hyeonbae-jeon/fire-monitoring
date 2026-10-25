@@ -39,6 +39,12 @@ public sealed class MapConfiguration(IConfiguration config)
                 string.IsNullOrWhiteSpace(p.Name) || p.Name.Length > 200 || !Range(p.Lat, -90, 90) || !Range(p.Lon, -180, 180) ||
                 p.PositionSource is not ("synthetic" or "operator") ||
                 p.SsmUuid is { } uuid && (uuid == Guid.Empty || !uuids.Add(uuid))) throw new JsonException();
+            if (p.NativeTracking is { } n &&
+                (p.PositionSource != "operator" || n.Source != "operator-ptz-anchor" || n.Confidence != "approximate" ||
+                 n.SavedAt == default || n.PositionAtCalibration is null || n.PositionAtCalibration.Lat != p.Lat || n.PositionAtCalibration.Lon != p.Lon ||
+                 n.DeviceAnchor is null || !Range(n.DeviceAnchor.PanDeg, 0, 360) || !Range(n.DeviceAnchor.TiltDeg, -360, 360) || !Range(n.DeviceAnchor.Zoom, double.Epsilon, 10000) ||
+                 n.Pose is null || !Range(n.Pose.HeadingDeg, 0, 359.999999) || !Range(n.Pose.PitchDeg, -80, 80) || !Range(n.Pose.HorizontalFovDeg, 5, 120) || !Range(n.Pose.CameraHeightM, .5, 100) ||
+                 n.GroundElevationM is { } ground && !Range(ground, -500, 9000))) throw new JsonException();
             if (p.Orientation is not { } o) continue;
             if (p.PositionSource != "operator" || o.Source != "manual-calibration" || o.Status is not ("estimate" or "stale") ||
                 o.Confidence != "unvalidated" || !Range(o.HeadingDeg, 0, 359.999999) || !Range(o.PitchDeg, -80, 80) ||

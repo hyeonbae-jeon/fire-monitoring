@@ -15,6 +15,7 @@ import {SmokeAlerts} from './SmokeAlerts';
 import {LiveCapture,type CapturedFrame} from './LiveCapture';
 import {NativePtzTracking} from './NativePtzTracking';
 import type {DevicePtzObservation} from './DevicePtzStatus';
+import type {NativeProfile} from './native-profile';
 import {VisualTracking,type LiveVisualView} from './VisualTracking';
 import {DiagnosticReview} from './DiagnosticReview';
 import {matchesDiagnosticCamera,diagnosticBounds,type DiagnosticReview as Review} from './diagnostic-review';
@@ -215,6 +216,11 @@ export function MonitoringMap({active=true,standalone=false,desktopDemo=false}:{
    edits.current++;exitPreview();setConfiguration(next);setSelected(position.id);setDirty(true);setError('');setName('');setLatitude('');setLongitude('');setUuid('');
   }catch(e){setError((e as Error).message);}
  }
+ function saveNativeProfile(profile:NativeProfile|null){
+  if(!current)return;
+  const next=parseConfiguration(JSON.stringify({...configuration,positions:positions.map(p=>{if(p.id!==current.id)return p;const {nativeTracking,...rest}=p;return profile?{...rest,nativeTracking:profile}:rest;})}));
+  edits.current++;setConfiguration(next);setDirty(true);setStorageStatus('장비 추종 기준을 지도 설정에 반영했습니다. 중앙 저장 또는 JSON으로 보관하세요.');
+ }
  function saveOrientation(orientation:ManualOrientation){
   if(!current)return;
   const next=parseConfiguration(JSON.stringify({...configuration,positions:positions.map(p=>p.id===current.id?{...p,orientation}:p)}));
@@ -233,7 +239,7 @@ export function MonitoringMap({active=true,standalone=false,desktopDemo=false}:{
   <div className="map-topbar"><div><strong>VWorld 3D · 산불감시 지도</strong><span role="status">{status}</span></div><div className="map-tool-tabs" aria-label="지도 도구"><button aria-pressed={tools==='cameras'} onClick={()=>setTools(tools==='cameras'?'':'cameras')}>카메라·설정</button><button aria-pressed={tools==='alerts'} onClick={()=>setTools(tools==='alerts'?'':'alerts')}>AI 감지 알림</button>{!standalone&&<button aria-pressed={tools==='live'} onClick={()=>setTools(tools==='live'?'':'live')}>실시간 영상</button>}<button aria-pressed={tools==='coverage'} onClick={()=>setTools(tools==='coverage'?'':'coverage')}>관측 범위</button><button aria-pressed={tools==='layers'} onClick={()=>setTools(tools==='layers'?'':'layers')}>지도 레이어</button><button aria-pressed={tools==='location'} onClick={()=>setTools(tools==='location'?'':'location')}>위치·지번</button><button aria-pressed={tools==='connection'} onClick={()=>setTools(tools==='connection'?'':'connection')}>지도 연결</button></div></div>
   {error&&<p role="alert" className="error map-error">{error}</p>}
   <div className="monitor-grid"><aside className="map-floating camera-panel" hidden={tools!=='cameras'}><h2>카메라 위치</h2>
-   {positions.map(p=><button className={p.id===selected?'camera active':'camera'} key={p.id} onClick={()=>selectPosition(p.id)}>{p.name}<small>{p.positionSource==='synthetic'?'시험 좌표':'입력 좌표'} · {p.orientation?.status==='estimate'?'영상·지형 추정':'방향 UNKNOWN'}</small></button>)}
+   {positions.map(p=><button className={p.id===selected?'camera active':'camera'} key={p.id} onClick={()=>selectPosition(p.id)}>{p.name}<small>{p.positionSource==='synthetic'?'시험 좌표':'입력 좌표'} · {p.orientation?.status==='estimate'?'영상·지형 추정':'방향 UNKNOWN'}{p.nativeTracking?' · 장비 기준 있음':''}</small></button>)}
    <button disabled={!current||!ready} onClick={exitPreview}>선택 위치로 지도 이동</button>
    <p>위도 {current?.lat??'—'} / 경도 {current?.lon??'—'}<br/>SSM UUID: {current?.ssmUuid??'미연결'}</p>
    {current&&<DiagnosticReview key={current.id+':'+current.lat+':'+current.lon} position={current} ready={ready&&active} onDocument={setDiagnostic} onFit={fitDiagnostic} renderError={diagnosticError}/>}
@@ -263,7 +269,7 @@ export function MonitoringMap({active=true,standalone=false,desktopDemo=false}:{
   </aside>
   <aside className="map-floating location-panel" hidden={tools!=='location'}><LocationLookup point={locationPoint} picking={locationPicking} ready={ready} apiKey={appliedKey} pickError={locationError} onPicking={v=>{setLocationPicking(v);setLocationError('');}} onPoint={p=>{setLocationPoint(p);setLocationError('');}}/></aside>
   <aside className="map-floating smoke-alert-panel" hidden={tools!=='alerts'}>{calibrating&&<p className="help">가상 시점 보정 중 알림 카메라 표시 숨김</p>}<SmokeAlerts document={alertDocument} bindings={alertBindings} positions={positions} hidden={alertsHidden} onDocument={setAlertDocument} onBindings={setAlertBindings} onHidden={setAlertsHidden} onSelect={selectPosition} renderError={alarmRenderError}/></aside>
-  {!standalone&&active&&tools==='live'&&<aside className="map-floating map-live-panel"><p className="help">선택 지도 위치: {current?.name??'없음'} · 수집 영상과의 장비 일치 미확인</p><LiveCapture active desktopDemo={desktopDemo} embedded cameraLabel={current?.name} onFrame={setCaptureFrame} onPtz={setNativePtz}/><label>지도 추종 방식<select value={trackingMode} onChange={e=>{stopLiveView();setTrackingMode(e.target.value);}}><option value="visual">영상 대응 추정</option><option value="device">장비 PTZ 근사 추종</option></select></label>{trackingMode==='device'?<NativePtzTracking key={current?.id+':'+current?.lat+':'+current?.lon} position={current} frame={captureFrame} device={nativePtz} initial={trialView&&trialView.position.id===current?.id&&trialView.position.lat===current.lat&&trialView.position.lon===current.lon?trialView:null} mapReady={ready} onView={updateLiveView} onStop={stopLiveView}/>:<VisualTracking key={JSON.stringify([current?.id,current?.lat,current?.lon,current?.orientation])} position={current} frame={captureFrame} mapReady={ready} onView={updateLiveView} onStop={stopLiveView}/>}<p className="help">시험 시점은 지도 설정에 자동 저장하지 않습니다.</p></aside>}
+  {!standalone&&active&&tools==='live'&&<aside className="map-floating map-live-panel"><p className="help">선택 지도 위치: {current?.name??'없음'} · 수집 영상과의 장비 일치 미확인</p><label>추종할 설치 카메라<select value={selected} onChange={e=>selectPosition(e.target.value)}>{positions.map(p=><option key={p.id} value={p.id}>{p.name}{p.nativeTracking?' · 기준 저장됨':''}</option>)}</select></label><LiveCapture key={current?.id} active desktopDemo={desktopDemo} embedded cameraLabel={current?.name} onFrame={setCaptureFrame} onPtz={setNativePtz}/><label>지도 추종 방식<select value={trackingMode} onChange={e=>{stopLiveView();setTrackingMode(e.target.value);}}><option value="visual">영상 대응 추정</option><option value="device">장비 PTZ 근사 추종</option></select></label>{trackingMode==='device'?<NativePtzTracking key={current?.id+':'+current?.lat+':'+current?.lon} position={current} frame={captureFrame} device={nativePtz} initial={trialView&&trialView.position.id===current?.id&&trialView.position.lat===current.lat&&trialView.position.lon===current.lon?trialView:null} mapReady={ready} onView={updateLiveView} onStop={stopLiveView} onSave={saveNativeProfile}/>:<VisualTracking key={JSON.stringify([current?.id,current?.lat,current?.lon,current?.orientation])} position={current} frame={captureFrame} mapReady={ready} onView={updateLiveView} onStop={stopLiveView}/>}<p className="help">시험 시점은 지도 설정에 자동 저장하지 않습니다.</p></aside>}
   <div className="terrain-workspace">
    <div className="map-surface">{mapPanel}</div>
    {current&&<TerrainCalibration key={current.id+':'+current.lat+':'+current.lon} position={current} ready={ready&&active&&tools!=='live'} previewEpoch={previewEpoch} onPreview={preview} onReadGround={request=>preview(request,true)} onPickPoint={pickGeoPoint} onAspect={setAspect} onSave={saveOrientation} onExit={exitPreview}/>}
