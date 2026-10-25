@@ -1,7 +1,7 @@
 import {useEffect,useRef,useState,type MouseEvent} from 'react';
 import './LiveCapture.css';
 import {DirectSnapshotConnection} from './DirectSnapshotConnection';
-import {DevicePtzStatus,type DevicePtz} from './DevicePtzStatus';
+import {DevicePtzStatus,type DevicePtz,type DevicePtzObservation} from './DevicePtzStatus';
 
 export type Observation = {
  sessionId:string;cameraLabel:string;status:string;reasonCode:string;capturedAt:string|null;sequence:number;
@@ -23,8 +23,9 @@ const reason=(s:CaptureStatus)=>{
  return s.status==='stopped'?'화면 수집이 중지되었습니다.':'최신 화면을 기다립니다.';
 };
 
-export function LiveCapture({active,desktopDemo,embedded=false,cameraLabel,onFrame}:{active:boolean;desktopDemo:boolean;embedded?:boolean;cameraLabel?:string;onFrame?:(frame:CapturedFrame|null)=>void}){
+export function LiveCapture({active,desktopDemo,embedded=false,cameraLabel,onFrame,onPtz}:{active:boolean;desktopDemo:boolean;embedded?:boolean;cameraLabel?:string;onFrame?:(frame:CapturedFrame|null)=>void;onPtz?:(value:DevicePtzObservation|null)=>void}){
  const frameListener=useRef(onFrame);frameListener.current=onFrame;
+ const ptzListener=useRef(onPtz);ptzListener.current=onPtz;
  const downloadable=useRef<{blob:Blob;capturedAt:string}|null>(null);
  const [key,setKey]=useState(''),[running,setRunning]=useState(false),[snapshot,setSnapshot]=useState<CaptureStatus|null>(null);
  const [image,setImage]=useState<string|null>(null),[error,setError]=useState('');
@@ -32,11 +33,12 @@ export function LiveCapture({active,desktopDemo,embedded=false,cameraLabel,onFra
  useEffect(()=>{if(desktopDemo)setKey('local-demo-only');},[desktopDemo]);
  useEffect(()=>{if(!active)setRunning(false);},[active]);
  useEffect(()=>{
-  if(!active||!running){setImage(null);frameListener.current?.(null);return;}
+  if(!active||!running){setImage(null);frameListener.current?.(null);ptzListener.current?.(null);return;}
   let cancelled=false,blobUrl:string|null=null,lastFrame='',expiresAt=0,timer:ReturnType<typeof setTimeout>|undefined;
   const controller=new AbortController();
   const endpoint=source==='direct'?'/api/camera-snapshot':'/api/screen-capture';
-  function clear(notify=true){if(blobUrl)URL.revokeObjectURL(blobUrl);blobUrl=null;lastFrame='';expiresAt=0;downloadable.current=null;if(!cancelled)setImage(null);if(notify)frameListener.current?.(null);}
+  function clear(notify=true){if(blobUrl)URL.revokeObjectURL(blobUrl);blobUrl=null;lastFrame='';expiresAt=0;downloadable.current=null;if(!cancelled)setImage(null);if(notify){frameListener.current?.(null);ptzListener.current?.(null);}}
+  function publishPtz(s:CaptureStatus){const o=s.observation;ptzListener.current?.(source==='direct'&&o&&s.devicePtz?{value:s.devicePtz,sessionId:o.sessionId,cameraLabel:o.cameraLabel}:null);}
   async function request(path:string){
    const r=await fetch(path,{headers:{'X-Capture-Read-Key':key},signal:controller.signal,cache:'no-store'});
    if(!r.ok)throw new Error(`화면 조회 실패 (HTTP ${r.status})`);return r;
@@ -47,7 +49,7 @@ export function LiveCapture({active,desktopDemo,embedded=false,cameraLabel,onFra
     if(cancelled)return;setError('');
     if(!s.liveFrameAvailable||!s.observation){clear();setSnapshot(s);return;}
     const o=s.observation,identity=o.sessionId+':'+o.sequence;
-    if(identity===lastFrame){setSnapshot(s);return;}
+    if(identity===lastFrame){setSnapshot(s);publishPtz(s);return;}
     // No key in image URLs; protected frames are fetched with a header.
     const r=await fetch(endpoint+'/frame?'+new URLSearchParams({sessionId:o.sessionId,sequence:String(o.sequence)}),
       {headers:{'X-Capture-Read-Key':key},signal:controller.signal,cache:'no-store'});
@@ -56,7 +58,7 @@ export function LiveCapture({active,desktopDemo,embedded=false,cameraLabel,onFra
     const blob=await r.blob();if(cancelled)return;
     const capturedAt=Date.parse(o.capturedAt??'');
     if(!Number.isFinite(capturedAt)||Date.now()-capturedAt>4000||capturedAt>Date.now()+2000){clear();setSnapshot({...s,status:'stale',liveFrameAvailable:false});return;}
-    clear(false);blobUrl=URL.createObjectURL(blob);lastFrame=identity;expiresAt=capturedAt+4000;downloadable.current={blob,capturedAt:o.capturedAt!};setSnapshot(s);setImage(blobUrl);frameListener.current?.({blob,observation:o});
+    clear(false);blobUrl=URL.createObjectURL(blob);lastFrame=identity;expiresAt=capturedAt+4000;downloadable.current={blob,capturedAt:o.capturedAt!};setSnapshot(s);setImage(blobUrl);frameListener.current?.({blob,observation:o});publishPtz(s);
    }catch(e){if(!cancelled){clear();setSnapshot(null);setError((e as Error).message);}}
    finally{if(!cancelled)timer=setTimeout(()=>void poll(),1000);}
   }
@@ -79,7 +81,7 @@ export function LiveCapture({active,desktopDemo,embedded=false,cameraLabel,onFra
   <section className="notice"><h2>{embedded?'지도에서 실시간 영상 확인':'실시간 화면 수집 시험'}</h2>
    <label>영상 입력 방식<select value={source} disabled={running} onChange={e=>{setSnapshot(null);setError('');setSource(e.target.value as 'screen'|'direct');}}><option value="screen">SSM 화면 캡처</option><option value="direct">한화 카메라 직접 수신</option></select></label>
    {source==='direct'?<p>장비의 JPEG 영상을 약 1초 간격으로 직접 받습니다. 수신 시각은 이 PC 기준이며 원본 영상의 멈춤은 자동으로 판단하지 않습니다.</p>:embedded?<p>수집 도구가 선택한 SSM 영상 영역을 1초마다 확인합니다. 수집 시각은 PC 시간이며 SSM의 라이브 상태도 확인하세요.</p>:<><p>회사 PC에서 <strong>화면캡처.cmd</strong>를 실행하고 SSM 라이브 보기의 단독 CCTV 영상 영역을 선택하세요. 카메라 제어 없이 선택 영역을 1초마다 확인합니다.</p><p>수집 시각은 PC에서 화면을 읽은 시각입니다. 녹화 재생·멈춘 원본 영상을 자동으로 구분하지 않으므로 SSM의 라이브 상태도 확인하세요.</p></>}
-   {source==='direct'?<p><strong>지도 기준 현재 방향: 미확인</strong> · 장비 각도 조회를 켜면 아래에 원시 PTZ 값을 표시합니다. 설치 방향·기울기·줌별 화각 보정 후 지도에 연결할 수 있습니다.</p>:<p><strong>장비에서 받은 현재 방향: 미확인</strong> · 화면 변화 감지는 회전·줌 측정이 아닙니다. 지도 영상 패널에서 별도 영상 대응 시험을 시작할 수 있습니다. 화면 캡처로는 실제 PTZ를 수신하지 않습니다.</p>}
+   {source==='direct'?<p><strong>장비 원시 PTZ 수신</strong> · 각도 조회를 켜면 아래에 값을 표시합니다. 지도 영상 패널의 ‘장비 PTZ 근사 추종’에서 기준 방향을 정해 함께 움직여 볼 수 있습니다.</p>:<p><strong>장비에서 받은 현재 방향: 미확인</strong> · 화면 변화 감지는 회전·줌 측정이 아닙니다. 지도 영상 패널에서 별도 영상 대응 시험을 시작할 수 있습니다. 화면 캡처로는 실제 PTZ를 수신하지 않습니다.</p>}
    {embedded?<details open={!desktopDemo}><summary>영상 조회 설정</summary>{settings}</details>:settings}
    {source==='direct'&&<DirectSnapshotConnection active={active} readKey={key} cameraLabel={cameraLabel} sessionId={observation?.sessionId??''} viewing={running} ptzReceiving={snapshot?.devicePtz?.status==='live'&&!!snapshot.devicePtz.sample} onConnected={()=>setRunning(true)} onDisconnected={()=>{setRunning(false);setSnapshot(null);}}/>}
    <button disabled={!key||running} onClick={()=>setRunning(true)}>{embedded?'지도에서 라이브 확인':'라이브 화면 확인'}</button>{' '}

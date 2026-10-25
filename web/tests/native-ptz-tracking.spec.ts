@@ -1,0 +1,38 @@
+import {test,expect} from '@playwright/test';
+import {readFileSync} from 'node:fs';
+import {sdk} from './fixtures/vworld-sdk';
+import {approximateNativePose} from '../src/native-approximation';
+const image=readFileSync('tests/fixtures/vision/current-1.png');
+const sample={panDeg:359,tiltDeg:-4,zoom:1,zoomPulse:0,requestStartedAt:'',receivedAt:'',sequence:1};
+test('approximate mapping wraps north, follows tilt, scales zoom and preserves the anchor',()=>{
+ const anchor={sample:{...sample},pose:{headingDeg:138,pitchDeg:14,horizontalFovDeg:59,cameraHeightM:20}};
+ const r=approximateNativePose(anchor,{...sample,panDeg:1,tiltDeg:-2,zoom:2},true);
+ expect(r.headingDeg).toBe(140);expect(r.pitchDeg).toBe(12);expect(r.horizontalFovDeg).toBeCloseTo(2*Math.atan(Math.tan(59*Math.PI/360)/2)*180/Math.PI);
+ expect(approximateNativePose(anchor,{...sample,panDeg:358},false).headingDeg).toBe(137);
+ expect(approximateNativePose(anchor,{...sample,zoom:2},false).horizontalFovDeg).toBe(59);
+ expect(anchor.sample.panDeg).toBe(359);expect(anchor.pose.headingDeg).toBe(138);
+ expect(()=>approximateNativePose(anchor,{...sample,zoom:0},true)).toThrow();expect(()=>approximateNativePose(anchor,{...sample,tiltDeg:100},true)).toThrow();
+});
+test('camera without geographic fit follows native PTZ; expiry pauses, session resets, export is unchanged',async({page})=>{
+ test.setTimeout(45000);let sequence=0,pan=359,tilt=-4,zoom=1,stale=false,sessionId='native-approx-session';
+ const observation=()=>({sessionId,cameraLabel:'합성 근사 카메라',status:'live',reasonCode:'snapshot-received',capturedAt:new Date().toISOString(),sequence:++sequence,sceneChanged:false,lowContrast:false,referenceDifference:null});
+ await page.route('https://map.vworld.kr/**',r=>r.fulfill({contentType:'application/javascript',body:sdk}));
+ await page.route('**/health',r=>r.fulfill({json:{ok:true,localDesktopDemo:true}}));
+ await page.route('**/api/camera-snapshot/session',r=>r.fulfill({json:{observation:observation()}}));
+ await page.route('**/api/camera-snapshot/status',r=>r.fulfill({json:{configured:true,status:'live',liveFrameAvailable:true,observation:observation(),devicePtz:{enabled:true,status:'live',reasonCode:'ptz-received',sample:{panDeg:pan,tiltDeg:tilt,zoom,zoomPulse:0,sequence,requestStartedAt:new Date().toISOString(),receivedAt:new Date(Date.now()-(stale?10000:0)).toISOString()}}}}));
+ await page.route('**/api/camera-snapshot/frame?*',r=>r.fulfill({contentType:'image/png',body:image}));
+ const config={schemaVersion:1,crs:'EPSG:4326',positions:[{id:'approx-test',name:'합성 근사 카메라',lat:37.5,lon:127.1,positionSource:'operator',ssmUuid:null,orientation:null}]};
+ await page.goto('/');await page.getByRole('button',{name:'지도 모니터링',exact:true}).click();await page.getByLabel('위도·경도 JSON 불러오기',{exact:true}).setInputFiles({name:'synthetic-map.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(config))});
+ await page.getByRole('button',{name:'지도 연결',exact:true}).click();await page.getByLabel('VWorld 3D 키').fill('synthetic-key');await page.getByRole('button',{name:'VWorld 3D 연결',exact:true}).click();await expect(page.getByText(/VWorld 3D 뷰어 초기화 완료 ·/)).toBeVisible();
+ await page.getByRole('button',{name:'실시간 영상',exact:true}).click();await page.getByLabel('영상 입력 방식').filter({visible:true}).selectOption('direct');
+ await page.getByLabel('직접 연결 카메라 이름').fill('합성 근사 카메라');await page.getByLabel('카메라 웹 접속 주소').fill('http://synthetic-device.invalid');await page.getByLabel('카메라 장비 ID').fill('synthetic-user');await page.getByLabel('카메라 장비 PW').fill('synthetic-password');await page.getByLabel('장비 Pan·Tilt·Zoom 함께 조회').check();await page.getByRole('button',{name:'JPEG 연결 시험·수신 시작',exact:true}).click();await expect(page.getByRole('img',{name:'지도에서 확인하는 최신 CCTV 화면'})).toBeVisible();
+ await page.getByLabel('지도 추종 방식').selectOption('device');const panel=page.getByRole('region',{name:'장비 PTZ 근사 추종'}),frame=page.frames().find(f=>f!==page.mainFrame())!;
+ for(const [name,value] of [['시험 기준 방위각(°)','138'],['시험 기준 기울기(°)','14'],['시험 기준 수평 화각(°)','59'],['시험 렌즈 높이(m)','20'],['시험 지도 지면 고도(m, 빈칸은 자동 조회)','582.9']])await page.getByLabel(name,{exact:true}).fill(value);
+ expect(await frame.evaluate('views.length')).toBe(0);const confirm=page.getByLabel('선택 카메라의 현재 영상과 기준 시점을 확인'),start=page.getByRole('button',{name:'현재 PTZ를 기준으로 시험 추종 시작',exact:true});await confirm.check();await start.click();await expect(page.locator('.map-bottom-status')).toContainText('장비 PTZ 근사 추종');
+ await expect.poll(()=>frame.evaluate('views.at(-1)?.destination')).toEqual([127.1,37.5,602.9]);pan=1;tilt=-2;zoom=2;
+ await expect.poll(async()=>(await frame.evaluate('views.at(-1)?.orientation.heading'))*180/Math.PI).toBeCloseTo(140);expect((await frame.evaluate('views.at(-1).orientation.pitch'))*180/Math.PI).toBeCloseTo(12);expect((await frame.evaluate('ws3d.viewer.camera.frustum.fov'))*180/Math.PI).toBeCloseTo(2*Math.atan(Math.tan(59*Math.PI/360)/2)*180/Math.PI);
+ stale=true;await expect(panel).toContainText('장비 추종 일시 정지');await expect.poll(()=>frame.evaluate('ws3d.viewer.scene.screenSpaceCameraController.enableInputs')).toBe(true);const count=await frame.evaluate('views.length');await page.waitForTimeout(1200);expect(await frame.evaluate('views.length')).toBe(count);
+ stale=false;await expect(page.locator('.map-bottom-status')).toContainText('장비 PTZ 근사 추종');sessionId='new-native-session';await expect(panel).toContainText('장비 추종 중지');await expect(confirm).not.toBeChecked();await confirm.check();await start.click();await expect(page.locator('.map-bottom-status')).toContainText('장비 PTZ 근사 추종');
+ await page.getByRole('button',{name:'지도 라이브 표시 중지',exact:true}).click();await expect(panel).toContainText('장비 추종 중지');await expect.poll(()=>frame.evaluate('ws3d.viewer.scene.screenSpaceCameraController.enableInputs')).toBe(true);
+ await page.getByRole('button',{name:'카메라·설정',exact:true}).click();const download=page.waitForEvent('download');await page.getByRole('button',{name:'좌표 설정 다운로드',exact:true}).click();const stream=await(await download).createReadStream();let raw='';for await(const c of stream!)raw+=c.toString();expect(JSON.parse(raw)).toEqual(config);expect(await page.evaluate(()=>({local:localStorage.length,session:sessionStorage.length}))).toEqual({local:0,session:0});
+});

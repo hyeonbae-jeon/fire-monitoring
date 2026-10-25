@@ -6,7 +6,7 @@ import {angularDistance,type VisualPose} from './vision-pose';
 import type {CaptureAlignment} from './capture-alignment';
 
 type Estimate=VisualPose&{trainingCount:number;validationCount:number;analysisWidth:number;analysisHeight:number;mutualCount:number;features:number};
-export type LiveVisualView={pose:Pose;aspect:number;capturedAt:string};
+export type LiveVisualView={pose:Pose;aspect:number;capturedAt:string;source?:'device-approximate';groundElevationM?:number|null};
 type Props={position:Position|undefined;frame:CapturedFrame|null;mapReady:boolean;onView:(view:LiveVisualView)=>Promise<void>;onStop:()=>void};
 const fresh=(frame:CapturedFrame|null)=>{const t=Date.parse(frame?.observation.capturedAt??'');return !!frame&&Number.isFinite(t)&&Date.now()-t<4000&&t<=Date.now()+2000;};
 export function VisualTracking(props:Props){

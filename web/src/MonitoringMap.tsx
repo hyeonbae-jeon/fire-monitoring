@@ -13,6 +13,8 @@ import {useTerrainVisibility} from './useTerrainVisibility';
 import {TerrainVisibilityControls} from './TerrainVisibilityControls';
 import {SmokeAlerts} from './SmokeAlerts';
 import {LiveCapture,type CapturedFrame} from './LiveCapture';
+import {NativePtzTracking} from './NativePtzTracking';
+import type {DevicePtzObservation} from './DevicePtzStatus';
 import {VisualTracking,type LiveVisualView} from './VisualTracking';
 import {DiagnosticReview} from './DiagnosticReview';
 import {matchesDiagnosticCamera,diagnosticBounds,type DiagnosticReview as Review} from './diagnostic-review';
@@ -52,6 +54,7 @@ export function MonitoringMap({active=true,standalone=false,desktopDemo=false}:{
  const [alertDocument,setAlertDocument]=useState<SmokeAlertDocument|null>(null),[alertBindings,setAlertBindings]=useState<AlertBinding[]>([]),[alertsHidden,setAlertsHidden]=useState(false),[alarmRenderError,setAlarmRenderError]=useState('');
  const [aspect,setAspect]=useState<number|null>(null),[previewEpoch,setPreviewEpoch]=useState(0),[calibrating,setCalibrating]=useState(false);
  const [captureFrame,setCaptureFrame]=useState<CapturedFrame|null>(null),[liveView,setLiveView]=useState<LiveVisualView|null>(null);
+ const [nativePtz,setNativePtz]=useState<DevicePtzObservation|null>(null),[trackingMode,setTrackingMode]=useState('visual'),[trialView,setTrialView]=useState<PreviewRequest|null>(null);
  const [diagnostic,setDiagnostic]=useState<Review|null>(null),[diagnosticError,setDiagnosticError]=useState('');
  const diagnosticRequest=useRef('');
  const liveViewOwner=useRef(false),liveViewTicket=useRef(0);
@@ -161,10 +164,10 @@ export function MonitoringMap({active=true,standalone=false,desktopDemo=false}:{
  function preview(request:PreviewRequest,onlyGround=false):Promise<PreviewGround>{
   if(!frame||!ready)return Promise.reject(new Error('VWorld 3D에 먼저 연결하세요.'));
   cancelPending('새 가상 시점 요청으로 교체됐습니다.');if(!onlyGround)setCalibrating(true);
-  return new Promise((resolve,reject)=>{
+  return new Promise<PreviewGround>((resolve,reject)=>{
    const requestId=crypto.randomUUID(),timer=window.setTimeout(()=>{pending.current.delete(requestId);reject(new Error('가상 시점 응답 시간 초과. 지형 로딩을 확인하세요.'));},15000);
    pending.current.set(requestId,{resolve,reject,timer});post(onlyGround?'calibration-ground':'calibrate',{requestId,...request,aspectRatio:request.aspectRatio??diagnosticAspect});
-  });
+  }).then(ground=>{if(!onlyGround&&tools!=='live')setTrialView({...request,...ground});return ground;});
  }
  function stopLiveView(){
   liveViewTicket.current++;
@@ -172,10 +175,10 @@ export function MonitoringMap({active=true,standalone=false,desktopDemo=false}:{
   liveViewOwner.current=false;cancelPending('영상 추정 시점 갱신이 중지됐습니다.');setLiveView(null);setCalibrating(false);setPreviewEpoch(v=>v+1);post('end-calibration');
  }
  async function updateLiveView(view:LiveVisualView){
-  if(!current?.orientation||!ready||!active||tools!=='live')throw new Error('지도와 수동 기준 시점을 확인하세요.');
+  if(!current||!ready||!active||tools!=='live'||view.source!=='device-approximate'&&!current.orientation)throw new Error('지도와 기준 시점을 확인하세요.');
   const captureTime=Date.parse(view.capturedAt);if(!Number.isFinite(captureTime)||Date.now()-captureTime>=4000)throw new Error('추정 화면이 만료됐습니다.');
   const id=++liveViewTicket.current;liveViewOwner.current=true;const selectedId=current.id;
-  await preview({position:current,pose:view.pose,groundElevationM:current.orientation.groundElevationM,groundElevationSource:current.orientation.groundElevationSource,aspectRatio:view.aspect});
+  await preview({position:current,pose:view.pose,groundElevationM:view.source==='device-approximate'?view.groundElevationM??null:current.orientation!.groundElevationM,groundElevationSource:view.source==='device-approximate'?'operator':current.orientation!.groundElevationSource,aspectRatio:view.aspect});
   if(liveViewTicket.current!==id||selectedRef.current!==selectedId||Date.now()-captureTime>=4000){if(liveViewTicket.current===id)stopLiveView();return;}
   setLiveView(view);
  }
@@ -260,7 +263,7 @@ export function MonitoringMap({active=true,standalone=false,desktopDemo=false}:{
   </aside>
   <aside className="map-floating location-panel" hidden={tools!=='location'}><LocationLookup point={locationPoint} picking={locationPicking} ready={ready} apiKey={appliedKey} pickError={locationError} onPicking={v=>{setLocationPicking(v);setLocationError('');}} onPoint={p=>{setLocationPoint(p);setLocationError('');}}/></aside>
   <aside className="map-floating smoke-alert-panel" hidden={tools!=='alerts'}>{calibrating&&<p className="help">가상 시점 보정 중 알림 카메라 표시 숨김</p>}<SmokeAlerts document={alertDocument} bindings={alertBindings} positions={positions} hidden={alertsHidden} onDocument={setAlertDocument} onBindings={setAlertBindings} onHidden={setAlertsHidden} onSelect={selectPosition} renderError={alarmRenderError}/></aside>
-  {!standalone&&active&&tools==='live'&&<aside className="map-floating map-live-panel"><p className="help">선택 지도 위치: {current?.name??'없음'} · 수집 영상과의 장비 일치 미확인</p><LiveCapture active desktopDemo={desktopDemo} embedded cameraLabel={current?.name} onFrame={setCaptureFrame}/><VisualTracking key={JSON.stringify([current?.id,current?.lat,current?.lon,current?.orientation])} position={current} frame={captureFrame} mapReady={ready} onView={updateLiveView} onStop={stopLiveView}/><p className="help">영상 추정 시점은 화면 비교 시험용이며 지도 설정에 자동 저장하지 않습니다.</p></aside>}
+  {!standalone&&active&&tools==='live'&&<aside className="map-floating map-live-panel"><p className="help">선택 지도 위치: {current?.name??'없음'} · 수집 영상과의 장비 일치 미확인</p><LiveCapture active desktopDemo={desktopDemo} embedded cameraLabel={current?.name} onFrame={setCaptureFrame} onPtz={setNativePtz}/><label>지도 추종 방식<select value={trackingMode} onChange={e=>{stopLiveView();setTrackingMode(e.target.value);}}><option value="visual">영상 대응 추정</option><option value="device">장비 PTZ 근사 추종</option></select></label>{trackingMode==='device'?<NativePtzTracking key={current?.id+':'+current?.lat+':'+current?.lon} position={current} frame={captureFrame} device={nativePtz} initial={trialView&&trialView.position.id===current?.id&&trialView.position.lat===current.lat&&trialView.position.lon===current.lon?trialView:null} mapReady={ready} onView={updateLiveView} onStop={stopLiveView}/>:<VisualTracking key={JSON.stringify([current?.id,current?.lat,current?.lon,current?.orientation])} position={current} frame={captureFrame} mapReady={ready} onView={updateLiveView} onStop={stopLiveView}/>}<p className="help">시험 시점은 지도 설정에 자동 저장하지 않습니다.</p></aside>}
   <div className="terrain-workspace">
    <div className="map-surface">{mapPanel}</div>
    {current&&<TerrainCalibration key={current.id+':'+current.lat+':'+current.lon} position={current} ready={ready&&active&&tools!=='live'} previewEpoch={previewEpoch} onPreview={preview} onReadGround={request=>preview(request,true)} onPickPoint={pickGeoPoint} onAspect={setAspect} onSave={saveOrientation} onExit={exitPreview}/>}
@@ -268,6 +271,6 @@ export function MonitoringMap({active=true,standalone=false,desktopDemo=false}:{
   {(coverageShapes.length>0||calibrating&&coveragePlans.length>0)&&<div className="coverage-disclaimer">{coverageRenderError?'범위 시안 표시 실패':calibrating?'가상 시점 보정 중 범위 시안 숨김':displayedVisibility.length?`지형 가림 시안 ${displayedVisibility.length}대 · 초록 비가림 추정 / 빨강 가림 추정 / 노랑 미확인 · 실제 촬영 범위 미검증`:`범위 시안 ${coverageShapes.length}대 · 실제 촬영 범위·지형 가림 미확인`}</div>}
   {locationPicking&&<div className="location-picking-status">위치 선택 중 · 지형 지점을 클릭하세요 <button onClick={()=>setLocationPicking(false)}>종료</button></div>}
   {geoPicking&&<div className="location-picking-status">기준점 지정 중 · 사진과 같은 지형의 정확한 지점을 지도에서 클릭하세요. {geoPickError}<button onClick={()=>cancelGeoPick('기준점 지정을 취소했습니다.')}>기준점 지정 종료</button></div>}
-  <div className="map-bottom-status">{current?.name??'위치 없음'} · {liveView?'영상 대응 추정 · 기준 정확도 미검증':estimate?'영상·지형 추정 · 실시간 확인 안 됨':'현재 방향 미확인'} · CCTV 제어 없음</div>
+  <div className="map-bottom-status">{current?.name??'위치 없음'} · {liveView?.source==='device-approximate'?'장비 PTZ 근사 추종 · 절대 방향 오차 허용':liveView?'영상 대응 추정 · 기준 정확도 미검증':estimate?'영상·지형 추정 · 실시간 확인 안 됨':'현재 방향 미확인'} · CCTV 제어 없음</div>
  </main>;
 }

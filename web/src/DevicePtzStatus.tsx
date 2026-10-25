@@ -3,6 +3,7 @@ import {useEffect,useState} from 'react';
 export type DevicePtz = {enabled:boolean;status:string;reasonCode:string;sample:null|{
  panDeg:number;tiltDeg:number;zoom:number;zoomPulse:number|null;requestStartedAt:string;receivedAt:string;sequence:number;
 }};
+export type DevicePtzObservation={value:DevicePtz;sessionId:string;cameraLabel:string};
 const reasons:Record<string,string>={
  'waiting':'장비 각도 응답을 기다립니다.', 'ptz-stale':'최근 장비 값이 만료됐습니다.',
  'ptz-invalid-response':'장비 각도 응답 오류·누락·채널 불일치입니다. 604 오류도 이 상태로 처리합니다.',
