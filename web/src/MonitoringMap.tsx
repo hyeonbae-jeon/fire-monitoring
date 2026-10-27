@@ -14,6 +14,7 @@ import {TerrainVisibilityControls} from './TerrainVisibilityControls';
 import {SmokeAlerts} from './SmokeAlerts';
 import {LiveCapture,type CapturedFrame} from './LiveCapture';
 import {NativePtzTracking} from './NativePtzTracking';
+import {InstallationPositionEditor} from './InstallationPositionEditor';
 import type {DevicePtzObservation} from './DevicePtzStatus';
 import type {NativeProfile} from './native-profile';
 import {VisualTracking,type LiveVisualView} from './VisualTracking';
@@ -221,6 +222,18 @@ export function MonitoringMap({active=true,standalone=false,desktopDemo=false}:{
   const next=parseConfiguration(JSON.stringify({...configuration,positions:positions.map(p=>{if(p.id!==current.id)return p;const {nativeTracking,...rest}=p;return profile?{...rest,nativeTracking:profile}:rest;})}));
   edits.current++;setConfiguration(next);setDirty(true);setStorageStatus('장비 추종 기준을 지도 설정에 반영했습니다. 중앙 저장 또는 JSON으로 보관하세요.');
  }
+ function updateInstallation(lat:number,lon:number){
+  if(!current||current.lat===lat&&current.lon===lon)return;
+  try{
+   const next=parseConfiguration(JSON.stringify({...configuration,positions:positions.map(p=>{
+    if(p.id!==current.id)return p;
+    const {nativeTracking,...rest}=p;
+    return {...rest,lat,lon,positionSource:'operator',orientation:null};
+   })}));
+   edits.current++;stopLiveView();exitPreview();setTrialView(null);setConfiguration(next);setDirty(true);setError('');
+   setStorageStatus(`${current.name} 설치 좌표 수정 완료 · 이 카메라의 방향·추종 기준을 다시 잡고 중앙 저장하세요.`);
+  }catch(e){setError((e as Error).message);}
+ }
  function saveOrientation(orientation:ManualOrientation){
   if(!current)return;
   const next=parseConfiguration(JSON.stringify({...configuration,positions:positions.map(p=>p.id===current.id?{...p,orientation}:p)}));
@@ -242,6 +255,7 @@ export function MonitoringMap({active=true,standalone=false,desktopDemo=false}:{
    {positions.map(p=><button className={p.id===selected?'camera active':'camera'} key={p.id} onClick={()=>selectPosition(p.id)}>{p.name}<small>{p.positionSource==='synthetic'?'시험 좌표':'입력 좌표'} · {p.orientation?.status==='estimate'?'영상·지형 추정':'방향 UNKNOWN'}{p.nativeTracking?' · 장비 기준 있음':''}</small></button>)}
    <button disabled={!current||!ready} onClick={exitPreview}>선택 위치로 지도 이동</button>
    <p>위도 {current?.lat??'—'} / 경도 {current?.lon??'—'}<br/>SSM UUID: {current?.ssmUuid??'미연결'}</p>
+   {current&&<InstallationPositionEditor key={'installation:'+current.id+':'+current.lat+':'+current.lon} position={current} onApply={updateInstallation}/>}
    {current&&<DiagnosticReview key={current.id+':'+current.lat+':'+current.lon} position={current} ready={ready&&active} onDocument={setDiagnostic} onFit={fitDiagnostic} renderError={diagnosticError}/>}
    <details><summary>설치 위치 추가</summary><label>카메라 위치 이름<input value={name} onChange={e=>setName(e.target.value)} maxLength={200}/></label><label>설치 위도<input type="number" value={latitude} onChange={e=>setLatitude(e.target.value)}/></label><label>설치 경도<input type="number" value={longitude} onChange={e=>setLongitude(e.target.value)}/></label><label>SSM UUID(선택)<input value={uuid} onChange={e=>setUuid(e.target.value)}/></label><button onClick={addPosition}>설치 위치 추가하기</button><p className="help">처음 실제 위치를 추가하면 초기 시험 좌표를 대체합니다. UUID는 확인된 값만 입력하세요.</p></details>
    <label>위도·경도 JSON 불러오기<input type="file" accept=".json,application/json" onChange={e=>{void importFile(e.target.files?.[0]);e.target.value='';}}/></label><button onClick={download}>좌표 설정 다운로드</button>

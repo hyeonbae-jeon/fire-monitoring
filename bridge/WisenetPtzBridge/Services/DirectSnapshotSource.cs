@@ -4,7 +4,7 @@ using ScreenCapture.Core;
 
 namespace WisenetPtzBridge.Services;
 
-public sealed record DirectSnapshotRequest(string CameraLabel, string SnapshotUrl, string Username, string Password, bool ReadDevicePtz = false);
+public sealed record DirectSnapshotRequest(string CameraLabel, string SnapshotUrl, string Username = "", string Password = "", bool ReadDevicePtz = false, string Source = "hanwha");
 public sealed class SnapshotException(string code, string message, int statusCode = 400) : Exception(message)
 {
     public string Code { get; } = code;
@@ -20,7 +20,7 @@ public sealed partial class DirectSnapshotSource : IAsyncDisposable
     private Session? session;
     private string state = "disconnected", reason = "not-connected";
     public bool Configured { get; }
-    private sealed class Session(HttpClient client, Uri uri, string label, bool readDevicePtz)
+    private sealed class Session(HttpClient client, Uri uri, string label, bool readDevicePtz, bool nvt)
     {
         public HttpClient Client { get; } = client;
         public Uri Uri { get; } = uri;
@@ -29,6 +29,7 @@ public sealed partial class DirectSnapshotSource : IAsyncDisposable
         public CancellationTokenSource Cancellation { get; } = new();
         public Task? Loop { get; set; }
         public bool ReadDevicePtz { get; } = readDevicePtz;
+        public bool Nvt { get; } = nvt;
         public string PtzState { get; set; } = readDevicePtz ? "waiting" : "disabled";
         public string PtzReason { get; set; } = readDevicePtz ? "waiting" : "not-enabled";
         public DevicePtzSample? PtzSample { get; set; }
@@ -43,8 +44,11 @@ public sealed partial class DirectSnapshotSource : IAsyncDisposable
 
     public static Uri Validate(DirectSnapshotRequest request)
     {
-        if (string.IsNullOrWhiteSpace(request.CameraLabel) || request.CameraLabel.Length > 100 || request.CameraLabel.Any(char.IsControl) ||
-            string.IsNullOrWhiteSpace(request.Username) || request.Username.Length > 128 || request.Username.Any(char.IsControl) ||
+        if (string.IsNullOrWhiteSpace(request.CameraLabel) || request.CameraLabel.Length > 100 || request.CameraLabel.Any(char.IsControl))
+            throw new SnapshotException("invalid-input", "카메라 이름을 확인하세요.");
+        if (request.Source == "nvt-getimage") return ValidateNvt(request);
+        if (request.Source != "hanwha") throw new SnapshotException("unsupported-source", "지원하는 영상 입력 방식을 선택하세요.");
+        if (string.IsNullOrWhiteSpace(request.Username) || request.Username.Length > 128 || request.Username.Any(char.IsControl) ||
             string.IsNullOrEmpty(request.Password) || request.Password.Length > 512 || request.Password.Any(char.IsControl))
             throw new SnapshotException("invalid-input", "카메라 이름과 장비 ID/PW를 확인하세요.");
         if (request.SnapshotUrl is null || request.SnapshotUrl.Length > 2048 ||
@@ -64,6 +68,29 @@ public sealed partial class DirectSnapshotSource : IAsyncDisposable
             throw new SnapshotException("ptz-channel-unsupported", "현재 장비 각도 조회는 단일 카메라의 Channel 0 영상에만 연결합니다.");
         return uri;
     }
+    private static Uri ValidateNvt(DirectSnapshotRequest request)
+    {
+        if (request.ReadDevicePtz)
+            throw new SnapshotException("ptz-unsupported", "NVT GetImage는 현재 영상만 지원합니다. 장비 PTZ 조회 방식은 아직 확인되지 않았습니다.");
+        if (!string.IsNullOrEmpty(request.Username) || !string.IsNullOrEmpty(request.Password))
+            throw new SnapshotException("invalid-input", "NVT는 웹뷰어에서 확인한 JPEG 요청 전체 주소를 입력하세요. 별도 ID/PW는 사용하지 않습니다.");
+        if (request.SnapshotUrl is null || request.SnapshotUrl.Length > 2048 ||
+            !Uri.TryCreate(request.SnapshotUrl, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https") ||
+            uri.UserInfo.Length != 0 || uri.Fragment.Length != 0 || uri.AbsolutePath != "/cgi-bin/GetImage.cgi")
+            throw new SnapshotException("nvt-url-required", "NVT 웹뷰어에서 확인한 /cgi-bin/GetImage.cgi JPEG 요청 전체 주소를 입력하세요.");
+        if (uri.Host.Equals("ddns.hanwha-security.com", StringComparison.OrdinalIgnoreCase))
+            throw new SnapshotException("device-address-required", "웹뷰어에 최종 표시된 장비의 JPEG 요청 주소를 입력하세요.");
+        var query = QueryHelpers.ParseQuery(uri.Query);
+        bool Secret(string key, int limit) => query.TryGetValue(key, out var value) && value.Count == 1 &&
+            !string.IsNullOrWhiteSpace(value[0]) && value[0]!.Length <= limit && !value[0]!.Any(char.IsControl);
+        if (!Secret("USER", 128) || !Secret("PWD", 1024) ||
+            !query.TryGetValue("InputNumber", out var input) || input.Count != 1 || input[0] != "1" ||
+            query.Any(p => p.Key is not ("USER" or "PWD" or "InputNumber" or "time") || p.Value.Count != 1) ||
+            query.TryGetValue("time", out var time) && (!double.TryParse(time[0], System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out var t) || !double.IsFinite(t) || t < 0 || t > 1))
+            throw new SnapshotException("nvt-snapshot-only", "NVT GetImage의 USER·PWD·InputNumber=1과 선택 time만 지원합니다. 인증값은 웹뷰어의 요청에서 그대로 가져오세요.");
+        return uri;
+    }
     public async Task<object> StartAsync(DirectSnapshotRequest request, CancellationToken ct)
     {
         var uri = Validate(request);
@@ -71,15 +98,20 @@ public sealed partial class DirectSnapshotSource : IAsyncDisposable
         try
         {
             await StopCurrentAsync();
-            var credentials = new CredentialCache();
-            var authority = new Uri(uri.GetLeftPart(UriPartial.Authority) + "/");
-            var credential = new NetworkCredential(request.Username, request.Password);
-            credentials.Add(authority, "Digest", credential);
-            // Basic may be negotiated only over validated HTTPS, never plaintext HTTP.
-            if (uri.Scheme == "https") credentials.Add(authority, "Basic", credential);
-            var handler = new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false, Credentials = credentials, PreAuthenticate = false };
+            var nvt = request.Source == "nvt-getimage";
+            var handler = new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false, PreAuthenticate = false };
+            if (!nvt)
+            {
+                var credentials = new CredentialCache();
+                var authority = new Uri(uri.GetLeftPart(UriPartial.Authority) + "/");
+                var credential = new NetworkCredential(request.Username, request.Password);
+                credentials.Add(authority, "Digest", credential);
+                // Basic may be negotiated only over validated HTTPS, never plaintext HTTP.
+                if (uri.Scheme == "https") credentials.Add(authority, "Basic", credential);
+                handler.Credentials = credentials;
+            }
             var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(6) };
-            var next = new Session(client, uri, request.CameraLabel.Trim(), request.ReadDevicePtz);
+            var next = new Session(client, uri, request.CameraLabel.Trim(), request.ReadDevicePtz, nvt);
             lock (sync) { state = "connecting"; reason = "connecting"; }
             try
             {
@@ -211,7 +243,7 @@ public sealed partial class DirectSnapshotSource : IAsyncDisposable
                     reasonCode = session?.PtzState == "live" && !ptzFresh ? "ptz-stale" : session?.PtzReason ?? "not-connected",
                     sample = ptzFresh ? session?.PtzSample : null,
                     timestampSource = "local-receive-clock", geographicHeadingCalibrated = false, imageSynchronized = false },
-                frameSource = "hanwha-jpeg-snapshot", captureTimestampSource = "local-receive-clock", underlyingStreamFreshnessVerified = false };
+                frameSource = session?.Nvt == true ? "nvt-getimage-snapshot" : "hanwha-jpeg-snapshot", captureTimestampSource = "local-receive-clock", underlyingStreamFreshnessVerified = false };
         }
     }
     public byte[]? FrameBytes(string sessionId, long sequence)
@@ -224,14 +256,25 @@ public sealed partial class DirectSnapshotSource : IAsyncDisposable
     }
     private static async Task<Frame> ReadAsync(Session current, CancellationToken ct)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, current.Uri);
+        // NVT's web viewer changes this cache-buster for every JPEG. Never log the URI:
+        // its query contains the operator's captured authentication material.
+        var uri = current.Uri;
+        if (current.Nvt)
+        {
+            var query = QueryHelpers.ParseQuery(uri.Query).ToDictionary(p => p.Key, p => (string?)p.Value[0]);
+            query["time"] = Random.Shared.NextDouble().ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+            uri = new Uri(QueryHelpers.AddQueryString(uri.GetLeftPart(UriPartial.Path), query));
+        }
+        using var request = new HttpRequestMessage(HttpMethod.Get, uri);
         request.Headers.CacheControl = new() { NoCache = true, NoStore = true };
         request.Headers.Accept.ParseAdd("image/jpeg");
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
         deadline.CancelAfter(TimeSpan.FromSeconds(6));
         using var response = await current.Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, deadline.Token);
         if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
-            throw new SnapshotException("authentication-denied", "장비 인증 또는 접근 권한이 거절됐습니다. ID/PW와 허용 IP를 확인하세요. HTTP 연결은 Digest 인증이 필요합니다.", 502);
+            throw new SnapshotException("authentication-denied", current.Nvt
+                ? "NVT 영상 접근이 거절됐습니다. 웹뷰어에서 새 JPEG 요청 주소를 확인하세요."
+                : "장비 인증 또는 접근 권한이 거절됐습니다. ID/PW와 허용 IP를 확인하세요. HTTP 연결은 Digest 인증이 필요합니다.", 502);
         if ((int)response.StatusCode is >= 300 and < 400)
             throw new SnapshotException("redirect-rejected", "장비가 다른 주소로 이동을 요청했습니다. 웹뷰어의 최종 장비 주소에서 확인한 JPEG 주소를 사용하세요.", 502);
         if (!response.IsSuccessStatusCode) throw new SnapshotException("camera-http-error", $"장비의 JPEG 요청이 실패했습니다 (HTTP {(int)response.StatusCode}).", 502);

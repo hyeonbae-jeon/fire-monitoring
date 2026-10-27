@@ -6,6 +6,36 @@ import manifest from './fixtures/vision/manifest.json';
 const reference=readFileSync('tests/fixtures/vision/reference.png'),current=readFileSync('tests/fixtures/vision/current-1.png');
 const root='http://synthetic-device.invalid',url=root+'/stw-cgi/video.cgi?msubmenu=snapshot&action=view&Profile=1';
 const username='synthetic-device-user',password='synthetic-device-password';
+test('NVT uses only the captured GetImage request in a local POST, clears it, refreshes frames and offers no PTZ controls',async({page})=>{
+ let active=false,sequence=0;const external:string[]=[];
+ const captured='http://synthetic-nvt.invalid/cgi-bin/GetImage.cgi?USER=synthetic-nvt-user&PWD=synthetic-encoded-secret&InputNumber=1&time=0.5';
+ const nvtStatus=()=>({...status(++sequence),frameSource:'nvt-getimage-snapshot',devicePtz:{enabled:false,status:'disabled',reasonCode:'not-enabled',sample:null}});
+ page.on('request',r=>{if(!r.url().startsWith('http://127.0.0.1:5081/')&&!r.url().startsWith('blob:'))external.push(r.url());});
+ await page.route('**/health',r=>r.fulfill({json:{ok:true,localDesktopDemo:true}}));
+ await page.route('**/api/camera-snapshot/session',r=>{
+  expect(r.request().method()).toBe('POST');expect(r.request().headers()['x-capture-read-key']).toBe('local-demo-only');
+  expect(r.request().postDataJSON()).toEqual({cameraLabel:'합성 NVT',snapshotUrl:captured,source:'nvt-getimage'});active=true;return r.fulfill({json:nvtStatus()});
+ });
+ await page.route('**/api/camera-snapshot/status',r=>r.fulfill({json:active?nvtStatus():{configured:true,status:'disconnected',liveFrameAvailable:false,observation:null}}));
+ await page.route('**/api/camera-snapshot/frame?*',r=>r.fulfill({contentType:'image/png',body:current}));
+ await page.route('**/api/camera-snapshot/session?*',r=>{active=false;return r.fulfill({json:{status:'disconnected'}});});
+ await page.goto('/');await page.getByRole('button',{name:'실시간 화면 시험',exact:true}).click();await page.getByLabel('영상 입력 방식').filter({visible:true}).selectOption('nvt');
+ await page.getByLabel('직접 연결 카메라 이름').fill('합성 NVT');const input=page.getByLabel('NVT JPEG 요청 전체 주소');await expect(input).toHaveAttribute('type','password');await input.fill(captured);
+ await expect(page.getByLabel('카메라 장비 PW')).toHaveCount(0);await expect(page.getByLabel('장비 Pan·Tilt·Zoom 함께 조회')).toHaveCount(0);await expect(page.getByRole('button',{name:'영상·PTZ 기준 묶음 저장',exact:true})).toHaveCount(0);
+ await page.getByRole('button',{name:'JPEG 연결 시험·수신 시작',exact:true}).click();await expect(input).toHaveValue('');
+ await expect(page.getByRole('img',{name:'읽기 전용으로 수집한 최신 CCTV 화면'})).toBeVisible();await expect.poll(()=>sequence).toBeGreaterThan(1);
+ await expect(page.getByRole('region',{name:'장비 PTZ 수신 상태'})).toHaveCount(0);expect(external).toEqual([]);
+ expect(await page.evaluate(()=>({local:localStorage.length,session:sessionStorage.length}))).toEqual({local:0,session:0});
+ await page.getByRole('button',{name:'직접 연결 종료',exact:true}).click();await expect(page.getByRole('img',{name:'읽기 전용으로 수집한 최신 CCTV 화면'})).toHaveCount(0);
+ await page.getByLabel('영상 입력 방식').filter({visible:true}).selectOption('direct');await expect(page.getByLabel('카메라 웹 접속 주소')).toHaveValue('');
+});
+test('NVT failures clear the captured credential URL and show only a sanitized error',async({page})=>{
+ await page.route('**/health',r=>r.fulfill({json:{ok:true,localDesktopDemo:true}}));
+ await page.route('**/api/camera-snapshot/session',r=>r.fulfill({status:502,json:{code:'authentication-denied',error:'NVT 영상 접근이 거절됐습니다. 웹뷰어에서 새 JPEG 요청 주소를 확인하세요.'}}));
+ await page.goto('/');await page.getByRole('button',{name:'실시간 화면 시험',exact:true}).click();await page.getByLabel('영상 입력 방식').filter({visible:true}).selectOption('nvt');await page.getByLabel('직접 연결 카메라 이름').fill('합성 NVT');
+ const input=page.getByLabel('NVT JPEG 요청 전체 주소');await input.fill('http://synthetic-nvt.invalid/cgi-bin/GetImage.cgi?USER=synthetic-user&PWD=synthetic-secret&InputNumber=1');
+ await page.getByRole('button',{name:'JPEG 연결 시험·수신 시작',exact:true}).click();await expect(input).toHaveValue('');await expect(page.getByRole('alert')).toContainText('NVT 영상 접근이 거절');await expect(page.getByRole('img',{name:'읽기 전용으로 수집한 최신 CCTV 화면'})).toHaveCount(0);
+});
 function status(sequence=1){return {configured:true,status:'live',liveFrameAvailable:true,reasonCode:'receiving',directionStatus:'unknown',automaticDirectionTrackingImplemented:false,frameSource:'hanwha-jpeg-snapshot',observation:{sessionId:'synthetic-direct-session',cameraLabel:'합성 직접 카메라',status:'live',reasonCode:'snapshot-received',capturedAt:new Date().toISOString(),sequence,sceneChanged:false,lowContrast:false,referenceDifference:null}};}
 async function fill(page:Page){
  await page.getByLabel('영상 입력 방식').filter({visible:true}).selectOption('direct');

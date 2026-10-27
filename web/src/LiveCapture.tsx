@@ -29,14 +29,15 @@ export function LiveCapture({active,desktopDemo,embedded=false,cameraLabel,onFra
  const downloadable=useRef<{blob:Blob;capturedAt:string}|null>(null);
  const [key,setKey]=useState(''),[running,setRunning]=useState(false),[snapshot,setSnapshot]=useState<CaptureStatus|null>(null);
  const [image,setImage]=useState<string|null>(null),[error,setError]=useState('');
- const [source,setSource]=useState<'screen'|'direct'>('screen');
+ const [source,setSource]=useState<'screen'|'direct'|'nvt'>('screen');
+ const direct=source!=='screen';
  useEffect(()=>{if(desktopDemo)setKey('local-demo-only');},[desktopDemo]);
  useEffect(()=>{if(!active)setRunning(false);},[active]);
  useEffect(()=>{
   if(!active||!running){setImage(null);frameListener.current?.(null);ptzListener.current?.(null);return;}
   let cancelled=false,blobUrl:string|null=null,lastFrame='',expiresAt=0,timer:ReturnType<typeof setTimeout>|undefined;
   const controller=new AbortController();
-  const endpoint=source==='direct'?'/api/camera-snapshot':'/api/screen-capture';
+  const endpoint=direct?'/api/camera-snapshot':'/api/screen-capture';
   function clear(notify=true){if(blobUrl)URL.revokeObjectURL(blobUrl);blobUrl=null;lastFrame='';expiresAt=0;downloadable.current=null;if(!cancelled)setImage(null);if(notify){frameListener.current?.(null);ptzListener.current?.(null);}}
   function publishPtz(s:CaptureStatus){const o=s.observation;ptzListener.current?.(source==='direct'&&o&&s.devicePtz?{value:s.devicePtz,sessionId:o.sessionId,cameraLabel:o.cameraLabel}:null);}
   async function request(path:string){
@@ -79,14 +80,14 @@ export function LiveCapture({active,desktopDemo,embedded=false,cameraLabel,onFra
  const settings=<><label>{embedded?'지도 영상 조회 키':'영상 조회 키'}<input type="password" autoComplete="off" value={key} disabled={running} onChange={e=>setKey(e.target.value)}/></label>{desktopDemo&&<p>로컬 시험 패키지는 조회 키가 자동으로 입력됩니다.</p>}</>;
  return <Container className={embedded?'map-live-capture':'live-capture'}>
   <section className="notice"><h2>{embedded?'지도에서 실시간 영상 확인':'실시간 화면 수집 시험'}</h2>
-   <label>영상 입력 방식<select value={source} disabled={running} onChange={e=>{setSnapshot(null);setError('');setSource(e.target.value as 'screen'|'direct');}}><option value="screen">SSM 화면 캡처</option><option value="direct">한화 카메라 직접 수신</option></select></label>
-   {source==='direct'?<p>장비의 JPEG 영상을 약 1초 간격으로 직접 받습니다. 수신 시각은 이 PC 기준이며 원본 영상의 멈춤은 자동으로 판단하지 않습니다.</p>:embedded?<p>수집 도구가 선택한 SSM 영상 영역을 1초마다 확인합니다. 수집 시각은 PC 시간이며 SSM의 라이브 상태도 확인하세요.</p>:<><p>회사 PC에서 <strong>화면캡처.cmd</strong>를 실행하고 SSM 라이브 보기의 단독 CCTV 영상 영역을 선택하세요. 카메라 제어 없이 선택 영역을 1초마다 확인합니다.</p><p>수집 시각은 PC에서 화면을 읽은 시각입니다. 녹화 재생·멈춘 원본 영상을 자동으로 구분하지 않으므로 SSM의 라이브 상태도 확인하세요.</p></>}
-   {source==='direct'?<p><strong>장비 원시 PTZ 수신</strong> · 각도 조회를 켜면 아래에 값을 표시합니다. 지도 영상 패널의 ‘장비 PTZ 근사 추종’에서 기준 방향을 정해 함께 움직여 볼 수 있습니다.</p>:<p><strong>장비에서 받은 현재 방향: 미확인</strong> · 화면 변화 감지는 회전·줌 측정이 아닙니다. 지도 영상 패널에서 별도 영상 대응 시험을 시작할 수 있습니다. 화면 캡처로는 실제 PTZ를 수신하지 않습니다.</p>}
+   <label>영상 입력 방식<select value={source} disabled={running} onChange={e=>{setSnapshot(null);setError('');setSource(e.target.value as 'screen'|'direct'|'nvt');}}><option value="screen">SSM 화면 캡처</option><option value="direct">한화 카메라 직접 수신</option><option value="nvt">NVT STH775 직접 수신 (영상)</option></select></label>
+   {direct?<p>장비의 JPEG 영상을 약 1초 간격으로 직접 받습니다. 수신 시각은 이 PC 기준이며 원본 영상의 멈춤은 자동으로 판단하지 않습니다.</p>:embedded?<p>수집 도구가 선택한 SSM 영상 영역을 1초마다 확인합니다. 수집 시각은 PC 시간이며 SSM의 라이브 상태도 확인하세요.</p>:<><p>회사 PC에서 <strong>화면캡처.cmd</strong>를 실행하고 SSM 라이브 보기의 단독 CCTV 영상 영역을 선택하세요. 카메라 제어 없이 선택 영역을 1초마다 확인합니다.</p><p>수집 시각은 PC에서 화면을 읽은 시각입니다. 녹화 재생·멈춘 원본 영상을 자동으로 구분하지 않으므로 SSM의 라이브 상태도 확인하세요.</p></>}
+   {source==='nvt'?<p><strong>NVT 영상 수신</strong> · 장비 PTZ 조회 방식은 아직 확인되지 않았습니다. 영상 수신만으로 지도 방향을 자동 갱신하지 않습니다.</p>:source==='direct'?<p><strong>장비 원시 PTZ 수신</strong> · 각도 조회를 켜면 아래에 값을 표시합니다. 지도 영상 패널의 ‘장비 PTZ 근사 추종’에서 기준 방향을 정해 함께 움직여 볼 수 있습니다.</p>:<p><strong>장비에서 받은 현재 방향: 미확인</strong> · 화면 변화 감지는 회전·줌 측정이 아닙니다. 지도 영상 패널에서 별도 영상 대응 시험을 시작할 수 있습니다. 화면 캡처로는 실제 PTZ를 수신하지 않습니다.</p>}
    {embedded?<details open={!desktopDemo}><summary>영상 조회 설정</summary>{settings}</details>:settings}
-   {source==='direct'&&<DirectSnapshotConnection active={active} readKey={key} cameraLabel={cameraLabel} sessionId={observation?.sessionId??''} viewing={running} ptzReceiving={snapshot?.devicePtz?.status==='live'&&!!snapshot.devicePtz.sample} onConnected={()=>setRunning(true)} onDisconnected={()=>{setRunning(false);setSnapshot(null);}}/>}
+   {direct&&<DirectSnapshotConnection key={source} nvt={source==='nvt'} active={active} readKey={key} cameraLabel={cameraLabel} sessionId={observation?.sessionId??''} viewing={running} ptzReceiving={source==='direct'&&snapshot?.devicePtz?.status==='live'&&!!snapshot.devicePtz.sample} onConnected={()=>setRunning(true)} onDisconnected={()=>{setRunning(false);setSnapshot(null);}}/>}
    <button disabled={!key||running} onClick={()=>setRunning(true)}>{embedded?'지도에서 라이브 확인':'라이브 화면 확인'}</button>{' '}
    <button disabled={!running} onClick={()=>{setRunning(false);setSnapshot(null);setError('');}}>{embedded?'지도 라이브 표시 중지':'라이브 표시 중지'}</button>
-   <p className="help">{source==='direct'?'표시 중지 후 약 15초 동안 조회가 없으면 직접 연결이 종료됩니다. 즉시 중지하려면 직접 연결 종료를 누르세요.':'표시 중지는 브라우저 조회를 멈춥니다. 화면 수집 자체는 수집 도구에서 중지하세요.'}</p>
+   <p className="help">{direct?'표시 중지 후 약 15초 동안 조회가 없으면 직접 연결이 종료됩니다. 즉시 중지하려면 직접 연결 종료를 누르세요.':'표시 중지는 브라우저 조회를 멈춥니다. 화면 수집 자체는 수집 도구에서 중지하세요.'}</p>
   </section>
   {error&&<p className="error" role="alert">{error}</p>}
   {source==='direct'&&<DevicePtzStatus active={active&&running} value={snapshot?.devicePtz}/>}

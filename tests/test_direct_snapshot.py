@@ -27,6 +27,8 @@ PATH = '/stw-cgi/video.cgi?msubmenu=snapshot&action=view&Profile=1'
 PTZ_PATH = '/stw-cgi/ptzcontrol.cgi?msubmenu=query&action=view&Query=Pan,Tilt,Zoom'
 PTZ_BODY = b'Pan=12.5\r\nTilt=-4.25\r\nZoom=2\r\nZoomPulse=0\r\nChannel.0.Pan=12.5\r\nChannel.0.Tilt=-4.25\r\nChannel.0.Zoom=2\r\nChannel.0.ZoomPulse=0\r\n'
 USER, PASSWORD = 'synthetic-camera-user', 'synthetic-camera-password'
+NVT_USER, NVT_TOKEN = 'synthetic-nvt-user', 'synthetic-captured-encoded-token'
+NVT_PATH = '/cgi-bin/GetImage.cgi'
 
 
 class Camera(BaseHTTPRequestHandler):
@@ -40,6 +42,15 @@ class Camera(BaseHTTPRequestHandler):
     def log_message(self, *_): pass
     def do_GET(self):
         Camera.requests.append((self.command, self.path, self.headers.get('Authorization', '')))
+        if urllib.parse.urlsplit(self.path).path == NVT_PATH:
+            query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            if query.get('USER') != [NVT_USER] or query.get('PWD') != [NVT_TOKEN] or query.get('InputNumber') != ['1'] or Camera.behavior == 'forbidden':
+                self.send_response(403); self.end_headers(); return
+            if Camera.behavior == 'redirect':
+                self.send_response(302); self.send_header('Location', '/must-not-follow-nvt'); self.end_headers(); return
+            body = b'<html>synthetic NVT login</html>' if Camera.behavior == 'html' else b'not JPEG' if Camera.behavior == 'corrupt' else JPEG
+            self.send_response(200); self.send_header('Content-Type', 'text/html' if Camera.behavior == 'html' else 'image/jpeg')
+            self.send_header('Content-Length', str(len(body))); self.end_headers(); self.wfile.write(body); return
         if Camera.behavior == 'basic':
             self.send_response(401); self.send_header('WWW-Authenticate', 'Basic realm="synthetic-realm"'); self.end_headers(); return
         auth = self.headers.get('Authorization', '')
@@ -119,6 +130,46 @@ class DirectSnapshotTests(unittest.TestCase):
         Camera.ptz_after_snapshot = None
     def reference(self, session):
         return self.request('reference', 'POST', {'sessionId':session})
+    def nvt_payload(self, **overrides):
+        body = dict(cameraLabel='Synthetic NVT camera', source='nvt-getimage', username='', password='',
+                    snapshotUrl=self.camera_base + NVT_PATH + '?' + urllib.parse.urlencode(dict(USER=NVT_USER,PWD=NVT_TOKEN,InputNumber='1',time='.5')))
+        body.update(overrides); return body
+    def test_nvt_getimage_refreshes_without_ptz_or_auth_headers_and_keeps_secrets_out_of_status_and_logs(self):
+        code,raw,_ = self.request('session','POST',self.nvt_payload()); self.assertEqual(code,200)
+        started=json.loads(raw); self.assertEqual(started['frameSource'],'nvt-getimage-snapshot')
+        self.assertFalse(started['devicePtz']['enabled']); self.assertIsNone(started['devicePtz']['sample'])
+        time.sleep(1.3); after=json.loads(self.request()[1]); self.assertGreater(after['observation']['sequence'],started['observation']['sequence'])
+        code,frame,_=self.request('frame?'+urllib.parse.urlencode(dict(sessionId=after['observation']['sessionId'],sequence=after['observation']['sequence'])))
+        self.assertEqual((code,frame),(200,JPEG))
+        seen=[]
+        for method,path,auth in Camera.requests:
+            self.assertEqual(method,'GET'); self.assertEqual(auth,''); parsed=urllib.parse.urlsplit(path);self.assertEqual(parsed.path,NVT_PATH)
+            query=urllib.parse.parse_qs(parsed.query);self.assertEqual(query['PWD'],[NVT_TOKEN]);self.assertEqual(query['USER'],[NVT_USER]);self.assertEqual(query['InputNumber'],['1']);seen.append(query['time'][0])
+        self.assertGreaterEqual(len(set(seen)),2)
+        public=json.dumps(started)+json.dumps(after)+self.log_path.read_text()
+        for secret in [NVT_USER,NVT_TOKEN,self.camera_base,'GetImage.cgi?']: self.assertNotIn(secret,public)
+        code,body,_=self.reference(after['observation']['sessionId']);self.assertEqual(code,409);self.assertEqual(json.loads(body)['code'],'reference-not-ready')
+    def test_nvt_rejects_unobserved_routes_queries_ptz_and_redirect_portals_before_network(self):
+        valid=self.nvt_payload(); base=valid['snapshotUrl']
+        invalid=[{'readDevicePtz':True},{'source':'unknown'},{'username':USER},{'password':PASSWORD},
+                 {'snapshotUrl':base+'&PWD=duplicate'},{'snapshotUrl':base+'&action=move'},
+                 {'snapshotUrl':base.replace('InputNumber=1','InputNumber=2')},
+                 {'snapshotUrl':base.replace('PWD='+NVT_TOKEN,'PWD=%0Asecret')},
+                 {'snapshotUrl':base.replace('time=.5','time=NaN')},
+                 {'snapshotUrl':base.replace(NVT_PATH,'/cgi-bin/Move.cgi')},
+                 {'snapshotUrl':base+'#fragment'},
+                 {'snapshotUrl':'http://ddns.hanwha-security.com'+NVT_PATH+'?'+urllib.parse.urlsplit(base).query}]
+        for changes in invalid:
+            with self.subTest(changes=list(changes)):
+                code,body,_=self.request('session','POST',{**valid,**changes});self.assertEqual(code,400);self.assertNotIn(NVT_TOKEN,body.decode())
+        self.assertEqual(Camera.requests,[])
+    def test_nvt_failed_reads_do_not_follow_redirects_or_publish_images(self):
+        for mode,reason in [('redirect','redirect-rejected'),('html','not-jpeg'),('corrupt','invalid-jpeg'),('forbidden','authentication-denied')]:
+            with self.subTest(mode=mode):
+                Camera.behavior=mode;Camera.requests.clear()
+                code,body,_=self.request('session','POST',self.nvt_payload());self.assertEqual(code,502);self.assertEqual(json.loads(body)['code'],reason)
+                self.assertEqual(len(Camera.requests),1);self.assertFalse(json.loads(self.request()[1])['liveFrameAvailable'])
+                self.assertNotIn(NVT_TOKEN,body.decode());self.assertNotIn(NVT_USER,body.decode())
     def test_reference_zip_contains_original_hash_bracketed_ptz_and_no_connection_secrets(self):
         _,started=self.start(readDevicePtz=True); self.wait_ptz(); session=started['observation']['sessionId']
         code,raw,headers=self.reference(session); self.assertEqual(code,200)
