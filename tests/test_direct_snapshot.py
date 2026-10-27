@@ -29,6 +29,8 @@ PTZ_BODY = b'Pan=12.5\r\nTilt=-4.25\r\nZoom=2\r\nZoomPulse=0\r\nChannel.0.Pan=12
 USER, PASSWORD = 'synthetic-camera-user', 'synthetic-camera-password'
 NVT_USER, NVT_TOKEN = 'synthetic-nvt-user', 'synthetic-captured-encoded-token'
 NVT_PATH = '/cgi-bin/GetImage.cgi'
+NVT_PTZ_PATH = '/api/ptz.cgi?PTZNumber=1&GetPTZPosition=do'
+NVT_PTZ_BODY = b'PTZ.1.Position=77.67,-2.5,1.25\r\n'
 
 
 class Camera(BaseHTTPRequestHandler):
@@ -39,16 +41,34 @@ class Camera(BaseHTTPRequestHandler):
     ptz_entered = threading.Event()
     ptz_gate = threading.Event()
     ptz_after_snapshot = None
+    nvt_ptz_body = NVT_PTZ_BODY
+    nvt_cookies = []
+    nvt_ptz_after_snapshot = None
     def log_message(self, *_): pass
     def do_GET(self):
         Camera.requests.append((self.command, self.path, self.headers.get('Authorization', '')))
+        if self.path == NVT_PTZ_PATH:
+            Camera.nvt_cookies.append((self.path,self.headers.get('Cookie','')))
+            cookie = dict(part.strip().split('=',1) for part in self.headers.get('Cookie','').split(';') if '=' in part)
+            if urllib.parse.unquote(cookie.get('username','')) != NVT_USER or urllib.parse.unquote(cookie.get('password','')) != NVT_TOKEN or Camera.ptz_mode == 'forbidden':
+                self.send_response(403); self.end_headers(); return
+            Camera.ptz_entered.set()
+            if Camera.ptz_mode == 'hold': Camera.ptz_gate.wait(timeout=8)
+            if Camera.ptz_mode == 'redirect':
+                self.send_response(302);self.send_header('Location','/must-not-follow-nvt-ptz');self.end_headers();return
+            body=Camera.nvt_ptz_body;self.send_response(200);self.send_header('Content-Type','text/plain');self.send_header('Content-Length',str(len(body)));self.end_headers()
+            try:self.wfile.write(body)
+            except (BrokenPipeError,ConnectionResetError):pass
+            return
         if urllib.parse.urlsplit(self.path).path == NVT_PATH:
+            Camera.nvt_cookies.append((self.path,self.headers.get('Cookie','')))
             query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             if query.get('USER') != [NVT_USER] or query.get('PWD') != [NVT_TOKEN] or query.get('InputNumber') != ['1'] or Camera.behavior == 'forbidden':
                 self.send_response(403); self.end_headers(); return
             if Camera.behavior == 'redirect':
                 self.send_response(302); self.send_header('Location', '/must-not-follow-nvt'); self.end_headers(); return
             body = b'<html>synthetic NVT login</html>' if Camera.behavior == 'html' else b'not JPEG' if Camera.behavior == 'corrupt' else JPEG
+            if Camera.nvt_ptz_after_snapshot is not None: Camera.nvt_ptz_body=Camera.nvt_ptz_after_snapshot
             self.send_response(200); self.send_header('Content-Type', 'text/html' if Camera.behavior == 'html' else 'image/jpeg')
             self.send_header('Content-Length', str(len(body))); self.end_headers(); self.wfile.write(body); return
         if Camera.behavior == 'basic':
@@ -128,6 +148,7 @@ class DirectSnapshotTests(unittest.TestCase):
         Camera.behavior = 'jpeg'; Camera.requests.clear()
         Camera.ptz_body = PTZ_BODY; Camera.ptz_mode = 'ok'; Camera.ptz_gate.set(); Camera.ptz_entered.clear()
         Camera.ptz_after_snapshot = None
+        Camera.nvt_ptz_body=NVT_PTZ_BODY;Camera.nvt_cookies.clear();Camera.nvt_ptz_after_snapshot=None
     def reference(self, session):
         return self.request('reference', 'POST', {'sessionId':session})
     def nvt_payload(self, **overrides):
@@ -149,9 +170,9 @@ class DirectSnapshotTests(unittest.TestCase):
         public=json.dumps(started)+json.dumps(after)+self.log_path.read_text()
         for secret in [NVT_USER,NVT_TOKEN,self.camera_base,'GetImage.cgi?']: self.assertNotIn(secret,public)
         code,body,_=self.reference(after['observation']['sessionId']);self.assertEqual(code,409);self.assertEqual(json.loads(body)['code'],'reference-not-ready')
-    def test_nvt_rejects_unobserved_routes_queries_ptz_and_redirect_portals_before_network(self):
+    def test_nvt_rejects_unobserved_routes_queries_and_redirect_portals_before_network(self):
         valid=self.nvt_payload(); base=valid['snapshotUrl']
-        invalid=[{'readDevicePtz':True},{'source':'unknown'},{'username':USER},{'password':PASSWORD},
+        invalid=[{'source':'unknown'},{'username':USER},{'password':PASSWORD},
                  {'snapshotUrl':base+'&PWD=duplicate'},{'snapshotUrl':base+'&action=move'},
                  {'snapshotUrl':base.replace('InputNumber=1','InputNumber=2')},
                  {'snapshotUrl':base.replace('PWD='+NVT_TOKEN,'PWD=%0Asecret')},
@@ -170,6 +191,40 @@ class DirectSnapshotTests(unittest.TestCase):
                 code,body,_=self.request('session','POST',self.nvt_payload());self.assertEqual(code,502);self.assertEqual(json.loads(body)['code'],reason)
                 self.assertEqual(len(Camera.requests),1);self.assertFalse(json.loads(self.request()[1])['liveFrameAvailable'])
                 self.assertNotIn(NVT_TOKEN,body.decode());self.assertNotIn(NVT_USER,body.decode())
+    def start_nvt_ptz(self):
+        code,raw,_=self.request('session','POST',self.nvt_payload(readDevicePtz=True));self.assertEqual(code,200);return json.loads(raw)
+    def test_nvt_current_ptz_uses_exact_read_only_query_and_scopes_cookies_to_status_only(self):
+        started=self.start_nvt_ptz();status=self.wait_ptz();sample=status['devicePtz']['sample']
+        self.assertEqual([sample[k] for k in ['panDeg','tiltDeg','zoom','zoomPulse']],[77.67,-2.5,1.25,None])
+        time.sleep(1.2);self.assertGreater(self.wait_ptz()['devicePtz']['sample']['sequence'],sample['sequence'])
+        self.assertTrue(all(method=='GET' and (path==NVT_PTZ_PATH or urllib.parse.urlsplit(path).path==NVT_PATH) and not auth for method,path,auth in Camera.requests))
+        for path,cookie in Camera.nvt_cookies:
+            if path==NVT_PTZ_PATH:self.assertIn('username='+NVT_USER,cookie);self.assertIn('password='+NVT_TOKEN,cookie)
+            else:self.assertEqual(cookie,'')
+        for secret in [NVT_USER,NVT_TOKEN,'Cookie',self.camera_base]:self.assertNotIn(secret,json.dumps(started)+json.dumps(status)+self.log_path.read_text())
+        Camera.nvt_ptz_body=b'PTZ.1.Position=0,0,1\n';sample=self.wait_ptz()['devicePtz']['sample']
+        for _ in range(40):
+            if sample['panDeg']==0:break
+            time.sleep(.05);sample=self.wait_ptz()['devicePtz']['sample']
+        self.assertEqual([sample[k] for k in ['panDeg','tiltDeg','zoom']],[0,0,1])
+    def test_nvt_bad_or_partial_ptz_is_never_padded_and_does_not_stop_video(self):
+        for body in [b'PTZ.1.Position=77.67',b'PTZ.1.Position=77.67,1',b'PTZ.2.Position=1,2,3',b'PTZ.1.Position=1,NaN,1',b'PTZ.1.Position=1,2,0',b'PTZ.1.Position=361,2,1',b'PTZ.1.Position=1,2,1\nPTZ.1.Position=1,2,1',b'<html>login</html>',b'x'*8193]:
+            Camera.nvt_ptz_body=body;self.start_nvt_ptz();status=self.wait_ptz('error')
+            self.assertEqual(status['devicePtz']['reasonCode'],'nvt-ptz-invalid-response');self.assertIsNone(status['devicePtz']['sample']);self.assertTrue(status['liveFrameAvailable'])
+        count=sum(path==NVT_PTZ_PATH for _,path,_ in Camera.requests);time.sleep(1.2);status=json.loads(self.request()[1]);self.assertTrue(status['liveFrameAvailable']);self.assertEqual(count,sum(path==NVT_PTZ_PATH for _,path,_ in Camera.requests))
+    def test_nvt_ptz_access_errors_do_not_redirect_or_stop_jpeg(self):
+        for mode,reason in [('forbidden','ptz-authentication-denied'),('redirect','ptz-redirect-rejected')]:
+            Camera.ptz_mode=mode;self.start_nvt_ptz();status=self.wait_ptz('error');self.assertEqual(status['devicePtz']['reasonCode'],reason);self.assertTrue(status['liveFrameAvailable'])
+        self.assertFalse(any('must-not-follow' in path for _,path,_ in Camera.requests))
+    def test_nvt_reference_uses_nvt_reads_keeps_secrets_out_and_rejects_motion(self):
+        started=self.start_nvt_ptz();self.wait_ptz();session=started['observation']['sessionId'];code,raw,_=self.reference(session);self.assertEqual(code,200)
+        with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+            metadata=archive.read('reference-metadata.private.json').decode();data=json.loads(metadata);self.assertEqual(archive.read('reference.jpg'),JPEG)
+        self.assertEqual(data['reference']['frameSource'],'nvt-getimage-snapshot');self.assertEqual(data['reference']['snapshotSelection'],{'inputNumber':1})
+        self.assertEqual(data['devicePtz']['before']['panDeg'],77.67);self.assertIsNone(data['devicePtz']['after']['zoomPulse'])
+        for secret in [NVT_USER,NVT_TOKEN,self.camera_base,'Cookie']:self.assertNotIn(secret,metadata)
+        self.assertTrue(all(path==NVT_PTZ_PATH or urllib.parse.urlsplit(path).path==NVT_PATH for _,path,_ in Camera.requests))
+        Camera.nvt_ptz_after_snapshot=b'PTZ.1.Position=78.67,-2.5,1.25';code,raw,_=self.reference(session);self.assertEqual(code,409);self.assertEqual(json.loads(raw)['code'],'reference-moving')
     def test_reference_zip_contains_original_hash_bracketed_ptz_and_no_connection_secrets(self):
         _,started=self.start(readDevicePtz=True); self.wait_ptz(); session=started['observation']['sessionId']
         code,raw,headers=self.reference(session); self.assertEqual(code,200)

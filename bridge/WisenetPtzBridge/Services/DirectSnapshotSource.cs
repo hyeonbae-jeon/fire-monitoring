@@ -70,8 +70,6 @@ public sealed partial class DirectSnapshotSource : IAsyncDisposable
     }
     private static Uri ValidateNvt(DirectSnapshotRequest request)
     {
-        if (request.ReadDevicePtz)
-            throw new SnapshotException("ptz-unsupported", "NVT GetImage는 현재 영상만 지원합니다. 장비 PTZ 조회 방식은 아직 확인되지 않았습니다.");
         if (!string.IsNullOrEmpty(request.Username) || !string.IsNullOrEmpty(request.Password))
             throw new SnapshotException("invalid-input", "NVT는 웹뷰어에서 확인한 JPEG 요청 전체 주소를 입력하세요. 별도 ID/PW는 사용하지 않습니다.");
         if (request.SnapshotUrl is null || request.SnapshotUrl.Length > 2048 ||
@@ -145,7 +143,7 @@ public sealed partial class DirectSnapshotSource : IAsyncDisposable
         {
             while (!current.Cancellation.IsCancellationRequested)
             {
-                var sample = await DevicePtzReader.ReadAsync(current.Client, current.Uri, current.Cancellation.Token);
+                var sample = await ReadPtzAsync(current, current.Cancellation.Token);
                 lock (sync)
                 {
                     if (session != current || current.Cancellation.IsCancellationRequested) return;
@@ -166,6 +164,9 @@ public sealed partial class DirectSnapshotSource : IAsyncDisposable
             // Optional angle reads stop on failure; the independent JPEG loop continues.
         }
     }
+    private static Task<DevicePtzSample> ReadPtzAsync(Session current, CancellationToken ct) => current.Nvt
+        ? NvtDevicePtzReader.ReadAsync(current.Client, current.Uri, ct)
+        : DevicePtzReader.ReadAsync(current.Client, current.Uri, ct);
     public async Task StopAsync(string sessionId)
     {
         await changes.WaitAsync();

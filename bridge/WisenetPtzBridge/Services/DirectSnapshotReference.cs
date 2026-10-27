@@ -32,10 +32,10 @@ public sealed partial class DirectSnapshotSource
         try
         {
             deadline.CancelAfter(TimeSpan.FromSeconds(8));
-            var before = await DevicePtzReader.ReadAsync(current.Client, current.Uri, deadline.Token);
+            var before = await ReadPtzAsync(current, deadline.Token);
             var requestedAt = DateTimeOffset.UtcNow;
             var image = await ReadAsync(current, deadline.Token);
-            var after = await DevicePtzReader.ReadAsync(current.Client, current.Uri, deadline.Token);
+            var after = await ReadPtzAsync(current, deadline.Token);
             var panDifference = Math.Abs(((after.PanDeg - before.PanDeg + 540) % 360) - 180);
             var tiltDifference = Math.Abs(after.TiltDeg - before.TiltDeg);
             var zoomDifference = Math.Abs(after.Zoom - before.Zoom);
@@ -49,7 +49,9 @@ public sealed partial class DirectSnapshotSource
                 schemaVersion = 1, kind = "camera-ptz-reference", createdAt, sessionId = current.Id, cameraLabel = current.Label,
                 reference = new { fileName = "reference.jpg", sha256 = Convert.ToHexString(SHA256.HashData(image.Bytes)).ToLowerInvariant(),
                     image.Width, image.Height, requestStartedAt = requestedAt, image.ReceivedAt,
-                    frameSource = "hanwha-jpeg-snapshot", snapshotSelection = new { channel = Number("Channel"), profile = Number("Profile") } },
+                    frameSource = current.Nvt ? "nvt-getimage-snapshot" : "hanwha-jpeg-snapshot",
+                    snapshotSelection = current.Nvt ? (object)new { inputNumber = Number("InputNumber") }
+                        : new { channel = Number("Channel"), profile = Number("Profile") } },
                 devicePtz = new { before = Sample(before), after = Sample(after) },
                 stability = new { passed = true, panDifferenceDeg = panDifference, tiltDifferenceDeg = tiltDifference, zoomDifference,
                     maximumPanDifferenceDeg = .1, maximumTiltDifferenceDeg = .1, maximumZoomDifference = .0001, zoomPulseUnchanged = true },

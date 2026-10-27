@@ -7,6 +7,7 @@ export type DevicePtzObservation={value:DevicePtz;sessionId:string;cameraLabel:s
 const reasons:Record<string,string>={
  'waiting':'장비 각도 응답을 기다립니다.', 'ptz-stale':'최근 장비 값이 만료됐습니다.',
  'ptz-invalid-response':'장비 각도 응답 오류·누락·채널 불일치입니다. 604 오류도 이 상태로 처리합니다.',
+ 'nvt-ptz-invalid-response':'NVT 현재 위치 응답의 Pan·Tilt·Zoom 세 값과 범위를 확인할 수 없습니다.',
  'ptz-authentication-denied':'장비 각도 조회 권한이 거절됐습니다.', 'ptz-redirect-rejected':'장비 각도 조회에서 주소 이동이 요청됐습니다.',
  'ptz-http-error':'장비 각도 조회 요청이 실패했습니다.', 'ptz-timeout':'장비 각도 수신 시간이 초과됐습니다.', 'ptz-unreachable':'장비 각도 조회에 연결할 수 없습니다.',
 };
