@@ -81,11 +81,17 @@ jobs:
           python3 tests/test_direct_snapshot.py
           python3 tests/test_inventory.py
           python3 tests/test_portable_demo.py
-      - name: Install Chromium and browser dependencies
+      - name: Prepare browser for checks
         timeout-minutes: 4
         run: |
-          cd web
-          npx playwright install --with-deps chromium
+          cctv_browser_path="$(command -v google-chrome || command -v chromium || true)"
+          if [ -n "$cctv_browser_path" ]; then
+            "$cctv_browser_path" --version
+            echo "CHROMIUM_EXECUTABLE=$cctv_browser_path" >> "$GITHUB_ENV"
+          else
+            cd web
+            npx playwright install --with-deps chromium
+          fi
       - name: Test browser inventory, map and terrain calibration (mock SDK)
         timeout-minutes: 4
         run: |
