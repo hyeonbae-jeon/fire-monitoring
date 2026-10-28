@@ -58,8 +58,9 @@ public static class MonitoringServerSecurity
             o.Events.OnRedirectToLogin = c => { c.Response.StatusCode = 401; return Task.CompletedTask; };
         });
         builder.Services.AddAuthorization();
-        builder.Services.AddDataProtection().SetApplicationName("FireMonitoringServer").PersistKeysToFileSystem(new DirectoryInfo(
+        var protection = builder.Services.AddDataProtection().SetApplicationName("FireMonitoringServer").PersistKeysToFileSystem(new DirectoryInfo(
             Path.Combine(builder.Configuration["CCTV_DATA_DIR"] ?? Path.Combine(AppContext.BaseDirectory, "data"), "auth-keys")));
+        if (OperatingSystem.IsWindows()) protection.ProtectKeysWithDpapi();
         builder.Services.AddAntiforgery(o => { o.HeaderName = "X-Monitor-CSRF"; o.Cookie.SameSite = SameSiteMode.Strict; });
         builder.Services.Configure<ForwardedHeadersOptions>(o =>
         {

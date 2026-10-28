@@ -32,10 +32,10 @@ export function useAutomaticMonitoring(enabled:boolean){
   let cancelled=false,serverOffset=0,timer:ReturnType<typeof setTimeout>|undefined;const abort=new AbortController();
   async function poll(){try{
    const started=Date.now();
-   const r=await monitorFetch('/api/auto-monitor/status',{signal:abort.signal});if(!r.ok)throw new Error('자동 수신 상태를 읽지 못했습니다.');
+   const r=await monitorFetch('/api/auto-monitor/status',{signal:AbortSignal.any([abort.signal,AbortSignal.timeout(5000)])});if(!r.ok)throw new Error('자동 수신 상태를 읽지 못했습니다.');
    const data=await r.json();if(typeof data?.configured!=='boolean'||!Array.isArray(data.cameras)||data.cameras.length>9)throw new Error('자동 수신 상태 형식을 확인하세요.');
    if(!cancelled){const serverTime=Date.parse(data.serverNow??'');if(Number.isFinite(serverTime))serverOffset=serverTime-started;setNow(Date.now()+serverOffset);setState(data);setError('');}
-  }catch(e){if(!cancelled){setState(null);setError((e as Error).message);}}finally{if(!cancelled)timer=setTimeout(()=>void poll(),1000);}}
+  }catch(e){if(!cancelled){setState(null);setError((e as Error).name==='TimeoutError'?'수신 서버 응답 지연 · 자동 재연결 중':(e as Error).message);}}finally{if(!cancelled)timer=setTimeout(()=>void poll(),1000);}}
   void poll();const clock=setInterval(()=>setNow(Date.now()+serverOffset),250);
   return()=>{cancelled=true;abort.abort();clearInterval(clock);clearTimeout(timer);};
  },[enabled]);

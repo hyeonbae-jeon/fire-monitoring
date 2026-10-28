@@ -36,7 +36,7 @@ test('nine current sectors use separate anchors, wrap pan, scale zoom and suppre
  expect(configuration.positions[0].nativeTracking!.deviceAnchor.panDeg).toBe(359);
 });
 test('server opens nine current ranges without manual starts, switches frames, hides expired sectors and sends CSRF on saves',async({page})=>{
- test.setTimeout(45000);let pan=1,zoom=1,expired=false,sequence=0,saveCount=0;
+ test.setTimeout(45000);let pan=1,zoom=1,expired=false,hold=false,sequence=0,saveCount=0;
  const image=readFileSync('tests/fixtures/vision/current-1.png'),requests:string[]=[];
  page.on('request',r=>requests.push(r.url()));
  await page.route('https://map.vworld.kr/**',r=>r.fulfill({contentType:'application/javascript',body:sdk}));
@@ -48,6 +48,7 @@ test('server opens nine current ranges without manual starts, switches frames, h
   return r.fulfill({json:{revision:'synthetic-revision',configuration}});
  });
  await page.route('**/api/auto-monitor/status',r=>{
+  if(hold)return;
   const serverClock=Date.now()-3600000,s=state(serverClock,pan,zoom);for(const c of s.cameras){c.feed.observation!.sequence=++sequence;if(expired)c.feed.devicePtz!.sample!.receivedAt=new Date(serverClock-10000).toISOString();}
   return r.fulfill({json:s});
  });
@@ -66,6 +67,8 @@ test('server opens nine current ranges without manual starts, switches frames, h
  expired=true;await expect.poll(()=>frame.evaluate(polygons+'.length')).toBe(0);await expect(page.getByText('최신 관측 방향 0/9대',{exact:false})).toBeVisible();
  expect(await frame.evaluate('activeEntities.filter(e=>e.polygon).length')).toBe(0);
  expired=false;await expect.poll(()=>frame.evaluate(polygons+'.length')).toBe(9);
+ hold=true;await expect.poll(()=>frame.evaluate(polygons+'.length'),{timeout:10000}).toBe(0);
+ hold=false;await expect.poll(()=>frame.evaluate(polygons+'.length'),{timeout:10000}).toBe(9);
  await page.getByRole('button',{name:'카메라·설정',exact:true}).click();
  await page.getByLabel('위도·경도 JSON 불러오기',{exact:true}).setInputFiles({name:'synthetic-saved.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(configuration))});
  await page.getByRole('button',{name:'중앙 지도 설정 저장',exact:true}).click();await expect.poll(()=>saveCount).toBe(1);

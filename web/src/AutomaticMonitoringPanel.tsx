@@ -23,7 +23,7 @@ export function AutomaticMonitoringPanel({positions,current,state,now,error,onSe
  return <><h2>자동 감시</h2><p>최신 관측 방향 {live.length}/{positions.length}대 · 저장한 기준과 현재 PTZ로 범위를 갱신합니다.</p>
   <button onClick={onFit}>전체 현재 범위 보기</button>
   {error&&<p role="alert">{error}</p>}
-  {!state?.configured&&<p>수신 서버의 카메라 접속 설정이 필요합니다. 서버설정.cmd 또는 GitHub 서버용 Secrets로 등록하세요.</p>}
+  {state?.configured===false&&<p>수신 서버의 카메라 접속 설정이 필요합니다. 서버설정.cmd 또는 GitHub 서버용 Secrets로 등록하세요.</p>}
   <div className="automatic-camera-list">{positions.map(p=>{
    const c=state?.cameras.find(v=>v.cameraId===p.id),pose=automaticPose(p,c,now);
    const text=pose?'현재 방향 수신 중':c?.needsAttention?'계정·권한 확인 필요':!c?'접속 설정 없음':!p.nativeTracking?'추종 기준 없음':c.feed.liveFrameAvailable?'영상 수신 · 현재 방향 미확인':'수신 끊김 · 재연결 대기';
