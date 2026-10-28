@@ -38,4 +38,8 @@
 .visual-tracking{border-top:1px solid #bdcdd5;margin-top:16px;padding-top:10px}.visual-tracking input[type=file]{width:100%}.visual-tracking button{margin:5px 5px 5px 0}
 
 .map-workspace[data-live=true] .calibration .map-floating{display:none}
+.automatic-camera-image{display:block;width:100%;max-height:280px;object-fit:contain;background:#101820}
+.automatic-camera-list{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:12px 0}
+.automatic-camera-list button{text-align:left}.automatic-camera-list small{display:block;font-size:10px;margin-top:4px}
+.server-monitor>header{display:flex;align-items:center;justify-content:space-between}
 .diagnostic-review ul{padding-left:16px}.diagnostic-review li{margin:10px 0;overflow-wrap:anywhere}.diagnostic-review small{display:block;line-height:1.6}.diagnostic-review button{margin:4px 0}

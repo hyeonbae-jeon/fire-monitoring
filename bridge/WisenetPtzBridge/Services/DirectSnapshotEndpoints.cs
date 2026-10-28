@@ -6,7 +6,7 @@ namespace WisenetPtzBridge.Services;
 
 public static class DirectSnapshotEndpoints
 {
-    private static IResult? Access(HttpContext context, DirectSnapshotSource source, IConfiguration config)
+    internal static IResult? Access(HttpContext context, DirectSnapshotSource source, IConfiguration config)
     {
         context.Response.Headers["Cross-Origin-Resource-Policy"] = "same-origin";
         var host = context.Request.Host.Host;

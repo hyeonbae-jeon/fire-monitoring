@@ -4,6 +4,7 @@ import "./style.css";
 import { ReportImport } from "./ReportImport";
 import { MonitoringMap } from "./MonitoringMap";
 import { LiveCapture } from "./LiveCapture";
+import {initializeMonitorSession,monitorFetch} from './monitor-server';
 
 type Camera = {
   uuid: string; name: string; channel: string | null; device: string | null;
@@ -19,7 +20,7 @@ type Configuration = {
   configuration: { cameras: { uuid: string; name: string; enabled?: boolean }[] };
 };
 async function api<T>(url: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(url, options);
+  const response = await monitorFetch(url, options);
   if (!response.ok) {
     const body = await response.json().catch(() => null);
     throw new Error(body?.error ?? `요청 실패 (HTTP ${response.status})`);
@@ -40,15 +41,18 @@ function App() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [desktopDemo, setDesktopDemo] = useState(false);
+  const [serverMode,setServerMode]=useState(false);
 
   async function load() {
     setBusy(true); setError(""); setMessage("");
     // On failure keep the user's selection visible, but prevent stale saves.
     setInventory(null);
     try {
-      const [inv, conf, health] = await Promise.all([
+      const health=await api<{localDesktopDemo:boolean;serverMode?:boolean}>('/health');
+      await initializeMonitorSession(health.serverMode===true);setServerMode(health.serverMode===true);
+      if(health.serverMode){setTab('map');return;}
+      const [inv, conf] = await Promise.all([
         api<Inventory>("/api/inventory"), api<Configuration>("/api/cameras"),
-        api<{ localDesktopDemo: boolean }>("/health"),
       ]);
       setInventory(inv); setConfiguration(conf);
       setDesktopDemo(health.localDesktopDemo);
@@ -85,6 +89,7 @@ function App() {
     } catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }
   }
+  if(serverMode)return <div className="app server-monitor"><header><h1>산불감시 모니터링</h1><button onClick={()=>void monitorFetch('/api/logout',{method:'POST'}).then(()=>location.assign('/login'))}>로그아웃</button></header><MonitoringMap serverMode/></div>;
   return <div className="app">
     <header><p className="eyebrow">중앙 PTZ Bridge · Camera Inventory</p><h1>산불감시 모니터링</h1>
       <p>카메라 목록을 확인하고 사용할 대상을 UUID 기준으로 저장합니다.</p></header>

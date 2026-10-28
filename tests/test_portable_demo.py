@@ -36,6 +36,7 @@ class PortableDemoTests(unittest.TestCase):
                        CAMERA_CONFIG_FILE=str(untouched), MAP_CONFIG_FILE=str(untouched), INVENTORY_WRITE_KEY='unusable-operational-placeholder',
                        CAPTURE_SOURCE_DIR=str(work / 'operational-screen-input'), CAPTURE_READ_KEY='unusable-operational-read-placeholder',
                        DIRECT_CAMERA_SNAPSHOT_ENABLED='false',
+                       MONITOR_SERVER_MODE='true', CCTV_CONNECTIONS_JSON='invalid-external-settings-must-be-ignored',
                        ASPNETCORE_URLS='http://0.0.0.0:1')
             env['ASPNETCORE_ENVIRONMENT'] = 'Production'
             operational_screen = work / 'operational-screen-input'
@@ -70,6 +71,8 @@ class PortableDemoTests(unittest.TestCase):
             try:
                 health = json.loads(request(base, '/health'))
                 self.assertTrue(health['localDesktopDemo'])
+                self.assertFalse(health['serverMode'])
+                self.assertFalse(health['automaticMonitoring'])
                 self.assertFalse(health['liveSsmConnected'])
                 self.assertFalse(health['ptzCommandsEnabled'])
                 capture_request = urllib.request.Request(base + '/api/screen-capture/status',

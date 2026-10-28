@@ -27,5 +27,8 @@ config/imports/
 # Local connection diagnostics contain operational camera identifiers.
 diagnostics/
 *.private.json
+*.protected
+auth-keys/
+*.private.env
 # Read-only live capture exchange and generated operational frames.
 capture.private/

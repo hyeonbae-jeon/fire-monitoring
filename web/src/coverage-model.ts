@@ -2,7 +2,7 @@ import {sector,type Position} from './map-model';
 
 export type CoveragePlan={cameraId:string;positionAtPlan:{lat:number;lon:number};source:'manual-preview'|'manual-calibration';calibrationToken:string|null;headingDeg:number;horizontalFovDeg:number;displayRangeM:number;enabled:boolean;updatedAt:string};
 export type CoverageDocument={schemaVersion:1;kind:'coverage-preview';confidence:'unvalidated';plans:CoveragePlan[]};
-export type CoverageShape={cameraId:string;name:string;color:string;source:CoveragePlan['source'];coordinates:[number,number][];centerline:[number,number][]};
+export type CoverageShape={cameraId:string;name:string;color:string;source:CoveragePlan['source']|'device-approximate';coordinates:[number,number][];centerline:[number,number][]};
 const colors=['#ffca68','#62d9fa','#f58cc7','#a1da71','#b3a5ff','#fb986c','#60d5bb','#f4df80','#92b7ff'];
 export function coverageColor(id:string){let hash=0;for(const c of id)hash=(Math.imul(hash,31)+c.charCodeAt(0))>>>0;return colors[hash%colors.length];}
 export function calibrationToken(p:Position):string|null{

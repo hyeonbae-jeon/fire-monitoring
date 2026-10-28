@@ -12,7 +12,7 @@ public sealed class SnapshotException(string code, string message, int statusCod
 }
 
 // One operator-selected camera, read-only JPEGs, credentials and frames in memory.
-// No redirects, discovery, fallback paths, movement, cookies or persistent credentials.
+// No redirects, discovery, fallback paths, movement or shared cookie jars.
 public sealed partial class DirectSnapshotSource : IAsyncDisposable
 {
     private readonly object sync = new();

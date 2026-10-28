@@ -127,7 +127,7 @@ function drawCoverage(data){
    const color=Cesium.Color.fromCssColorString(shape.color),selected=shape.cameraId===data.selected;
    const add=definition=>{const e=viewer.entities.add(definition);coverageOwned.push(e);coverageCameras.set(e,shape.cameraId);};
    const classification=Cesium.ClassificationType?{classificationType:Cesium.ClassificationType.BOTH}:{};
-   if(!shape.visibilityComputed)add({name:shape.name+' · 범위 시안',polygon:{hierarchy:Cesium.Cartesian3.fromDegreesArray(shape.coordinates.flat()),material:color.withAlpha(selected?.28:.16),...classification}});
+   if(!shape.visibilityComputed)add({name:shape.name+(shape.source==='device-approximate'?' · 현재 관측 방향(근사)':' · 범위 시안'),polygon:{hierarchy:Cesium.Cartesian3.fromDegreesArray(shape.coordinates.flat()),material:color.withAlpha(selected?.28:.16),...classification}});
    for(const line of [shape.coordinates,shape.centerline])add({polyline:{positions:Cesium.Cartesian3.fromDegreesArray(line.flat()),width:selected?3:2,material:color.withAlpha(.9),clampToGround:true,...classification}});
   }
   parent.postMessage({scope:'vworld-prototype',session,type:'coverage-status',requestId:data.requestId,ok:true},appOrigin);

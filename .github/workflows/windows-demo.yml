@@ -19,6 +19,13 @@ on:
       - 'tests/serve_map_preview.py'
       - 'tests/test_screen_capture.py'
       - 'tests/test_direct_snapshot.py'
+      - 'tests/test_automatic_monitoring.py'
+      - 'tests/test_server_container.py'
+      - 'tests/ServerSecurityChecks/**'
+      - 'scripts/register-monitor-startup.ps1'
+      - 'deploy/**'
+      - '.dockerignore'
+      - 'docs/automatic-monitoring.md'
       - 'tests/ScreenCaptureChecks/**'
       - 'tests/WindowsCaptureSmoke/**'
       - 'config/inventory.example.json'
@@ -43,6 +50,8 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.425'
+      - name: Windows encrypted server settings and login checks
+        run: dotnet run --project tests/ServerSecurityChecks -c Release
       - name: Synthetic Windows window, pixel capture and occlusion checks
         shell: pwsh
         run: |
@@ -50,8 +59,17 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & ./artifacts/windows-smoke/ConsoleStudio2.exe
           exit $LASTEXITCODE
+  server-container-check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build server without operational credentials
+        run: docker build -f deploy/Dockerfile -t fire-monitoring:server-check .
+      - name: Test container using synthetic disabled camera settings
+        run: python3 tests/test_server_container.py
   package:
-    needs: windows-capture-check
+    needs: [windows-capture-check, server-container-check]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
@@ -79,6 +97,7 @@ jobs:
           dotnet run --project tests/ScreenCaptureChecks -c Release
           python3 tests/test_screen_capture.py
           python3 tests/test_direct_snapshot.py
+          python3 tests/test_automatic_monitoring.py
           python3 tests/test_inventory.py
           python3 tests/test_portable_demo.py
       - name: Prepare browser for checks
@@ -146,4 +165,5 @@ jobs:
           echo "Extract the artifact ZIP, then the package ZIP. Double-click WisenetPtzBridge.exe." >> "$GITHUB_STEP_SUMMARY"
           echo "SSM is not connected. Uses synthetic cameras only. Demo save key: local-demo-only." >> "$GITHUB_STEP_SUMMARY"
           echo "Manual image/terrain calibration and map settings persistence are included. Direction accuracy and live VWorld terrain remain unverified." >> "$GITHUB_STEP_SUMMARY"
+          echo "Windows server setup: run 서버설정.cmd once with saved map settings and camera credentials. Automatic nine-camera reception, authenticated monitoring and current approximate coverage are included. Actual credentials are never included in this artifact. See docs/automatic-monitoring.md." >> "$GITHUB_STEP_SUMMARY"
           echo "On the SSM display PC, run 화면캡처.cmd and select a single video region, then open 실시간 화면 시험 in the browser. Optional local reference-image matching and map-view estimates are included; field accuracy is unverified. See docs/visual-tracking.md." >> "$GITHUB_STEP_SUMMARY"
