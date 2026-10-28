@@ -7,7 +7,7 @@ export function InstallationPositionEditor({position,onApply}:{position:Position
  const update=approvedPositionUpdate(position);
  return <details><summary>선택 카메라 설치 좌표 수정</summary>
   <p>{position.name} · WGS84 위도·경도</p>
-  {update&&<><p>수정 좌표: 위도 {update.lat} / 경도 {update.lon}</p><button onClick={()=>onApply(update.lat,update.lon)}>족두리봉 수정 좌표 적용</button></>}
+  {update&&<><p>수정 좌표: 위도 {update.lat} / 경도 {update.lon}</p><button onClick={()=>onApply(update.lat,update.lon)}>{update.name} 수정 좌표 적용</button></>}
   <label>수정할 설치 위도<input type="number" step="any" value={lat} onChange={e=>setLat(e.target.value)}/></label>
   <label>수정할 설치 경도<input type="number" step="any" value={lon} onChange={e=>setLon(e.target.value)}/></label>
   <button disabled={!lat.trim()||!lon.trim()||(Number(lat)===position.lat&&Number(lon)===position.lon)} onClick={()=>onApply(Number(lat),Number(lon))}>설치 좌표 수정 적용</button>

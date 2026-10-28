@@ -12,7 +12,7 @@ const file=(b:unknown)=>({name:'map-data.json',mimeType:'application/json',buffe
 import {sdk} from '../fixtures/vworld-sdk';
 
 test('published site immediately displays approved nine camera coordinates and full park layers after reload',async({page})=>{
- const coordinates=[[126.94632,37.65729],[126.97638,37.66294],[126.96187,37.64377],[126.97419,37.62858],[126.94291,37.61785],[127.00971,37.66243],[126.97798,37.65868],[126.99210,37.63216],[126.99059,37.68027]];
+ const coordinates=[[126.94632,37.65729],[126.97638,37.66294],[126.96187,37.64377],[126.97420,37.62838],[126.94291,37.61785],[127.00971,37.66243],[126.97798,37.65868],[126.99210,37.63216],[126.99059,37.68027]];
  const requests:string[]=[];page.on('request',r=>requests.push(r.method()+' '+r.url()));
  await page.route('https://map.vworld.kr/**',r=>r.fulfill({contentType:'application/javascript',body:sdk}));
  for(let attempt=0;attempt<2;attempt++){
