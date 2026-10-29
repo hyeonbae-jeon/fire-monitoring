@@ -72,8 +72,12 @@ public static class MonitoringServerSetup
         try
         {
             var old = ReadProtectedSettings();
-            var mapPath = Read("저장한 지도 JSON 경로", Path.Combine(AppContext.BaseDirectory, "data", "map.demo.json")).Trim('"');
-            var mapJson = await File.ReadAllTextAsync(mapPath);
+            var defaultMapPath = Path.Combine(AppContext.BaseDirectory, "data", "map.demo.json");
+            var mapPath = Read("저장한 지도 JSON 경로 (기본 보정값 사용은 Enter)", defaultMapPath).Trim('"');
+            var defaultPathSelected = string.Equals(Path.GetFullPath(mapPath), Path.GetFullPath(defaultMapPath), StringComparison.OrdinalIgnoreCase);
+            var mapJson = defaultPathSelected && !File.Exists(defaultMapPath)
+                ? old["CCTV_MAP_CONFIGURATION_JSON"] ?? MonitoringMapDefaults.ReadText()
+                : await File.ReadAllTextAsync(mapPath);
             var map = JsonSerializer.Deserialize<MapDocument>(mapJson, FileCameraInventorySource.Json) ?? throw new JsonException();
             MapConfiguration.Validate(map);
             if (map.Positions.Count is < 1 or > 9 || map.Positions.Any(p => p.NativeTracking is null))
@@ -94,7 +98,7 @@ public static class MonitoringServerSetup
                 }
                 var user = source == "hanwha" ? Read("장비 ID", prior?.Username ?? "") : "";
                 var password = source == "hanwha" ? Read("장비 PW (입력 숨김)", prior?.Password ?? "", true) : "";
-                var range = Read("관측 범위 표시 거리(m)", (prior?.DisplayRangeM ?? 1000).ToString());
+                var range = Read("관측 범위 표시 거리(m)", (prior?.DisplayRangeM ?? 3000).ToString());
                 var connection = new AutoCameraConnection(p.Id, source, url, user, password, prior?.Enabled ?? true, int.Parse(range));
                 AutomaticMonitoring.Parse(JsonSerializer.Serialize(new AutoCameraDocument(1, [connection]), AutomaticMonitoring.Json));
                 connections.Add(connection);
@@ -118,6 +122,14 @@ public static class MonitoringServerSetup
                 if (old[name] is { } value) values[name] = value;
             MonitoringServerSecurity.ValidateAccounts(new ConfigurationBuilder().AddInMemoryCollection(values!).Build());
             var encrypted = Protect(JsonSerializer.SerializeToUtf8Bytes(values), true);
+            if (!File.Exists(defaultMapPath) || !defaultPathSelected)
+            {
+                // A deliberately selected map must also become the central runtime map.
+                var mapSettings = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["MAP_CONFIG_FILE"] = defaultMapPath }).Build();
+                var registry = new MapConfiguration(mapSettings);
+                var snapshot = await registry.ReadAsync(CancellationToken.None);
+                await registry.SaveAsync(new(snapshot.Revision, map), CancellationToken.None);
+            }
             Directory.CreateDirectory(Path.GetDirectoryName(ProtectedPath)!);
             var temporary = ProtectedPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
             await File.WriteAllBytesAsync(temporary, encrypted); File.Move(temporary, ProtectedPath, true);
@@ -259,11 +271,13 @@ public static class MonitoringServerSetup
         catch (Exception e) when (e is JsonException or KeyNotFoundException or InventoryException or IOException or CryptographicException or PlatformNotSupportedException or InvalidOperationException or UnauthorizedAccessException)
         { Console.Error.WriteLine("서버 시크릿 형식 또는 암호화 권한을 확인하세요. 기존 설정은 유지했습니다.");return 1; }
     }
-    public static async Task InitializeMapAsync(IConfiguration config)
+    public static async Task InitializeMapAsync(IConfiguration config, bool useBundledDefaults = false)
     {
-        if (!MonitoringServerSecurity.Enabled(config)) return;
-        var path = config["MAP_CONFIG_FILE"]!;
-        if (!File.Exists(path) && config["CCTV_MAP_CONFIGURATION_JSON"] is { Length: > 0 } text)
+        var path = config["MAP_CONFIG_FILE"];
+        if (string.IsNullOrWhiteSpace(path) || File.Exists(path)) return;
+        var text = MonitoringServerSecurity.Enabled(config) ? config["CCTV_MAP_CONFIGURATION_JSON"] : null;
+        if (string.IsNullOrWhiteSpace(text) && useBundledDefaults) text = MonitoringMapDefaults.ReadText();
+        if (!string.IsNullOrWhiteSpace(text))
         {
             if (text.Length > 1024 * 1024) throw new InvalidOperationException("서버 지도 JSON 크기를 확인하세요.");
             var doc = JsonSerializer.Deserialize<MapDocument>(text, FileCameraInventorySource.Json) ?? throw new InvalidOperationException("서버 지도 JSON을 확인하세요.");

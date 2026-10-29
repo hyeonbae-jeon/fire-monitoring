@@ -101,6 +101,15 @@ class PortableDemoTests(unittest.TestCase):
                 self.assertEqual(untouched.read_text(), '{"cameras":[]}')
                 self.assertTrue((package / 'data/cameras.demo.json').is_file())
                 map_snapshot = json.loads(request(base, '/api/map-configuration'))
+                defaults = json.loads((ROOT / 'bridge/WisenetPtzBridge/Defaults/monitoring-map.json').read_text())
+                self.assertNotEqual(map_snapshot['revision'], 'none')
+                self.assertEqual(len(map_snapshot['configuration']['positions']), 9)
+                for actual, expected in zip(map_snapshot['configuration']['positions'], defaults['positions']):
+                    self.assertEqual(actual['id'], expected['id'])
+                    self.assertEqual((actual['lat'], actual['lon']), (expected['lat'], expected['lon']))
+                    self.assertEqual(actual['nativeTracking']['deviceAnchor'], expected['nativeTracking']['deviceAnchor'])
+                    self.assertEqual(actual['nativeTracking']['pose'], expected['nativeTracking']['pose'])
+                    self.assertEqual(actual['nativeTracking']['groundElevationM'], expected['nativeTracking']['groundElevationM'])
                 map_doc = {'schemaVersion': 1, 'crs': 'EPSG:4326', 'positions': [
                     {'id': 'portable-test', 'name': 'synthetic map point', 'lat': 37.5, 'lon': 127.1,
                      'ssmUuid': None, 'positionSource': 'operator', 'orientation': None}]}

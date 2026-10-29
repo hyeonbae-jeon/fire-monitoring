@@ -41,6 +41,8 @@ with tempfile.TemporaryDirectory() as temporary:
     (package / 'data').mkdir()
     shutil.copyfile(ROOT / 'config/inventory.example.json', package / 'demo/inventory.json')
     (package / 'portable-demo.json').write_text(json.dumps({'mode': 'synthetic-demo'}), encoding='utf-8')
+    # Approved map defaults contain coordinates and tracking anchors, never camera connections.
+    shutil.copyfile(ROOT / 'bridge/WisenetPtzBridge/Defaults/monitoring-map.json', package / '기본보정설정.json')
     (package / '사용방법.txt').write_text((ROOT / 'docs/windows-demo.md').read_text(encoding='utf-8'), encoding='utf-8-sig')
     (package / 'docs').mkdir()
     for name in ['vworld-monitoring.md', 'terrain-calibration.md', 'geographic-calibration.md', 'visual-tracking.md', 'video-direction-feasibility.md', 'ssm-report-import.md', 'screen-capture.md']:

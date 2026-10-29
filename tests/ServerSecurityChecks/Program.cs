@@ -23,6 +23,27 @@ if (secretCommand.StandardInputEncoding is not { } stdinEncoding || stdinEncodin
     Encoding.UTF8.GetString(stdinEncoding.GetBytes(koreanMapLabel)) != koreanMapLabel ||
     !secretCommand.ArgumentList.SequenceEqual(new[] { "secret", "set", "CCTV_MAP_CONFIGURATION_JSON", "--repo", "hyeonbae-jeon/fire-monitoring" }))
     throw new Exception("GitHub secret transfer must preserve Korean UTF-8 without a BOM and use stdin for values.");
+var mapWork = Path.Combine(Path.GetTempPath(), "monitor-defaults-check-" + Guid.NewGuid().ToString("N"));
+var mapConfig = new ConfigurationBuilder().AddInMemoryCollection().Build();
+var mapPath = Path.Combine(mapWork, "map.json");
+mapConfig["MAP_CONFIG_FILE"] = mapPath;
+try
+{
+    await MonitoringServerSetup.InitializeMapAsync(mapConfig);
+    if (File.Exists(mapPath)) throw new Exception("Regular Bridge must not opt into bundled defaults implicitly.");
+    await MonitoringServerSetup.InitializeMapAsync(mapConfig, useBundledDefaults: true);
+    if (await File.ReadAllTextAsync(mapPath) != MonitoringMapDefaults.ReadText()) throw new Exception("Fresh installation did not receive bundled defaults.");
+    const string explicitMap = "{\"schemaVersion\":1,\"crs\":\"EPSG:4326\",\"positions\":[]}";
+    await File.WriteAllTextAsync(mapPath, explicitMap);
+    await MonitoringServerSetup.InitializeMapAsync(mapConfig, useBundledDefaults: true);
+    if (await File.ReadAllTextAsync(mapPath) != explicitMap) throw new Exception("Saved operator settings must survive updates.");
+    File.Delete(mapPath);
+    mapConfig["MONITOR_SERVER_MODE"] = "true";
+    mapConfig["CCTV_MAP_CONFIGURATION_JSON"] = explicitMap;
+    await MonitoringServerSetup.InitializeMapAsync(mapConfig, useBundledDefaults: true);
+    if (await File.ReadAllTextAsync(mapPath) != explicitMap) throw new Exception("Explicit server map must take precedence over bundled defaults.");
+}
+finally { if (Directory.Exists(mapWork)) Directory.Delete(mapWork, true); }
 var accounts = new ConfigurationBuilder().AddInMemoryCollection().Build();
 accounts["CCTV_MONITOR_USER"] = "synthetic-admin"; accounts["CCTV_MONITOR_PASSWORD_HASH"] = hash;
 MonitoringServerSecurity.ValidateAccounts(accounts);

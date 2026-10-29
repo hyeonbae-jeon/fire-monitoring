@@ -1,0 +1,285 @@
+{
+  "schemaVersion": 1,
+  "crs": "EPSG:4326",
+  "positions": [
+    {
+      "id": "bukhansan-camera-1",
+      "name": "산성주차장",
+      "lat": 37.65729,
+      "lon": 126.94632,
+      "ssmUuid": null,
+      "positionSource": "operator",
+      "orientation": null,
+      "nativeTracking": {
+        "source": "operator-ptz-anchor",
+        "confidence": "approximate",
+        "savedAt": "2026-10-28T13:28:40.028+00:00",
+        "positionAtCalibration": {
+          "lat": 37.65729,
+          "lon": 126.94632
+        },
+        "deviceAnchor": {
+          "panDeg": 245.97,
+          "tiltDeg": -2,
+          "zoom": 1
+        },
+        "pose": {
+          "headingDeg": 118,
+          "pitchDeg": 2,
+          "horizontalFovDeg": 61,
+          "cameraHeightM": 15
+        },
+        "groundElevationM": 54.79036832258284,
+        "zoomScale": true
+      }
+    },
+    {
+      "id": "bukhansan-camera-2",
+      "name": "숨은벽",
+      "lat": 37.66294,
+      "lon": 126.97638,
+      "ssmUuid": null,
+      "positionSource": "operator",
+      "orientation": null,
+      "nativeTracking": {
+        "source": "operator-ptz-anchor",
+        "confidence": "approximate",
+        "savedAt": "2026-10-29T14:08:50.022+00:00",
+        "positionAtCalibration": {
+          "lat": 37.66294,
+          "lon": 126.97638
+        },
+        "deviceAnchor": {
+          "panDeg": 351.64,
+          "tiltDeg": -5,
+          "zoom": 1
+        },
+        "pose": {
+          "headingDeg": 153,
+          "pitchDeg": 9,
+          "horizontalFovDeg": 98,
+          "cameraHeightM": 20
+        },
+        "groundElevationM": 583.0751014108035,
+        "zoomScale": true
+      }
+    },
+    {
+      "id": "bukhansan-camera-3",
+      "name": "용출봉",
+      "lat": 37.64377,
+      "lon": 126.96187,
+      "ssmUuid": null,
+      "positionSource": "operator",
+      "orientation": null,
+      "nativeTracking": {
+        "source": "operator-ptz-anchor",
+        "confidence": "approximate",
+        "savedAt": "2026-10-28T13:32:47.162+00:00",
+        "positionAtCalibration": {
+          "lat": 37.64377,
+          "lon": 126.96187
+        },
+        "deviceAnchor": {
+          "panDeg": 185.77,
+          "tiltDeg": 4.48,
+          "zoom": 1.08
+        },
+        "pose": {
+          "headingDeg": 37,
+          "pitchDeg": -3,
+          "horizontalFovDeg": 60,
+          "cameraHeightM": 15
+        },
+        "groundElevationM": 568.8347725056061,
+        "zoomScale": true
+      }
+    },
+    {
+      "id": "bukhansan-camera-4",
+      "name": "보현봉",
+      "lat": 37.62838,
+      "lon": 126.9742,
+      "ssmUuid": null,
+      "positionSource": "operator",
+      "orientation": null,
+      "nativeTracking": {
+        "source": "operator-ptz-anchor",
+        "confidence": "approximate",
+        "savedAt": "2026-10-28T13:58:31.167+00:00",
+        "positionAtCalibration": {
+          "lat": 37.62838,
+          "lon": 126.9742
+        },
+        "deviceAnchor": {
+          "panDeg": 324.68,
+          "tiltDeg": -10.92,
+          "zoom": 1
+        },
+        "pose": {
+          "headingDeg": 357,
+          "pitchDeg": -15,
+          "horizontalFovDeg": 72,
+          "cameraHeightM": 12
+        },
+        "groundElevationM": 711.796829089447,
+        "zoomScale": true
+      }
+    },
+    {
+      "id": "bukhansan-camera-5",
+      "name": "족두리봉",
+      "lat": 37.61785,
+      "lon": 126.94291,
+      "ssmUuid": null,
+      "positionSource": "operator",
+      "orientation": null,
+      "nativeTracking": {
+        "source": "operator-ptz-anchor",
+        "confidence": "approximate",
+        "savedAt": "2026-10-28T13:50:12.314+00:00",
+        "positionAtCalibration": {
+          "lat": 37.61785,
+          "lon": 126.94291
+        },
+        "deviceAnchor": {
+          "panDeg": 134.74,
+          "tiltDeg": -10.16,
+          "zoom": 1
+        },
+        "pose": {
+          "headingDeg": 55,
+          "pitchDeg": -6,
+          "horizontalFovDeg": 60,
+          "cameraHeightM": 9
+        },
+        "groundElevationM": 361.73896394050763,
+        "zoomScale": true
+      }
+    },
+    {
+      "id": "bukhansan-camera-6",
+      "name": "오투빌딩",
+      "lat": 37.66243,
+      "lon": 127.00971,
+      "ssmUuid": null,
+      "positionSource": "operator",
+      "orientation": null,
+      "nativeTracking": {
+        "source": "operator-ptz-anchor",
+        "confidence": "approximate",
+        "savedAt": "2026-10-27T12:52:17.731+00:00",
+        "positionAtCalibration": {
+          "lat": 37.66243,
+          "lon": 127.00971
+        },
+        "deviceAnchor": {
+          "panDeg": 152.65,
+          "tiltDeg": -5,
+          "zoom": 1.09
+        },
+        "pose": {
+          "headingDeg": 251,
+          "pitchDeg": 5,
+          "horizontalFovDeg": 60,
+          "cameraHeightM": 5
+        },
+        "groundElevationM": 93.1465662492834,
+        "zoomScale": true
+      }
+    },
+    {
+      "id": "bukhansan-camera-7",
+      "name": "백운대",
+      "lat": 37.65868,
+      "lon": 126.97798,
+      "ssmUuid": null,
+      "positionSource": "operator",
+      "orientation": null,
+      "nativeTracking": {
+        "source": "operator-ptz-anchor",
+        "confidence": "approximate",
+        "savedAt": "2026-10-27T12:44:25.467+00:00",
+        "positionAtCalibration": {
+          "lat": 37.65868,
+          "lon": 126.97798
+        },
+        "deviceAnchor": {
+          "panDeg": 171.59,
+          "tiltDeg": 15.82,
+          "zoom": 1
+        },
+        "pose": {
+          "headingDeg": 232,
+          "pitchDeg": -20,
+          "horizontalFovDeg": 66,
+          "cameraHeightM": 20
+        },
+        "groundElevationM": 831.9967964003948,
+        "zoomScale": true
+      }
+    },
+    {
+      "id": "bukhansan-camera-8",
+      "name": "칼바위능선",
+      "lat": 37.63216,
+      "lon": 126.9921,
+      "ssmUuid": null,
+      "positionSource": "operator",
+      "orientation": null,
+      "nativeTracking": {
+        "source": "operator-ptz-anchor",
+        "confidence": "approximate",
+        "savedAt": "2026-10-26T15:49:53.128+00:00",
+        "positionAtCalibration": {
+          "lat": 37.63216,
+          "lon": 126.9921
+        },
+        "deviceAnchor": {
+          "panDeg": 55.88,
+          "tiltDeg": -5,
+          "zoom": 1
+        },
+        "pose": {
+          "headingDeg": 328,
+          "pitchDeg": 3,
+          "horizontalFovDeg": 76,
+          "cameraHeightM": 40
+        },
+        "groundElevationM": 441.03880735788135,
+        "zoomScale": true
+      }
+    },
+    {
+      "id": "bukhansan-camera-9",
+      "name": "상장능선",
+      "lat": 37.68027,
+      "lon": 126.99059,
+      "ssmUuid": null,
+      "positionSource": "operator",
+      "orientation": null,
+      "nativeTracking": {
+        "source": "operator-ptz-anchor",
+        "confidence": "approximate",
+        "savedAt": "2026-10-27T12:56:57.667+00:00",
+        "positionAtCalibration": {
+          "lat": 37.68027,
+          "lon": 126.99059
+        },
+        "deviceAnchor": {
+          "panDeg": 166.59,
+          "tiltDeg": 1.05,
+          "zoom": 2.59
+        },
+        "pose": {
+          "headingDeg": 219,
+          "pitchDeg": -2,
+          "horizontalFovDeg": 47,
+          "cameraHeightM": 4
+        },
+        "groundElevationM": 539.2365226644683,
+        "zoomScale": true
+      }
+    }
+  ]
+}

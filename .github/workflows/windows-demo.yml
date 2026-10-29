@@ -158,7 +158,7 @@ jobs:
               for entry in archive.namelist():
                   if not entry.startswith(prefix) or entry.endswith('/'): continue
                   name = entry[len(prefix):]
-                  if name.startswith('wwwroot/') or name in ['WisenetPtzBridge.dll', 'WisenetPtzBridge.pdb', '계정권한설정.cmd', 'docs/automatic-monitoring.md']:
+                  if name.startswith('wwwroot/') or name in ['WisenetPtzBridge.dll', 'WisenetPtzBridge.pdb', '계정권한설정.cmd', '기본보정설정.json', 'docs/automatic-monitoring.md']:
                       assert '..' not in Path(name).parts
                       destination = update / name
                       destination.parent.mkdir(parents=True, exist_ok=True)
@@ -176,11 +176,15 @@ jobs:
               '8. 보정 반영 후 같은 패널의 중앙 지도 설정 저장을 누릅니다.\n'
               '9. 일반 사용자는 자동 감시 한 화면에서 영상과 관측 범위 표시를 함께 사용합니다.\n'
               '10. 계정 변경을 GitHub 서버 배포에도 적용하려면 GitHub시크릿등록.cmd를 다시 실행합니다.\n\n'
+              '9대의 최종 보정값은 프로그램에 기본 포함됩니다. 새 설치는 자동 적용하며 기존 data는 덮어쓰지 않습니다.\n'
+              '기존 PC에도 이 배포의 보정값을 적용하려면 관리자 카메라·설정에서 기본보정설정.json을 불러와 중앙 저장합니다.\n'
               '새 PC에서는 Windows 사용자 암호화 설정을 최초 한 번 등록해야 합니다.\n'
               '자세한 권한·표시 거리·다른 PC 사용 안내는 docs/automatic-monitoring.md를 확인하세요.\n', encoding='utf-8-sig')
           assert not (update/'data').exists()
           assert (update/'wwwroot/index.html').is_file() and (update/'계정권한설정.cmd').is_file()
           assert not list(update.rglob('*.protected'))
+          import json
+          assert len(json.loads((update/'기본보정설정.json').read_text())['positions']) == 9
           PYUPDATE
       - name: Register monitoring update download
         uses: actions/upload-artifact@v4

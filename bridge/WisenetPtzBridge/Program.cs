@@ -58,7 +58,7 @@ builder.Services.AddSingleton<DirectSnapshotSource>();
 builder.Services.AddSingleton<AutomaticMonitoring>();
 builder.Services.AddHostedService(services => services.GetRequiredService<AutomaticMonitoring>());
 MonitoringServerSecurity.Add(builder);
-await MonitoringServerSetup.InitializeMapAsync(builder.Configuration);
+await MonitoringServerSetup.InitializeMapAsync(builder.Configuration, useBundledDefaults: desktopDemo || serverMode);
 builder.WebHost.ConfigureKestrel(options =>
 {
     options.Limits.MaxRequestBodySize = 1024 * 1024;
