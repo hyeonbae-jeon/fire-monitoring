@@ -16,6 +16,12 @@ if (emptySettings["CCTV_CONNECTIONS_JSON"] != "synthetic-memory-value") throw ne
 foreach (var stderr in new[] { "HTTP 403: denied synthetic-private-value", "HTTP 401: synthetic-private-value", "HTTP 404: synthetic-private-value", "unexpected synthetic-private-value" })
     if (MonitoringServerSetup.GitHubFailureReason(stderr).Contains("synthetic-private-value")) throw new Exception("CLI error output exposed raw diagnostic data.");
 if (!MonitoringServerSetup.GitHubFailureReason("HTTP 403").Contains("403")) throw new Exception("CLI permission diagnosis missing.");
+var secretCommand = MonitoringServerSetup.GitHubSecretCommand("CCTV_MAP_CONFIGURATION_JSON");
+const string koreanMapLabel = "합성 카메라 지도 설정";
+if (secretCommand.StandardInputEncoding is not { } stdinEncoding || stdinEncoding.GetPreamble().Length != 0 ||
+    Encoding.UTF8.GetString(stdinEncoding.GetBytes(koreanMapLabel)) != koreanMapLabel ||
+    !secretCommand.ArgumentList.SequenceEqual(new[] { "secret", "set", "CCTV_MAP_CONFIGURATION_JSON", "--repo", "hyeonbae-jeon/fire-monitoring" }))
+    throw new Exception("GitHub secret transfer must preserve Korean UTF-8 without a BOM and use stdin for values.");
 if (OperatingSystem.IsWindows())
 {
     var plain = Encoding.UTF8.GetBytes("synthetic-camera-secret-do-not-publish");

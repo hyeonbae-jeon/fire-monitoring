@@ -153,8 +153,7 @@ public static class MonitoringServerSetup
                 }
                 stage = "GitHub 시크릿 등록: " + targetName;
                 Console.WriteLine(stage);
-                var start = new ProcessStartInfo("gh") { RedirectStandardInput = true, RedirectStandardError = true, RedirectStandardOutput = true, UseShellExecute = false };
-                foreach (var arg in new[] { "secret", "set", targetName, "--repo", "hyeonbae-jeon/fire-monitoring" }) start.ArgumentList.Add(arg);
+                var start = GitHubSecretCommand(targetName);
                 using var process = Process.Start(start) ?? throw new InvalidOperationException();
                 var error = process.StandardError.ReadToEndAsync();
                 var output = process.StandardOutput.ReadToEndAsync();
@@ -178,6 +177,17 @@ public static class MonitoringServerSetup
         { Console.Error.WriteLine(stage + " 실패. 지도 JSON 형식을 확인하세요. 기존 설정은 유지했습니다."); return 1; }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         { Console.Error.WriteLine(stage + " 실패. 파일 접근 또는 CLI 연결 상태를 확인하세요. 기존 설정은 유지했습니다."); return 1; }
+    }
+    public static ProcessStartInfo GitHubSecretCommand(string name)
+    {
+        var start = new ProcessStartInfo("gh")
+        {
+            RedirectStandardInput = true, RedirectStandardError = true, RedirectStandardOutput = true, UseShellExecute = false,
+            // Korean map labels must not be encoded with the Windows console code page.
+            StandardInputEncoding = new System.Text.UTF8Encoding(false)
+        };
+        foreach (var arg in new[] { "secret", "set", name, "--repo", "hyeonbae-jeon/fire-monitoring" }) start.ArgumentList.Add(arg);
+        return start;
     }
     public static string GitHubFailureReason(string error)
     {
