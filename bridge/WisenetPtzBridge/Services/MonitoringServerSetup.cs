@@ -11,12 +11,20 @@ public static class MonitoringServerSetup
     private static string ProtectedPath => Path.Combine(AppContext.BaseDirectory, "data", "server-settings.protected");
     private static readonly string[] Keys = ["MONITOR_SERVER_MODE", "CCTV_CONNECTIONS_JSON", "CCTV_MAP_CONFIGURATION_JSON",
         "CCTV_MONITOR_USER", "CCTV_MONITOR_PASSWORD_HASH", "VWORLD_API_KEY"];
-    public static void LoadProtected(IConfiguration config)
+    public static IConfigurationRoot ReadProtectedSettings(string? path = null)
     {
-        if (!File.Exists(ProtectedPath)) return;
+        // ConfigurationRoot cannot accept assignments until it has a writable provider.
+        var settings = new ConfigurationBuilder().AddInMemoryCollection().Build();
+        LoadProtected(settings, path);
+        return settings;
+    }
+    public static void LoadProtected(IConfiguration config, string? path = null)
+    {
+        path ??= ProtectedPath;
+        if (!File.Exists(path)) return;
         try
         {
-            var values = JsonSerializer.Deserialize<Dictionary<string, string>>(Protect(File.ReadAllBytes(ProtectedPath), false))!;
+            var values = JsonSerializer.Deserialize<Dictionary<string, string>>(Protect(File.ReadAllBytes(path), false))!;
             if (values is null || values.Keys.Any(k => !Keys.Contains(k))) throw new JsonException();
             foreach (var kv in values) config[kv.Key] = kv.Value;
         }
@@ -63,7 +71,7 @@ public static class MonitoringServerSetup
         { Console.Error.WriteLine("Windows 터미널에서 서버설정.cmd를 실행하세요."); return 1; }
         try
         {
-            var old = new ConfigurationBuilder().Build(); LoadProtected(old);
+            var old = ReadProtectedSettings();
             var mapPath = Read("저장한 지도 JSON 경로", Path.Combine(AppContext.BaseDirectory, "data", "map.demo.json")).Trim('"');
             var mapJson = await File.ReadAllTextAsync(mapPath);
             var map = JsonSerializer.Deserialize<MapDocument>(mapJson, FileCameraInventorySource.Json) ?? throw new JsonException();
@@ -118,10 +126,16 @@ public static class MonitoringServerSetup
     }
     public static async Task<int> RegisterGitHubAsync()
     {
+        var stage = "저장된 서버 설정 읽기";
         try
         {
-            var settings = new ConfigurationBuilder().Build(); LoadProtected(settings);
-            if (settings["CCTV_CONNECTIONS_JSON"] is null) throw new InvalidOperationException();
+            var settings = ReadProtectedSettings();
+            if (string.IsNullOrWhiteSpace(settings["CCTV_CONNECTIONS_JSON"]))
+            {
+                Console.Error.WriteLine("서버 설정에 카메라 접속 정보가 없습니다. 서버설정.cmd로 저장한 폴더에서 등록 도구를 실행하세요.");
+                return 1;
+            }
+            stage = "현재 지도 설정 읽기";
             var currentMap = Path.Combine(AppContext.BaseDirectory, "data", "map.demo.json");
             if (File.Exists(currentMap))
             {
@@ -131,18 +145,49 @@ public static class MonitoringServerSetup
             }
             foreach (var name in new[] { "CCTV_CONNECTIONS_JSON", "CCTV_MAP_CONFIGURATION_JSON", "CCTV_MONITOR_USER", "CCTV_MONITOR_PASSWORD_HASH", "VWORLD_API_KEY" })
             {
-                if (System.Text.Encoding.UTF8.GetByteCount(settings[name] ?? "") > 48 * 1024) throw new InvalidOperationException();
                 var targetName = name == "VWORLD_API_KEY" ? "CCTV_VWORLD_API_KEY" : name;
-                var start = new ProcessStartInfo("gh") { RedirectStandardInput = true, UseShellExecute = false };
+                if (System.Text.Encoding.UTF8.GetByteCount(settings[name] ?? "") > 48 * 1024)
+                {
+                    Console.Error.WriteLine(targetName + "의 크기가 GitHub Secrets의 48KB 제한을 넘었습니다. 기존 서버 설정은 유지했습니다.");
+                    return 1;
+                }
+                stage = "GitHub 시크릿 등록: " + targetName;
+                Console.WriteLine(stage);
+                var start = new ProcessStartInfo("gh") { RedirectStandardInput = true, RedirectStandardError = true, RedirectStandardOutput = true, UseShellExecute = false };
                 foreach (var arg in new[] { "secret", "set", targetName, "--repo", "hyeonbae-jeon/fire-monitoring" }) start.ArgumentList.Add(arg);
                 using var process = Process.Start(start) ?? throw new InvalidOperationException();
+                var error = process.StandardError.ReadToEndAsync();
+                var output = process.StandardOutput.ReadToEndAsync();
                 await process.StandardInput.WriteAsync(settings[name] ?? ""); process.StandardInput.Close();
-                await process.WaitForExitAsync(); if (process.ExitCode != 0) throw new InvalidOperationException();
+                await process.WaitForExitAsync();
+                var message = await error; await output;
+                if (process.ExitCode != 0)
+                {
+                    Console.Error.WriteLine(stage + " 실패 · " + GitHubFailureReason(message));
+                    return 1;
+                }
+                Console.WriteLine(targetName + " 등록 완료");
             }
             Console.WriteLine("GitHub 서버용 Secrets 등록 완료. 인증정보는 공개 빌드와 ZIP에 포함하지 않습니다."); return 0;
         }
-        catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException or IOException or JsonException)
-        { Console.Error.WriteLine("GitHub Secrets 등록 실패. GitHub CLI 설치 후 gh auth login으로 저장소 시크릿 관리 권한이 있는 계정에 로그인하세요. 비밀번호는 채팅에 보내지 마세요."); return 1; }
+        catch (System.ComponentModel.Win32Exception)
+        { Console.Error.WriteLine("GitHub CLI(gh)를 실행하지 못했습니다. gh --version이 되는 PowerShell에서 GitHub시크릿등록.cmd를 실행하세요."); return 1; }
+        catch (InvalidOperationException)
+        { Console.Error.WriteLine(stage + " 실패. 설정을 저장한 Windows 계정과 실행 폴더를 확인하세요. 기존 설정은 유지했습니다."); return 1; }
+        catch (JsonException)
+        { Console.Error.WriteLine(stage + " 실패. 지도 JSON 형식을 확인하세요. 기존 설정은 유지했습니다."); return 1; }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        { Console.Error.WriteLine(stage + " 실패. 파일 접근 또는 CLI 연결 상태를 확인하세요. 기존 설정은 유지했습니다."); return 1; }
+    }
+    public static string GitHubFailureReason(string error)
+    {
+        // Classify stderr without echoing credentials, request bodies or arbitrary CLI output.
+        if (error.Contains("403") || error.Contains("Resource not accessible", StringComparison.OrdinalIgnoreCase))
+            return "HTTP 403 · 저장소 시크릿 쓰기 권한이 거절됐습니다.";
+        if (error.Contains("404")) return "HTTP 404 · 저장소 주소와 해당 계정의 관리 권한을 확인하세요.";
+        if (error.Contains("401") || error.Contains("gh auth login", StringComparison.OrdinalIgnoreCase))
+            return "인증 확인 필요 · gh auth status에서 계정과 로그인 상태를 확인하세요.";
+        return "GitHub CLI 요청이 실패했습니다. 네트워크 연결과 시크릿 쓰기 권한을 확인하세요.";
     }
     public static async Task<int> ImportAsync()
     {

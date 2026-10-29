@@ -1,5 +1,6 @@
 using System.Text;
 using System.Security.Cryptography;
+using System.Text.Json;
 using WisenetPtzBridge.Services;
 
 var password = "synthetic-monitor-password";
@@ -8,6 +9,13 @@ if (!MonitoringServerSecurity.ValidHash(hash) || !MonitoringServerSecurity.Verif
     MonitoringServerSecurity.VerifyPassword("incorrect-password", hash) ||
     MonitoringServerSecurity.ValidHash("pbkdf2-sha256$600000$bad$bad") ||
     MonitoringServerSecurity.VerifyPassword(password, "pbkdf2-sha256$600000$bad$bad")) throw new Exception("Login hash validation failed.");
+var settingsPath = Path.Combine(Path.GetTempPath(), "monitor-settings-check-" + Guid.NewGuid().ToString("N"), "server-settings.protected");
+var emptySettings = MonitoringServerSetup.ReadProtectedSettings(settingsPath);
+emptySettings["CCTV_CONNECTIONS_JSON"] = "synthetic-memory-value";
+if (emptySettings["CCTV_CONNECTIONS_JSON"] != "synthetic-memory-value") throw new Exception("CLI settings must have a writable configuration provider.");
+foreach (var stderr in new[] { "HTTP 403: denied synthetic-private-value", "HTTP 401: synthetic-private-value", "HTTP 404: synthetic-private-value", "unexpected synthetic-private-value" })
+    if (MonitoringServerSetup.GitHubFailureReason(stderr).Contains("synthetic-private-value")) throw new Exception("CLI error output exposed raw diagnostic data.");
+if (!MonitoringServerSetup.GitHubFailureReason("HTTP 403").Contains("403")) throw new Exception("CLI permission diagnosis missing.");
 if (OperatingSystem.IsWindows())
 {
     var plain = Encoding.UTF8.GetBytes("synthetic-camera-secret-do-not-publish");
@@ -17,6 +25,30 @@ if (OperatingSystem.IsWindows())
     encrypted[0] ^= 255;
     try { MonitoringServerSetup.Protect(encrypted, false); throw new Exception("Corrupt protected settings accepted."); }
     catch (CryptographicException) { }
-    Console.WriteLine("Windows DPAPI round trip, tamper rejection and login password checks passed.");
+    var expected = new Dictionary<string,string>
+    {
+        ["MONITOR_SERVER_MODE"] = "true",
+        ["CCTV_CONNECTIONS_JSON"] = """{"schemaVersion":1,"cameras":[{"cameraId":"synthetic-camera","source":"hanwha","snapshotUrl":"http://synthetic-camera.invalid/stw-cgi/video.cgi?msubmenu=snapshot&action=view&Profile=1","username":"synthetic-user","password":"synthetic-camera-password"}]}""",
+        ["CCTV_MAP_CONFIGURATION_JSON"] = """{"schemaVersion":1,"crs":"EPSG:4326","positions":[]}""",
+        ["CCTV_MONITOR_USER"] = "synthetic-monitor", ["CCTV_MONITOR_PASSWORD_HASH"] = hash,
+        ["VWORLD_API_KEY"] = "synthetic-browser-key"
+    };
+    Directory.CreateDirectory(Path.GetDirectoryName(settingsPath)!);
+    try
+    {
+        var saved = MonitoringServerSetup.Protect(JsonSerializer.SerializeToUtf8Bytes(expected), true);
+        File.WriteAllBytes(settingsPath, saved);
+        var loaded = MonitoringServerSetup.ReadProtectedSettings(settingsPath);
+        foreach (var value in expected)
+            if (loaded[value.Key] != value.Value) throw new Exception("Encrypted CLI settings reload lost a field.");
+        loaded["CCTV_MONITOR_USER"] = "synthetic-in-memory-change";
+        if (MonitoringServerSetup.ReadProtectedSettings(settingsPath)["CCTV_MONITOR_USER"] != expected["CCTV_MONITOR_USER"] ||
+            !saved.SequenceEqual(File.ReadAllBytes(settingsPath))) throw new Exception("Settings inspection modified the encrypted file.");
+        File.WriteAllBytes(settingsPath, encrypted);
+        try { MonitoringServerSetup.ReadProtectedSettings(settingsPath); throw new Exception("Corrupt CLI settings accepted."); }
+        catch (InvalidOperationException) { }
+    }
+    finally { Directory.Delete(Path.GetDirectoryName(settingsPath)!, true); }
+    Console.WriteLine("Windows DPAPI, encrypted CLI settings reload/preservation, tamper rejection and login checks passed.");
 }
-else Console.WriteLine("Login password checks passed; Windows DPAPI checks run on Windows CI.");
+else Console.WriteLine("CLI writable settings, sanitized diagnostics and login checks passed; Windows DPAPI reload checks run on Windows CI.");

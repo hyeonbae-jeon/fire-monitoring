@@ -146,6 +146,35 @@ jobs:
           PY
       - name: Package Windows x64 demo
         run: python3 scripts/build-portable.py
+      - name: Prepare settings reload repair without replacing saved data
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile
+          repair = Path('artifacts/Windows-Server-Settings-Fix')
+          repair.mkdir(parents=True, exist_ok=True)
+          with zipfile.ZipFile('artifacts/Wisenet-Camera-Inventory-Demo-win-x64.zip') as archive:
+              for name in ['WisenetPtzBridge.dll', 'WisenetPtzBridge.pdb']:
+                  repair.joinpath(name).write_bytes(archive.read('Wisenet-Camera-Inventory-Demo/' + name))
+          repair.joinpath('업데이트방법.txt').write_text(
+              '자동 수신 서버 설정 재읽기 수정\n\n'
+              '적용 대상: 자동 수신 서버 기능이 포함된 2026-10-28 Windows 실행패키지\n'
+              '1. 실행 중인 WisenetPtzBridge 프로그램 창을 종료합니다.\n'
+              '2. 이 폴더의 WisenetPtzBridge.dll과 WisenetPtzBridge.pdb를 기존 실행파일 폴더에 덮어씁니다.\n'
+              '3. 기존 data 폴더는 그대로 둡니다. 서버설정.cmd를 다시 실행하거나 카메라 접속 정보를 재입력할 필요가 없습니다.\n'
+              '4. 설정을 저장한 동일 Windows 계정에서 기존 GitHub시크릿등록.cmd를 실행합니다.\n'
+              '5. 시크릿별 등록 완료와 최종 완료 메시지를 확인합니다.\n\n'
+              '로그인 정상·설정 파일 존재 상태에서도 CLI 설정 저장소가 빠져 등록 전에 실패하던 오류를 수정했습니다.\n'
+              '설정을 다시 여는 서버설정.cmd에도 같은 수정이 적용됩니다.\n', encoding='utf-8-sig')
+          assert {p.name for p in repair.iterdir()} == {'WisenetPtzBridge.dll', 'WisenetPtzBridge.pdb', '업데이트방법.txt'}
+          PY
+      - name: Register small settings repair download
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-Server-Settings-Fix
+          path: artifacts/Windows-Server-Settings-Fix/
+          if-no-files-found: error
+          retention-days: 30
       - name: Register downloadable artifact
         id: artifact
         uses: actions/upload-artifact@v4
