@@ -14,7 +14,22 @@ namespace WisenetPtzBridge.Services;
 
 public static class MonitoringServerSecurity
 {
+    public const string Admin = "admin", Viewer = "viewer";
+    private static readonly HashSet<string> ViewerReads = new(StringComparer.OrdinalIgnoreCase)
+    { "/api/session", "/api/map-configuration", "/api/map-client-settings", "/api/auto-monitor/status", "/api/auto-monitor/frame" };
     public static bool Enabled(IConfiguration config) => config["MONITOR_SERVER_MODE"] == "true";
+    public static bool ValidUser(string? value) => !string.IsNullOrWhiteSpace(value) && value.Length <= 100 && value == value.Trim() && !value.Any(char.IsControl);
+    public static void ValidateAccounts(IConfiguration config)
+    {
+        if (!ValidUser(config["CCTV_MONITOR_USER"]) || !ValidHash(config["CCTV_MONITOR_PASSWORD_HASH"] ?? ""))
+            throw new InvalidOperationException("관리자 로그인 이름과 비밀번호 해시를 확인하세요.");
+        var user = config["CCTV_VIEWER_USER"]; var hash = config["CCTV_VIEWER_PASSWORD_HASH"];
+        if (string.IsNullOrEmpty(user) && string.IsNullOrEmpty(hash)) return;
+        if (!ValidUser(user) || !ValidHash(hash ?? "") || user == config["CCTV_MONITOR_USER"])
+            throw new InvalidOperationException("일반 사용자 로그인은 관리자와 다른 이름 및 유효한 비밀번호 해시가 필요합니다.");
+    }
+    private static string Stamp(IConfiguration config, string role) => Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(
+        role + "\n" + config[role == Admin ? "CCTV_MONITOR_USER" : "CCTV_VIEWER_USER"] + "\n" + config[role == Admin ? "CCTV_MONITOR_PASSWORD_HASH" : "CCTV_VIEWER_PASSWORD_HASH"])));
     public static string HashPassword(string password)
     {
         if (password.Length < 12 || password.Length > 512) throw new ArgumentException("모니터링 로그인 비밀번호는 12~512자로 입력하세요.");
@@ -47,15 +62,19 @@ public static class MonitoringServerSecurity
     public static void Add(WebApplicationBuilder builder)
     {
         if (!Enabled(builder.Configuration)) return;
-        var hash = builder.Configuration["CCTV_MONITOR_PASSWORD_HASH"] ?? "";
-        if (string.IsNullOrWhiteSpace(builder.Configuration["CCTV_MONITOR_USER"]) ||
-            builder.Configuration["CCTV_MONITOR_USER"]!.Length > 100 || !ValidHash(hash))
-            throw new InvalidOperationException("서버 모드에는 모니터링 로그인 이름과 PBKDF2 비밀번호 해시가 필요합니다.");
+        ValidateAccounts(builder.Configuration);
         builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme).AddCookie(o =>
         {
             o.Cookie.Name = "CctvMonitor.Session"; o.Cookie.HttpOnly = true; o.Cookie.SameSite = SameSiteMode.Strict;
             o.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest; o.ExpireTimeSpan = TimeSpan.FromHours(8); o.SlidingExpiration = true;
             o.Events.OnRedirectToLogin = c => { c.Response.StatusCode = 401; return Task.CompletedTask; };
+            o.Events.OnValidatePrincipal = async c =>
+            {
+                var role = c.Principal?.FindFirstValue(ClaimTypes.Role);
+                var config = c.HttpContext.RequestServices.GetRequiredService<IConfiguration>();
+                if (role is not (Admin or Viewer) || c.Principal?.FindFirstValue("account-stamp") != Stamp(config, role))
+                { c.RejectPrincipal(); await c.HttpContext.SignOutAsync(); }
+            };
         });
         builder.Services.AddAuthorization();
         var protection = builder.Services.AddDataProtection().SetApplicationName("FireMonitoringServer").PersistKeysToFileSystem(new DirectoryInfo(
@@ -97,6 +116,10 @@ public static class MonitoringServerSecurity
                 else context.Response.Redirect("/login");
                 return;
             }
+            if (context.Request.Path.StartsWithSegments("/api") && !context.User.IsInRole(Admin) &&
+                !(context.Request.Method is "GET" or "HEAD" && ViewerReads.Contains(context.Request.Path.Value ?? "")) &&
+                !(context.Request.Method == "POST" && context.Request.Path == "/api/logout"))
+            { context.Response.StatusCode = 403; await context.Response.WriteAsJsonAsync(new { error = "관리자 권한이 필요합니다." }); return; }
             if (context.Request.Path.StartsWithSegments("/api") && context.Request.Method is not ("GET" or "HEAD" or "OPTIONS"))
             {
                 try { await context.RequestServices.GetRequiredService<IAntiforgery>().ValidateRequestAsync(context); }
@@ -115,15 +138,17 @@ public static class MonitoringServerSecurity
             try { await antiforgery.ValidateRequestAsync(context); }
             catch (AntiforgeryValidationException) { return Results.StatusCode(403); }
             var form = await context.Request.ReadFormAsync();
-            if (form["username"] != app.Configuration["CCTV_MONITOR_USER"] ||
-                !VerifyPassword(form["password"].ToString(), app.Configuration["CCTV_MONITOR_PASSWORD_HASH"]!))
+            var user = form["username"].ToString(); var password = form["password"].ToString();
+            var role = user == app.Configuration["CCTV_MONITOR_USER"] && VerifyPassword(password, app.Configuration["CCTV_MONITOR_PASSWORD_HASH"]!) ? Admin :
+                !string.IsNullOrEmpty(app.Configuration["CCTV_VIEWER_USER"]) && user == app.Configuration["CCTV_VIEWER_USER"] && VerifyPassword(password, app.Configuration["CCTV_VIEWER_PASSWORD_HASH"]!) ? Viewer : null;
+            if (role is null)
                 return Results.Content("로그인 정보를 확인하세요. <a href=/login>다시 로그인</a>", "text/html; charset=utf-8", statusCode: 401);
             await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme,
-                new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, form["username"].ToString())], CookieAuthenticationDefaults.AuthenticationScheme)));
+                new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, user), new Claim(ClaimTypes.Role, role), new Claim("account-stamp", Stamp(app.Configuration, role))], CookieAuthenticationDefaults.AuthenticationScheme)));
             return Results.Redirect("/");
         }).RequireRateLimiting("monitor-login");
         app.MapGet("/api/session", (HttpContext context, IAntiforgery antiforgery) => Results.Ok(new
-        { serverMode = true, csrfToken = antiforgery.GetAndStoreTokens(context).RequestToken }));
+        { serverMode = true, role = context.User.IsInRole(Admin) ? Admin : Viewer, userName = context.User.Identity!.Name, csrfToken = antiforgery.GetAndStoreTokens(context).RequestToken }));
         app.MapPost("/api/logout", async (HttpContext context) =>
         { await context.SignOutAsync(); return Results.Ok(new { ok = true }); });
     }

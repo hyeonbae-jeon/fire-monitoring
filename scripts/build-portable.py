@@ -46,7 +46,7 @@ with tempfile.TemporaryDirectory() as temporary:
     for name in ['vworld-monitoring.md', 'terrain-calibration.md', 'geographic-calibration.md', 'visual-tracking.md', 'video-direction-feasibility.md', 'ssm-report-import.md', 'screen-capture.md']:
         shutil.copyfile(ROOT / 'docs' / name, package / 'docs' / name)
     (package / '문제진단.cmd').write_bytes(b'@echo off\r\ncd /d "%~dp0"\r\nWisenetPtzBridge.exe --no-browser\r\npause\r\n')
-    for name, option in [('서버설정.cmd', '--configure-monitoring-server'), ('GitHub시크릿등록.cmd', '--register-github-secrets')]:
+    for name, option in [('서버설정.cmd', '--configure-monitoring-server'), ('계정권한설정.cmd', '--configure-monitoring-accounts'), ('GitHub시크릿등록.cmd', '--register-github-secrets')]:
         (package / name).write_bytes(('@echo off\r\ncd /d "%~dp0"\r\nWisenetPtzBridge.exe '+option+'\r\npause\r\n').encode('ascii'))
     shutil.copyfile(ROOT / 'scripts/register-monitor-startup.ps1', package / '서버자동시작등록.ps1')
     shutil.copyfile(ROOT / 'docs/automatic-monitoring.md', package / 'docs/automatic-monitoring.md')

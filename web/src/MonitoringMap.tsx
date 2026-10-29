@@ -15,7 +15,8 @@ import {SmokeAlerts} from './SmokeAlerts';
 import {LiveCapture,type CapturedFrame} from './LiveCapture';
 import {NativePtzTracking} from './NativePtzTracking';
 import {InstallationPositionEditor} from './InstallationPositionEditor';
-import {useAutomaticMonitoring,automaticCoverage} from './automatic-monitoring';
+import {useAutomaticMonitoring,automaticCoverage,automaticPose} from './automatic-monitoring';
+import type {CoverageShape} from './coverage-model';
 import {AutomaticMonitoringPanel} from './AutomaticMonitoringPanel';
 import {monitorFetch} from './monitor-server';
 import type {DevicePtzObservation} from './DevicePtzStatus';
@@ -34,7 +35,7 @@ async function requestMap(options?:RequestInit):Promise<MapSnapshot>{
  if(typeof body?.revision!=='string')throw new Error('지도 설정 응답을 확인하세요.');
  return {revision:body.revision,configuration:parseConfiguration(JSON.stringify(body.configuration))};
 }
-export function MonitoringMap({active=true,standalone=false,desktopDemo=false,serverMode=false}:{active?:boolean;standalone?:boolean;desktopDemo?:boolean;serverMode?:boolean}){
+export function MonitoringMap({active=true,standalone=false,desktopDemo=false,serverMode=false,canManage=true}:{active?:boolean;standalone?:boolean;desktopDemo?:boolean;serverMode?:boolean;canManage?:boolean}){
  const initialMap=standalone&&publishedMap?publishedMap:{...sample,layers:[]};
  const [configuration,setConfiguration]=useState<MapConfiguration>({schemaVersion:1,crs:'EPSG:4326',positions:initialMap.positions}),[selected,setSelected]=useState(initialMap.positions[0]?.id??'');
  const [revision,setRevision]=useState<string|null>(null),[dirty,setDirty]=useState(false),[writeKey,setWriteKey]=useState(''),[saving,setSaving]=useState(false),[storageStatus,setStorageStatus]=useState('중앙 지도 설정을 읽는 중…');
@@ -66,7 +67,16 @@ export function MonitoringMap({active=true,standalone=false,desktopDemo=false,se
  const edits=useRef(0),iframe=useRef<HTMLIFrameElement>(null),pending=useRef(new Map<string,{resolve:(ground:PreviewGround)=>void;reject:(error:Error)=>void;timer:number}>());
  const positions=configuration.positions,current=positions.find(p=>p.id===selected);
  const automatic=useAutomaticMonitoring(serverMode&&active);
- const runtimeCoverage=useMemo(()=>automaticCoverage(positions,automatic.state,automatic.now),[positions,automatic.state,automatic.now]);
+ // Image counters and receive timestamps must not rebuild unchanged map geometry.
+ const runtimeCoverageKey=JSON.stringify(automaticCoverage(positions,automatic.state,automatic.now));
+ const runtimeCoverage=useMemo<CoverageShape[]>(()=>JSON.parse(runtimeCoverageKey),[runtimeCoverageKey]);
+ const [automaticView,setAutomaticView]=useState(false),[automaticViewError,setAutomaticViewError]=useState('');
+ const automaticViewRequest=useRef(''),automaticViewSent=useRef('');
+ const currentFeed=automatic.state?.cameras.find(c=>c.cameraId===selected),currentAutomaticPose=current?automaticPose(current,currentFeed,automatic.now):null;
+ const currentObservation=currentFeed?.feed.observation;
+ const automaticAspect=currentObservation?.width&&currentObservation?.height?currentObservation.width/currentObservation.height:16/9;
+ const automaticViewData=current&&currentAutomaticPose?{position:current,pose:currentAutomaticPose,groundElevationM:current.nativeTracking!.groundElevationM,groundElevationSource:'operator',aspectRatio:automaticAspect,sourceSession:currentObservation?.sessionId}:null;
+ const automaticViewKey=JSON.stringify(automaticViewData);
  const diagnosticAspect=diagnostic&&matchesDiagnosticCamera(diagnostic,current)?diagnostic.reference.width/diagnostic.reference.height:null;
  const previousDiagnosticAspect=useRef(diagnosticAspect);
  const diagnosticPoints=useMemo(()=>active&&tools==='cameras'&&diagnostic&&matchesDiagnosticCamera(diagnostic,current)?diagnostic.points:[],[active,tools,diagnostic,current]);
@@ -103,7 +113,7 @@ export function MonitoringMap({active=true,standalone=false,desktopDemo=false,se
  function post(type:string,data:object={}){if(frame)iframe.current?.contentWindow?.postMessage({scope:'vworld-prototype',session:frame.session,type,...data},location.origin);}
  function cancelGeoPick(message:string){const pending=geoPending.current;if(!pending)return;geoPending.current=null;pending.cleanup();pending.reject(new Error(message));setGeoPicking(null);setGeoPickError('');post('geo-point-mode',{enabled:false});}
  useEffect(()=>{if(!active||tools!=='cameras')cancelGeoPick('지도 도구가 변경돼 기준점 지정을 취소했습니다.');},[active,tools]);
- function exitPreview(){cancelGeoPick('지도 시점이 변경돼 기준점 지정을 취소했습니다.');cancelPending('가상 시점 요청이 취소됐습니다.');setPreviewEpoch(v=>v+1);setCalibrating(false);post('end-calibration');post('draw',{positions,selected,sector:null,flyTo:true});}
+ function exitPreview(){setAutomaticView(false);automaticViewRequest.current='';automaticViewSent.current='';cancelGeoPick('지도 시점이 변경돼 기준점 지정을 취소했습니다.');cancelPending('가상 시점 요청이 취소됐습니다.');setPreviewEpoch(v=>v+1);setCalibrating(false);post('end-calibration');post('draw',{positions,selected,sector:null,flyTo:true});}
  function pickGeoPoint(signal:AbortSignal):Promise<MapControlPoint>{
   if(!frame||!ready||!active||signal.aborted)return Promise.reject(new Error('VWorld 지도에 연결한 뒤 기준점을 지정하세요.'));
   exitPreview();setLocationPicking(false);pickingRef.current=false;setTools('cameras');
@@ -119,6 +129,7 @@ export function MonitoringMap({active=true,standalone=false,desktopDemo=false,se
   const timer=window.setTimeout(()=>{if(!completed){setStatus('연결 시간 초과');setError('30초 안에 뷰어가 준비되지 않았습니다. 키 등록 주소와 SDK·지형 서버 접속을 확인하세요.');}},30000);
   const listener=(e:MessageEvent)=>{
    if(e.source!==iframe.current?.contentWindow||e.origin!==location.origin||e.data?.scope!=='vworld-prototype'||e.data.session!==frame.session)return;
+   if(e.data.type==='automatic-view-error'&&e.data.requestId===automaticViewRequest.current){setAutomaticView(false);automaticViewRequest.current='';automaticViewSent.current='';setAutomaticViewError(String(e.data.message));post('end-calibration');}
    if(e.data.type==='select-camera'&&positionsRef.current.some(p=>p.id===e.data.id))selectPosition(e.data.id);
    if(e.data.type==='ready'){completed=true;clearTimeout(timer);setReady(true);setError('');setStatus('VWorld 3D 뷰어 초기화 완료 · 지형 표출은 화면에서 확인하세요.');}
    if(e.data.type==='error'){completed=true;clearTimeout(timer);setReady(false);setLocationPicking(false);setStatus('VWorld 연결 실패');setError(String(e.data.message));cancelPending('VWorld 연결 실패');}
@@ -149,7 +160,23 @@ export function MonitoringMap({active=true,standalone=false,desktopDemo=false,se
   };
   window.addEventListener('message',listener);return()=>{clearTimeout(timer);window.removeEventListener('message',listener);cancelGeoPick('지도 연결이 바뀌었습니다.');cancelPending('지도 연결이 바뀌었습니다.');};
  },[frame]);
- useEffect(()=>{if(frame&&ready)post('draw',{positions,selected,sector:polygon});},[frame,ready,configuration,selected,simulation,heading,fov,range,showEstimate,calibrating,coverageShapes]);
+ const markerDrawKey=JSON.stringify({positions,selected,sector:polygon});
+ useEffect(()=>{if(frame&&ready)post('draw',JSON.parse(markerDrawKey));},[frame,ready,markerDrawKey]);
+ function stopAutomaticView(message=''){
+  setAutomaticView(false);automaticViewRequest.current='';automaticViewSent.current='';setAutomaticViewError(message);post('end-calibration');post('fit-layers',{bounds:extent});
+ }
+ function toggleAutomaticView(){
+  if(automaticView){stopAutomaticView();return;}
+  if(!currentAutomaticPose||!ready)return;
+  cancelGeoPick('현재 카메라 시점으로 전환했습니다.');cancelPending('현재 카메라 시점으로 전환했습니다.');setCalibrating(false);setPreviewEpoch(v=>v+1);post('end-calibration');
+  automaticViewSent.current='';setAutomaticViewError('');setAutomaticView(true);
+ }
+ useEffect(()=>{
+  if(!automaticView)return;
+  if(!ready||!active||tools!=='auto'||!automaticViewData){stopAutomaticView('최신 영상·PTZ를 확인할 수 없어 전체 감시 지도로 돌아왔습니다.');return;}
+  if(automaticViewSent.current===automaticViewKey)return;
+  automaticViewSent.current=automaticViewKey;automaticViewRequest.current=crypto.randomUUID();post('automatic-view',{requestId:automaticViewRequest.current,...automaticViewData});
+ },[automaticView,automaticViewKey,ready,active,tools,frame]);
  useEffect(()=>{if(frame&&ready)post('layers',{revision:layerRevision,layers,visibleIds:visibleLayers});},[frame,ready,layers,layerRevision,visibleLayers]);
  useEffect(()=>{if(frame&&ready){coverageRequest.current=crypto.randomUUID();post('coverage',{requestId:coverageRequest.current,shapes:computedCoverageShapes,selected});}},[frame,ready,computedCoverageShapes,selected]);
  useEffect(()=>{if(frame&&ready){visibilityRequest.current=crypto.randomUUID();post('visibility',{requestId:visibilityRequest.current,results:displayedVisibility});}},[frame,ready,displayedVisibility]);
@@ -252,12 +279,19 @@ export function MonitoringMap({active=true,standalone=false,desktopDemo=false,se
    if(ticket===edits.current){setConfiguration(result.configuration);setDirty(false);}setRevision(result.revision);setWriteKey('');setStorageStatus(ticket===edits.current?'중앙 지도 설정 저장 완료 · 다른 브라우저에서 다시 불러올 수 있습니다.':'이전 설정 저장 완료 · 이후 변경은 추가 저장이 필요합니다.');
   }catch(e){setError((e as Error).message);}finally{setSaving(false);}
  }
- const mapAspect=liveView?.aspect??aspect??diagnosticAspect;
+ const mapAspect=automaticView?automaticAspect:liveView?.aspect??aspect??diagnosticAspect;
  const mapPanel=<div className="map-panel" data-reference={mapAspect?'true':undefined} style={mapAspect?{height:'auto',aspectRatio:mapAspect,'--reference-aspect':mapAspect} as CSSProperties:undefined}>{frame?<iframe key={frame.session} title="VWorld 3D 지도" ref={iframe} src={import.meta.env.BASE_URL+'vworld-viewer.html'} sandbox="allow-scripts allow-same-origin" onLoad={()=>iframe.current?.contentWindow?.postMessage({scope:'vworld-bootstrap',type:'initialize',html:frame.html},location.origin)}/>:<><p className="schematic-label">좌표 배치도 · 실제 지형 아님 · 북쪽 ↑</p><svg viewBox="0 0 800 480" role="img" aria-label="북한산 시험 카메라 좌표 배치도">{displayedLines.map(({layer,lines})=><g key={layer.id} data-layer={layer.id}>{lines.map((line,i)=><polyline key={i} points={line.map(([lon,lat])=>xy(lon,lat).join(',')).join(' ')} fill="none" stroke={layer.kind==='boundary'?'#71f2cf':'#ffca68'} strokeWidth={layer.kind==='boundary'?2.5:1.5}/>)}</g>)}{coverageShapes.map(shape=><g key={shape.cameraId} data-coverage={shape.cameraId} onClick={()=>selectPosition(shape.cameraId)}><polygon points={shape.coordinates.map(([lon,lat])=>xy(lon,lat).join(',')).join(' ')} fill={shape.color} fillOpacity={shape.cameraId===selected?'.28':'.16'} stroke={shape.color} strokeWidth={shape.cameraId===selected?2:1}/><polyline points={shape.centerline.map(([lon,lat])=>xy(lon,lat).join(',')).join(' ')} stroke={shape.color} strokeDasharray="5 4"/></g>)}{polygon&&<polygon points={polygon.map(([lon,lat])=>xy(lon,lat).join(',')).join(' ')} fill="#f5a623" fillOpacity=".35" stroke="#f5a623"/>}{diagnosticPoints.map(p=>{const[x,y]=xy(p.lon,p.lat);return <g key={p.number} data-diagnostic={p.number}><circle cx={x} cy={y} r={7} fill={p.validation?'#bc8aff':'#ee984b'}/><text x={x+10} y={y-10} fill="white" fontSize="13">{p.number+' · '+p.label}</text></g>;})}{positions.map(p=>{const[x,y]=xy(p.lon,p.lat),alarm=alertMarkers.find(a=>a.cameraId===p.id);return <g key={p.id} data-alert={alarm?.cameraId} onClick={()=>selectPosition(p.id)}>{alarm&&<><title>{`알림 자료 ${alarm.count}건 · ${p.name} · 카메라 위치 · 연기 위치 미확인`}</title><circle cx={x} cy={y} r={16} fill="none" stroke="#ff7474" strokeWidth={3}/></>}<circle cx={x} cy={y} r={p.id===selected?10:6} fill="#55deed"/><text x={x+14} y={y+5} fill="white" fontSize="16">{p.name}</text></g>;})}</svg></>}</div>;
  return <main className="monitoring map-workspace" data-live={tools==='live'||tools==='auto'||serverMode&&tools!=='cameras'?'true':undefined}>
-  <div className="map-topbar"><div><strong>VWorld 3D · 산불감시 지도</strong><span role="status">{status}</span></div><div className="map-tool-tabs" aria-label="지도 도구"><button aria-pressed={tools==='cameras'} onClick={()=>setTools(tools==='cameras'?'':'cameras')}>카메라·설정</button><button aria-pressed={tools==='alerts'} onClick={()=>setTools(tools==='alerts'?'':'alerts')}>AI 감지 알림</button>{!standalone&&!serverMode&&<button aria-pressed={tools==='live'} onClick={()=>setTools(tools==='live'?'':'live')}>실시간 영상</button>}{serverMode&&<button aria-pressed={tools==='auto'} onClick={()=>setTools('auto')}>자동 감시</button>}<button aria-pressed={tools==='coverage'} onClick={()=>setTools(tools==='coverage'?'':'coverage')}>관측 범위</button><button aria-pressed={tools==='layers'} onClick={()=>setTools(tools==='layers'?'':'layers')}>지도 레이어</button><button aria-pressed={tools==='location'} onClick={()=>setTools(tools==='location'?'':'location')}>위치·지번</button><button aria-pressed={tools==='connection'} onClick={()=>setTools(tools==='connection'?'':'connection')}>지도 연결</button></div></div>
+  <div className="map-topbar"><div><strong>VWorld 3D · 산불감시 지도</strong><span role="status">{status}</span></div><div className="map-tool-tabs" aria-label="지도 도구">
+   {canManage&&<button aria-pressed={tools==='cameras'} onClick={()=>setTools(tools==='cameras'?'':'cameras')}>카메라·설정</button>}
+   <button aria-pressed={tools==='alerts'} onClick={()=>setTools(tools==='alerts'?'':'alerts')}>AI 감지 알림</button>
+   {!standalone&&!serverMode&&<button aria-pressed={tools==='live'} onClick={()=>setTools(tools==='live'?'':'live')}>실시간 영상</button>}
+   {serverMode&&<button aria-pressed={tools==='auto'} onClick={()=>setTools('auto')}>자동 감시</button>}
+   <button aria-pressed={tools==='coverage'} onClick={()=>setTools(tools==='coverage'?'':'coverage')}>관측 범위</button>
+   {canManage&&<><button aria-pressed={tools==='layers'} onClick={()=>setTools(tools==='layers'?'':'layers')}>지도 레이어</button><button aria-pressed={tools==='location'} onClick={()=>setTools(tools==='location'?'':'location')}>위치·지번</button><button aria-pressed={tools==='connection'} onClick={()=>setTools(tools==='connection'?'':'connection')}>지도 연결</button></>}
+  </div></div>
   {error&&<p role="alert" className="error map-error">{error}</p>}
-  <div className="monitor-grid"><aside className="map-floating camera-panel" hidden={tools!=='cameras'}><h2>카메라 위치</h2>
+  <div className="monitor-grid">{canManage&&<aside className="map-floating camera-panel" hidden={tools!=='cameras'}><h2>카메라 위치</h2>
    {positions.map(p=><button className={p.id===selected?'camera active':'camera'} key={p.id} onClick={()=>selectPosition(p.id)}>{p.name}<small>{p.positionSource==='synthetic'?'시험 좌표':'입력 좌표'} · {p.orientation?.status==='estimate'?'영상·지형 추정':'방향 UNKNOWN'}{p.nativeTracking?' · 장비 기준 있음':''}</small></button>)}
    <button disabled={!current||!ready} onClick={exitPreview}>선택 위치로 지도 이동</button>
    <p>위도 {current?.lat??'—'} / 경도 {current?.lon??'—'}<br/>SSM UUID: {current?.ssmUuid??'미연결'}</p>
@@ -272,32 +306,32 @@ export function MonitoringMap({active=true,standalone=false,desktopDemo=false,se
    {!standalone&&<>{!serverMode&&<label>지도 저장 키<input type="password" autoComplete="off" value={writeKey} onChange={e=>setWriteKey(e.target.value)}/></label>}<button disabled={saving||!dirty||!serverMode&&!writeKey||revision===null} onClick={()=>void saveCentral()}>중앙 지도 설정 저장</button><button disabled={saving} onClick={()=>{if(!dirty||window.confirm('저장하지 않은 지도 설정을 버리고 다시 불러올까요?'))void loadCentral();}}>중앙 지도 설정 다시 불러오기</button></>}
    </details>
   <details className="simulation"><summary>시험 방향 표시</summary><label className="inline"><input type="checkbox" checked={showEstimate} disabled={!estimate} onChange={e=>setShowEstimate(e.target.checked)}/>저장 추정 방향 부채꼴 표시</label><label className="inline"><input type="checkbox" checked={simulation} onChange={e=>setSimulation(e.target.checked)}/>시험 방향 부채꼴 표시</label><p>부채꼴은 수평 방향 시각화입니다. 표시 거리는 임의값이며 산에 가리는 구간이나 실제 촬영 범위를 계산하지 않습니다. 가상 시점 보정 중에는 부채꼴을 숨깁니다.</p><div className="simulation-controls">{simulation&&<><label>시험 방위각 {heading}° (북=0°, 동=90°)<input type="range" min="0" max="359" value={heading} onChange={e=>setHeading(Number(e.target.value))}/></label><label>시험 수평 화각 {fov}°<input type="range" min="10" max="120" value={fov} onChange={e=>setFov(Number(e.target.value))}/></label></>}<label>표시 거리 {range}m<input type="range" min="100" max="3000" step="100" value={range} onChange={e=>setRange(Number(e.target.value))}/></label></div></details>
-  </aside>
+  </aside>}
   <aside className="map-floating coverage-panel" hidden={tools!=='coverage'}>{serverMode?<><h2>현재 관측 범위</h2><p>최신 PTZ 범위 {runtimeCoverage.length}/{positions.length}대 · 수신이 끊긴 범위는 숨깁니다.</p><label><input type="checkbox" checked={!coverageHidden} onChange={e=>setCoverageHidden(!e.target.checked)}/>현재 관측 범위 표시</label><label><input type="checkbox" checked={coverageSelectedOnly} onChange={e=>setCoverageSelectedOnly(e.target.checked)}/>선택 카메라만 표시</label><button onClick={()=>{exitPreview();post('fit-layers',{bounds:extent});}}>전체 현재 범위 보기</button><p>저장한 지도 기준과 현재 PTZ로 계산한 수평 근사 범위이며 거리는 서버에 등록한 표시 거리입니다.</p></>:<><CoverageControls positions={positions} current={current} plans={coveragePlans} hidden={coverageHidden} selectedOnly={coverageSelectedOnly} suspended={calibrating} storageStatus={coverageStorageStatus} onSelect={selectPosition} onPlans={setCoveragePlans} onHidden={setCoverageHidden} onSelectedOnly={setCoverageSelectedOnly} onStorageStatus={setCoverageStorageStatus}/><TerrainVisibilityControls current={current} plan={coveragePlans.find(p=>p.cameraId===selected)} ready={ready} suspended={calibrating} visibility={visibility}/><button disabled={!ready||!coverageShapes.length} onClick={()=>{exitPreview();post('fit-layers',{bounds:extent});}}>전체 범위 시안 보기</button>{coverageRenderError&&<p role="alert" className="error">{coverageRenderError}</p>}</>}</aside>
-  <aside className="map-floating layers-panel" hidden={tools!=='layers'}><h2>지도 레이어</h2>
+  {canManage&&<aside className="map-floating layers-panel" hidden={tools!=='layers'}><h2>지도 레이어</h2>
    {standalone&&publishedMap&&<p className="help">북한산 공원경계·탐방로와 카메라 9개를 기본 표시합니다. 파일을 선택할 필요가 없습니다.</p>}
    {layers.length?layers.map(l=><div className="layer-row" key={l.id}><label className="inline"><input type="checkbox" checked={visibleLayers.includes(l.id)} onChange={e=>setVisibleLayers(ids=>e.target.checked?[...ids,l.id]:ids.filter(id=>id!==l.id))}/><span><i className={'layer-swatch '+l.kind}/>{l.name}</span></label><small>{l.geojson.features.length}개 도형 · 자료 기준 {l.sourceDate}<br/>{!visibleLayers.includes(l.id)?'숨김':!frame?'좌표 배치도 표시':layerStatus[l.id]??'지도 표시 준비 중…'}</small></div>):<p>불러온 경계·탐방로가 없습니다.</p>}
    <button disabled={!ready||!extentPoints.length} onClick={()=>{exitPreview();post('fit-layers',{bounds:extent});}}>전체 위치·경계 보기</button>
    <button disabled={!layers.length} onClick={downloadBundle}>지도자료 전체 다운로드</button>
    <details><summary>다른 지도자료 사용 (선택)</summary><label>지도자료 JSON 불러오기<input type="file" accept=".json,application/json" onChange={e=>{void importBundle(e.target.files?.[0]);e.target.value='';}}/></label><p className="help">카메라 좌표·경계·탐방로를 함께 바꿉니다. 선택한 파일은 이 브라우저에서 읽으며 서버에 업로드하지 않습니다.</p></details>
    <p className="help">지도자료 전체 파일에는 현재 카메라 설정과 레이어가 포함됩니다. 중앙 설정 저장은 카메라 위치·보정값을 저장합니다.</p>
-  </aside>
-  <aside className="map-floating connection-panel" hidden={tools!=='connection'}><h2>지도 연결</h2>
+  </aside>}
+  {canManage&&<aside className="map-floating connection-panel" hidden={tools!=='connection'}><h2>지도 연결</h2>
    {deploymentKey?<><p className="success">등록된 지도 키 자동 사용 · 다시 입력할 필요 없습니다.</p><button onClick={()=>connect(deploymentKey)}>등록된 키로 다시 연결</button><details><summary>다른 키로 연결 (선택)</summary><label>VWorld 3D 키<input type="password" autoComplete="off" value={key} onChange={e=>setKey(e.target.value)}/></label><button onClick={()=>connect()} disabled={!key.trim()}>VWorld 3D 연결</button></details></>:<><label>VWorld 3D 키<input type="password" autoComplete="off" value={key} onChange={e=>setKey(e.target.value)}/></label><button onClick={()=>connect()} disabled={!key.trim()}>VWorld 3D 연결</button></>}
    <button onClick={()=>{exitPreview();setFrame(null);setReady(false);setLocationPicking(false);setLocationPoint(null);setLocationError('');setAppliedKey('');setStatus('좌표 배치도 · VWorld 미연결');setError('');}}>좌표 배치도로 보기</button>
    <p className="help">{deploymentKey?'배포된 지도 키를 사용합니다.':'등록된 키가 없으면 이 화면에서 직접 입력할 수 있습니다.'} 키는 지도 요청 시 브라우저에 전달됩니다. VWorld에 이 사이트 주소를 등록하세요.</p><p className="help">현재 사이트: {location.origin}{import.meta.env.BASE_URL}</p>
-  </aside>
-  <aside className="map-floating location-panel" hidden={tools!=='location'}><LocationLookup point={locationPoint} picking={locationPicking} ready={ready} apiKey={appliedKey} pickError={locationError} onPicking={v=>{setLocationPicking(v);setLocationError('');}} onPoint={p=>{setLocationPoint(p);setLocationError('');}}/></aside>
-  <aside className="map-floating smoke-alert-panel" hidden={tools!=='alerts'}>{calibrating&&<p className="help">가상 시점 보정 중 알림 카메라 표시 숨김</p>}<SmokeAlerts document={alertDocument} bindings={alertBindings} positions={positions} hidden={alertsHidden} onDocument={setAlertDocument} onBindings={setAlertBindings} onHidden={setAlertsHidden} onSelect={selectPosition} renderError={alarmRenderError}/></aside>
-  {serverMode&&tools==='auto'&&<aside className="map-floating map-live-panel"><AutomaticMonitoringPanel positions={positions} current={current} state={automatic.state} now={automatic.now} error={automatic.error} onSelect={selectPosition} onFit={()=>{exitPreview();post('fit-layers',{bounds:extent});}}/></aside>}
+  </aside>}
+  {canManage&&<aside className="map-floating location-panel" hidden={tools!=='location'}><LocationLookup point={locationPoint} picking={locationPicking} ready={ready} apiKey={appliedKey} pickError={locationError} onPicking={v=>{setLocationPicking(v);setLocationError('');}} onPoint={p=>{setLocationPoint(p);setLocationError('');}}/></aside>}
+  <aside className="map-floating smoke-alert-panel" hidden={tools!=='alerts'}>{calibrating&&<p className="help">가상 시점 보정 중 알림 카메라 표시 숨김</p>}{canManage?<SmokeAlerts document={alertDocument} bindings={alertBindings} positions={positions} hidden={alertsHidden} onDocument={setAlertDocument} onBindings={setAlertBindings} onHidden={setAlertsHidden} onSelect={selectPosition} renderError={alarmRenderError}/>:<><h2>AI 감지 알림</h2><p>AI 연동 준비 중 · 현재 실제 감지 알림을 수신하지 않습니다.</p></>}</aside>
+  {serverMode&&tools==='auto'&&<aside className="map-floating map-live-panel"><AutomaticMonitoringPanel positions={positions} current={current} state={automatic.state} now={automatic.now} error={automatic.error} onView={toggleAutomaticView} viewing={automaticView} viewReady={ready} viewError={automaticViewError} onSelect={selectPosition} onFit={()=>{exitPreview();post('fit-layers',{bounds:extent});}}/></aside>}
   {!standalone&&active&&tools==='live'&&<aside className="map-floating map-live-panel"><p className="help">선택 지도 위치: {current?.name??'없음'} · 수집 영상과의 장비 일치 미확인</p><label>추종할 설치 카메라<select value={selected} onChange={e=>selectPosition(e.target.value)}>{positions.map(p=><option key={p.id} value={p.id}>{p.name}{p.nativeTracking?' · 기준 저장됨':''}</option>)}</select></label><LiveCapture key={current?.id} active desktopDemo={desktopDemo} embedded cameraLabel={current?.name} onFrame={setCaptureFrame} onPtz={setNativePtz}/><label>지도 추종 방식<select value={trackingMode} onChange={e=>{stopLiveView();setTrackingMode(e.target.value);}}><option value="visual">영상 대응 추정</option><option value="device">장비 PTZ 근사 추종</option></select></label>{trackingMode==='device'?<NativePtzTracking key={current?.id+':'+current?.lat+':'+current?.lon} position={current} frame={captureFrame} device={nativePtz} initial={trialView&&trialView.position.id===current?.id&&trialView.position.lat===current.lat&&trialView.position.lon===current.lon?trialView:null} mapReady={ready} onView={updateLiveView} onStop={stopLiveView} onSave={saveNativeProfile}/>:<VisualTracking key={JSON.stringify([current?.id,current?.lat,current?.lon,current?.orientation])} position={current} frame={captureFrame} mapReady={ready} onView={updateLiveView} onStop={stopLiveView}/>}<p className="help">시험 시점은 지도 설정에 자동 저장하지 않습니다.</p></aside>}
   <div className="terrain-workspace">
    <div className="map-surface">{mapPanel}</div>
-   {current&&<TerrainCalibration key={current.id+':'+current.lat+':'+current.lon} position={current} ready={ready&&active&&tools!=='live'} previewEpoch={previewEpoch} onPreview={preview} onReadGround={request=>preview(request,true)} onPickPoint={pickGeoPoint} onAspect={setAspect} onSave={saveOrientation} onExit={exitPreview}/>}
+   {canManage&&current&&<TerrainCalibration key={current.id+':'+current.lat+':'+current.lon} position={current} ready={ready&&active&&tools!=='live'} previewEpoch={previewEpoch} onPreview={preview} onReadGround={request=>preview(request,true)} onPickPoint={pickGeoPoint} onAspect={setAspect} onSave={saveOrientation} onExit={exitPreview}/>}
   </div></div>
   {(coverageShapes.length>0||calibrating&&coveragePlans.length>0)&&<div className="coverage-disclaimer">{coverageRenderError?'범위 시안 표시 실패':serverMode?`현재 PTZ 근사 관측 범위 ${coverageShapes.length}대 · 표시 거리 기준`:calibrating?'가상 시점 보정 중 범위 시안 숨김':displayedVisibility.length?`지형 가림 시안 ${displayedVisibility.length}대 · 초록 비가림 추정 / 빨강 가림 추정 / 노랑 미확인 · 실제 촬영 범위 미검증`:`범위 시안 ${coverageShapes.length}대 · 실제 촬영 범위·지형 가림 미확인`}</div>}
   {locationPicking&&<div className="location-picking-status">위치 선택 중 · 지형 지점을 클릭하세요 <button onClick={()=>setLocationPicking(false)}>종료</button></div>}
   {geoPicking&&<div className="location-picking-status">기준점 지정 중 · 사진과 같은 지형의 정확한 지점을 지도에서 클릭하세요. {geoPickError}<button onClick={()=>cancelGeoPick('기준점 지정을 취소했습니다.')}>기준점 지정 종료</button></div>}
-  <div className="map-bottom-status">{current?.name??'위치 없음'} · {serverMode?(runtimeCoverage.some(c=>c.cameraId===selected)?'현재 PTZ 관측 방향(근사)':'현재 방향 미확인 · 최신 영상·PTZ 대기'):liveView?.source==='device-approximate'?'장비 PTZ 근사 추종 · 절대 방향 오차 허용':liveView?'영상 대응 추정 · 기준 정확도 미검증':estimate?'영상·지형 추정 · 실시간 확인 안 됨':'현재 방향 미확인'} · CCTV 제어 없음</div>
+  <div className="map-bottom-status">{current?.name??'위치 없음'} · {serverMode?(runtimeCoverage.some(c=>c.cameraId===selected)?(automaticView?'현재 카메라 시점 · 장비 PTZ 근사 추종':'현재 PTZ 관측 방향(근사)'):'현재 방향 미확인 · 최신 영상·PTZ 대기'):liveView?.source==='device-approximate'?'장비 PTZ 근사 추종 · 절대 방향 오차 허용':liveView?'영상 대응 추정 · 기준 정확도 미검증':estimate?'영상·지형 추정 · 실시간 확인 안 됨':'현재 방향 미확인'} · CCTV 제어 없음</div>
  </main>;
 }

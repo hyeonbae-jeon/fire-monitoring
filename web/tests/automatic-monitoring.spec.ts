@@ -1,4 +1,4 @@
-import {test,expect} from '@playwright/test';
+import {test,expect,type Page} from '@playwright/test';
 import {readFileSync} from 'node:fs';
 import {sdk} from './fixtures/vworld-sdk';
 import {automaticCoverage,automaticPose,type AutomaticStatus} from '../src/automatic-monitoring';
@@ -35,13 +35,57 @@ test('nine current sectors use separate anchors, wrap pan, scale zoom and suppre
  expect(automaticCoverage(configuration.positions,s,now+4001)).toEqual([]);
  expect(configuration.positions[0].nativeTracking!.deviceAnchor.panDeg).toBe(359);
 });
+async function mockServer(page:Page,role:'admin'|'viewer',status:()=>AutomaticStatus,onImage:()=>number=()=>0){
+ const image=readFileSync('tests/fixtures/vision/current-1.png');
+ await page.route('https://map.vworld.kr/**',r=>r.fulfill({contentType:'application/javascript',body:sdk}));
+ await page.route('**/health',r=>r.fulfill({json:{ok:true,serverMode:true}}));
+ await page.route('**/api/session',r=>r.fulfill({json:{serverMode:true,role,userName:'synthetic-'+role,csrfToken:'synthetic-csrf-token'}}));
+ await page.route('**/api/map-client-settings',r=>r.fulfill({json:{vworldApiKey:'synthetic-browser-key'}}));
+ await page.route('**/api/map-configuration',r=>r.fulfill({json:{revision:'synthetic-revision',configuration}}));
+ await page.route('**/api/auto-monitor/status',r=>r.fulfill({json:status()}));
+ await page.route('**/api/auto-monitor/frame?*',async r=>{const delay=onImage();if(delay)await new Promise(resolve=>setTimeout(resolve,delay));await r.fulfill({contentType:'image/png',body:image}).catch(()=>{});});
+ await page.goto('/');await expect(page.getByText('최신 관측 방향 9/9대',{exact:false})).toBeVisible();await expect(page.getByText(/VWorld 3D 뷰어 초기화 완료 ·/)).toBeVisible();
+ return page.frames().find(f=>f!==page.mainFrame())!;
+}
+test('images and map entities stay mounted across refreshes; changing PTZ updates existing polygons and current-camera view',async({page})=>{
+ test.setTimeout(45000);let images=0,pan=1,zoom=1,expired=false;
+ const frame=await mockServer(page,'admin',()=>{const s=state(Date.now(),pan,zoom);if(expired)s.cameras.forEach(c=>c.feed.devicePtz!.sample!.receivedAt=new Date(Date.now()-10000).toISOString());return s;},()=>++images===1?0:1200);
+ await expect(page.getByRole('img',{name:'합성 자동 카메라 0 현재 영상'})).toBeVisible();
+ await page.evaluate(()=>{const w=window as any;w.firstImage=document.querySelector('.automatic-camera-image');w.imageRemoved=false;new MutationObserver(()=>{if(!w.firstImage.isConnected)w.imageRemoved=true;}).observe(document.body,{childList:true,subtree:true});});
+ await frame.evaluate('window.firstCoverage=activeEntities.find(e=>e.polygon&&e.name?.includes("현재 관측 방향"));window.firstMarker=activeEntities.find(e=>e.point);window.firstHierarchy=firstCoverage.polygon.hierarchy');
+ await expect.poll(()=>images,{timeout:12000}).toBeGreaterThanOrEqual(3);
+ expect(await page.evaluate('window.imageRemoved')).toBe(false);
+ expect(await frame.evaluate('firstCoverage===activeEntities.find(e=>e.polygon&&e.name?.includes("현재 관측 방향"))&&firstCoverage.polygon.hierarchy===firstHierarchy&&firstMarker===activeEntities.find(e=>e.point)')).toBe(true);
+ pan=20;await expect.poll(()=>frame.evaluate('firstCoverage.polygon.hierarchy')).not.toEqual(await frame.evaluate('firstHierarchy'));
+ expect(await frame.evaluate('activeEntities.includes(firstCoverage)&&activeEntities.includes(firstMarker)')).toBe(true);
+ await page.getByRole('button',{name:'현재 카메라 시점 보기',exact:true}).click();
+ await expect.poll(()=>frame.evaluate('views.at(-1)?.destination')).toEqual([127.1,37.5,503]);
+ await expect.poll(async()=>await frame.evaluate('views.at(-1)?.orientation.heading*180/Math.PI')).toBeCloseTo(121);
+ pan=40;zoom=2;await expect.poll(async()=>await frame.evaluate('views.at(-1)?.orientation.heading*180/Math.PI')).toBeCloseTo(141);
+ expect(await frame.evaluate('ws3d.viewer.scene.screenSpaceCameraController.enableInputs')).toBe(false);
+ expect((await frame.evaluate('ws3d.viewer.camera.frustum.fov'))*180/Math.PI).toBeCloseTo(2*Math.atan(Math.tan(Math.PI/6)/2)*180/Math.PI);
+ expect(await frame.evaluate('activeEntities.filter(e=>e.polygon&&e.name?.includes("현재 관측 방향")).length')).toBe(9);
+ expired=true;await expect(page.getByRole('button',{name:'현재 카메라 시점 보기',exact:true})).toBeDisabled();await expect.poll(()=>frame.evaluate('ws3d.viewer.scene.screenSpaceCameraController.enableInputs')).toBe(true);
+ await expect(page.getByText('최신 영상·PTZ를 확인할 수 없어 전체 감시 지도로 돌아왔습니다.')).toBeVisible();
+});
+test('viewer sees monitoring tools and current-camera view without any configuration or import controls',async({page})=>{
+ const frame=await mockServer(page,'viewer',()=>state(Date.now()));
+ await expect(page.getByText('synthetic-viewer · 일반 사용자')).toBeVisible();
+ for(const name of ['카메라·설정','지도 레이어','지도 연결','위치·지번','중앙 지도 설정 저장'])await expect(page.getByRole('button',{name,exact:true,includeHidden:true})).toHaveCount(0);
+ await expect(page.locator('input[type=file]')).toHaveCount(0);
+ await page.getByRole('button',{name:'현재 카메라 시점 보기',exact:true}).click();await expect.poll(()=>frame.evaluate('views.at(-1)?.destination')).toEqual([127.1,37.5,503]);
+ await page.getByRole('button',{name:'전체 감시 지도로 돌아가기',exact:true}).click();await expect.poll(()=>frame.evaluate('ws3d.viewer.scene.screenSpaceCameraController.enableInputs')).toBe(true);
+ await page.getByRole('button',{name:'관측 범위',exact:true}).click();await expect(page.getByRole('heading',{name:'현재 관측 범위',exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'AI 감지 알림',exact:true}).click();await expect(page.getByText('AI 연동 준비 중 · 현재 실제 감지 알림을 수신하지 않습니다.')).toBeVisible();
+ await expect(page.locator('input[type=file]')).toHaveCount(0);
+});
 test('server opens nine current ranges without manual starts, switches frames, hides expired sectors and sends CSRF on saves',async({page})=>{
  test.setTimeout(45000);let pan=1,zoom=1,expired=false,hold=false,sequence=0,saveCount=0;
  const image=readFileSync('tests/fixtures/vision/current-1.png'),requests:string[]=[];
  page.on('request',r=>requests.push(r.url()));
  await page.route('https://map.vworld.kr/**',r=>r.fulfill({contentType:'application/javascript',body:sdk}));
  await page.route('**/health',r=>r.fulfill({json:{ok:true,serverMode:true,automaticMonitoring:true}}));
- await page.route('**/api/session',r=>r.fulfill({json:{serverMode:true,csrfToken:'synthetic-csrf-token'}}));
+ await page.route('**/api/session',r=>r.fulfill({json:{serverMode:true,role:'admin',userName:'synthetic-admin',csrfToken:'synthetic-csrf-token'}}));
  await page.route('**/api/map-client-settings',r=>r.fulfill({json:{vworldApiKey:'synthetic-browser-key'}}));
  await page.route('**/api/map-configuration',r=>{
   if(r.request().method()==='PUT'){expect(r.request().headers()['x-monitor-csrf']).toBe('synthetic-csrf-token');saveCount++;}

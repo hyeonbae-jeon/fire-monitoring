@@ -16,6 +16,7 @@ if (args.Contains("--health-probe"))
 }
 if (args.Contains("--import-server-settings-stdin")) { Environment.ExitCode = await MonitoringServerSetup.ImportAsync(); return; }
 if (args.Contains("--configure-monitoring-server")) { Environment.ExitCode = await MonitoringServerSetup.ConfigureAsync(); return; }
+if (args.Contains("--configure-monitoring-accounts")) { Environment.ExitCode = await MonitoringServerSetup.ConfigureAccountsAsync(); return; }
 if (args.Contains("--register-github-secrets")) { Environment.ExitCode = await MonitoringServerSetup.RegisterGitHubAsync(); return; }
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 {

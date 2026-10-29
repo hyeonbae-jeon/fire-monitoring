@@ -43,3 +43,4 @@
 .automatic-camera-list button{text-align:left}.automatic-camera-list small{display:block;font-size:10px;margin-top:4px}
 .server-monitor>header{display:flex;align-items:center;justify-content:space-between}
 .diagnostic-review ul{padding-left:16px}.diagnostic-review li{margin:10px 0;overflow-wrap:anywhere}.diagnostic-review small{display:block;line-height:1.6}.diagnostic-review button{margin:4px 0}
+.automatic-image-frame{width:100%;aspect-ratio:16/9;display:grid;place-items:center;background:#101820;color:#e8f0f4;margin:10px 0;overflow:hidden}.automatic-image-frame .automatic-camera-image{width:100%;height:100%;max-height:none;object-fit:contain}.automatic-image-frame p{padding:12px;margin:0}

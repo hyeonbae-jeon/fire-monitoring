@@ -146,33 +146,44 @@ jobs:
           PY
       - name: Package Windows x64 demo
         run: python3 scripts/build-portable.py
-      - name: Prepare settings reload repair without replacing saved data
+      - name: Prepare monitoring update without replacing saved data
         run: |
-          python3 - <<'PY'
+          python3 - <<'PYUPDATE'
           from pathlib import Path
           import zipfile
-          repair = Path('artifacts/Windows-Server-Settings-Fix')
-          repair.mkdir(parents=True, exist_ok=True)
+          update = Path('artifacts/Windows-Monitoring-Update')
+          update.mkdir(parents=True, exist_ok=True)
           with zipfile.ZipFile('artifacts/Wisenet-Camera-Inventory-Demo-win-x64.zip') as archive:
-              for name in ['WisenetPtzBridge.dll', 'WisenetPtzBridge.pdb']:
-                  repair.joinpath(name).write_bytes(archive.read('Wisenet-Camera-Inventory-Demo/' + name))
-          repair.joinpath('업데이트방법.txt').write_text(
-              '자동 수신 서버 설정 재읽기 수정\n\n'
-              '적용 대상: 자동 수신 서버 기능이 포함된 2026-10-28 Windows 실행패키지\n'
+              prefix = 'Wisenet-Camera-Inventory-Demo/'
+              for entry in archive.namelist():
+                  if not entry.startswith(prefix) or entry.endswith('/'): continue
+                  name = entry[len(prefix):]
+                  if name.startswith('wwwroot/') or name in ['WisenetPtzBridge.dll', 'WisenetPtzBridge.pdb', '계정권한설정.cmd', 'docs/automatic-monitoring.md']:
+                      assert '..' not in Path(name).parts
+                      destination = update / name
+                      destination.parent.mkdir(parents=True, exist_ok=True)
+                      destination.write_bytes(archive.read(entry))
+          update.joinpath('업데이트방법.txt').write_text(
+              '자동 감시 안정화 및 관리자·일반 사용자 권한 업데이트\n\n'
+              '적용 대상: 자동 수신 서버 기능이 포함된 Windows 실행패키지\n'
               '1. 실행 중인 WisenetPtzBridge 프로그램 창을 종료합니다.\n'
-              '2. 이 폴더의 WisenetPtzBridge.dll과 WisenetPtzBridge.pdb를 기존 실행파일 폴더에 덮어씁니다.\n'
-              '3. 기존 data 폴더는 그대로 둡니다. 서버설정.cmd를 다시 실행하거나 카메라 접속 정보를 재입력할 필요가 없습니다.\n'
-              '4. 설정을 저장한 동일 Windows 계정에서 기존 GitHub시크릿등록.cmd를 실행합니다.\n'
-              '5. 시크릿별 등록 완료와 최종 완료 메시지를 확인합니다.\n\n'
-              '로그인 정상·설정 파일 존재 상태에서도 CLI 설정 저장소가 빠져 등록 전에 실패하던 오류를 수정했습니다.\n'
-              '설정을 다시 여는 서버설정.cmd에도 같은 수정이 적용됩니다.\n', encoding='utf-8-sig')
-          assert {p.name for p in repair.iterdir()} == {'WisenetPtzBridge.dll', 'WisenetPtzBridge.pdb', '업데이트방법.txt'}
-          PY
-      - name: Register small settings repair download
+              '2. 압축을 푼 내용 전체(DLL·PDB·wwwroot·계정권한설정.cmd·docs)를 기존 실행파일 폴더에 복사하고 같은 파일을 덮어씁니다.\n'
+              '3. 기존 data 폴더는 그대로 둡니다. 카메라 접속 정보와 지도 설정을 다시 입력하지 않습니다.\n'
+              '4. 일반 사용자 계정을 만들려면 계정권한설정.cmd를 실행합니다. 기존 계정은 관리자입니다.\n'
+              '5. WisenetPtzBridge.exe를 다시 실행하고 로그인합니다. 일반 사용자는 감시용 메뉴만 표시됩니다.\n'
+              '6. 자동 감시에서 현재 카메라 시점 보기를 누르면 지도가 현재 PTZ를 따라갑니다.\n'
+              '7. 계정 변경을 GitHub 서버 배포에도 적용하려면 GitHub시크릿등록.cmd를 다시 실행합니다.\n\n'
+              '새 PC에서는 Windows 사용자 암호화 설정을 최초 한 번 등록해야 합니다.\n'
+              '자세한 권한·표시 거리·다른 PC 사용 안내는 docs/automatic-monitoring.md를 확인하세요.\n', encoding='utf-8-sig')
+          assert not (update/'data').exists()
+          assert (update/'wwwroot/index.html').is_file() and (update/'계정권한설정.cmd').is_file()
+          assert not list(update.rglob('*.protected'))
+          PYUPDATE
+      - name: Register monitoring update download
         uses: actions/upload-artifact@v4
         with:
-          name: Windows-Server-Settings-Fix
-          path: artifacts/Windows-Server-Settings-Fix/
+          name: Windows-Monitoring-Update
+          path: artifacts/Windows-Monitoring-Update/
           if-no-files-found: error
           retention-days: 30
       - name: Register downloadable artifact

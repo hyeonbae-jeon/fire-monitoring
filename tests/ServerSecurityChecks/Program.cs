@@ -1,6 +1,7 @@
 using System.Text;
 using System.Security.Cryptography;
 using System.Text.Json;
+using Microsoft.Extensions.Configuration;
 using WisenetPtzBridge.Services;
 
 var password = "synthetic-monitor-password";
@@ -22,6 +23,19 @@ if (secretCommand.StandardInputEncoding is not { } stdinEncoding || stdinEncodin
     Encoding.UTF8.GetString(stdinEncoding.GetBytes(koreanMapLabel)) != koreanMapLabel ||
     !secretCommand.ArgumentList.SequenceEqual(new[] { "secret", "set", "CCTV_MAP_CONFIGURATION_JSON", "--repo", "hyeonbae-jeon/fire-monitoring" }))
     throw new Exception("GitHub secret transfer must preserve Korean UTF-8 without a BOM and use stdin for values.");
+var accounts = new ConfigurationBuilder().AddInMemoryCollection().Build();
+accounts["CCTV_MONITOR_USER"] = "synthetic-admin"; accounts["CCTV_MONITOR_PASSWORD_HASH"] = hash;
+MonitoringServerSecurity.ValidateAccounts(accounts);
+accounts["CCTV_VIEWER_USER"] = "synthetic-viewer"; accounts["CCTV_VIEWER_PASSWORD_HASH"] = hash;
+MonitoringServerSecurity.ValidateAccounts(accounts);
+foreach (var invalid in new[] { "synthetic-admin", " ", "bad\nname" })
+{
+    accounts["CCTV_VIEWER_USER"] = invalid;
+    try { MonitoringServerSecurity.ValidateAccounts(accounts); throw new Exception("Invalid viewer account accepted."); }
+    catch (InvalidOperationException) { }
+}
+accounts["CCTV_VIEWER_USER"] = ""; accounts["CCTV_VIEWER_PASSWORD_HASH"] = "";
+MonitoringServerSecurity.ValidateAccounts(accounts);
 if (OperatingSystem.IsWindows())
 {
     var plain = Encoding.UTF8.GetBytes("synthetic-camera-secret-do-not-publish");
@@ -37,7 +51,7 @@ if (OperatingSystem.IsWindows())
         ["CCTV_CONNECTIONS_JSON"] = """{"schemaVersion":1,"cameras":[{"cameraId":"synthetic-camera","source":"hanwha","snapshotUrl":"http://synthetic-camera.invalid/stw-cgi/video.cgi?msubmenu=snapshot&action=view&Profile=1","username":"synthetic-user","password":"synthetic-camera-password"}]}""",
         ["CCTV_MAP_CONFIGURATION_JSON"] = """{"schemaVersion":1,"crs":"EPSG:4326","positions":[]}""",
         ["CCTV_MONITOR_USER"] = "synthetic-monitor", ["CCTV_MONITOR_PASSWORD_HASH"] = hash,
-        ["VWORLD_API_KEY"] = "synthetic-browser-key"
+        ["VWORLD_API_KEY"] = "synthetic-browser-key", ["CCTV_VIEWER_USER"] = "synthetic-viewer", ["CCTV_VIEWER_PASSWORD_HASH"] = hash
     };
     Directory.CreateDirectory(Path.GetDirectoryName(settingsPath)!);
     try

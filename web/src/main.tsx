@@ -4,7 +4,7 @@ import "./style.css";
 import { ReportImport } from "./ReportImport";
 import { MonitoringMap } from "./MonitoringMap";
 import { LiveCapture } from "./LiveCapture";
-import {initializeMonitorSession,monitorFetch} from './monitor-server';
+import {initializeMonitorSession,monitorFetch,type MonitorSession} from './monitor-server';
 
 type Camera = {
   uuid: string; name: string; channel: string | null; device: string | null;
@@ -42,6 +42,8 @@ function App() {
   const [message, setMessage] = useState("");
   const [desktopDemo, setDesktopDemo] = useState(false);
   const [serverMode,setServerMode]=useState(false);
+  const [monitorSession,setMonitorSession]=useState<MonitorSession|null>(null);
+  const [initializing,setInitializing]=useState(true),[healthKnown,setHealthKnown]=useState(false);
 
   async function load() {
     setBusy(true); setError(""); setMessage("");
@@ -49,7 +51,8 @@ function App() {
     setInventory(null);
     try {
       const health=await api<{localDesktopDemo:boolean;serverMode?:boolean}>('/health');
-      await initializeMonitorSession(health.serverMode===true);setServerMode(health.serverMode===true);
+      setHealthKnown(true);
+      setServerMode(health.serverMode===true);setMonitorSession(await initializeMonitorSession(health.serverMode===true));
       if(health.serverMode){setTab('map');return;}
       const [inv, conf] = await Promise.all([
         api<Inventory>("/api/inventory"), api<Configuration>("/api/cameras"),
@@ -59,7 +62,7 @@ function App() {
       setSelected(new Set(conf.configuration.cameras.filter(c => c.enabled !== false).map(c => c.uuid.toLowerCase())));
       setDirty(false);
     } catch (e) { setError((e as Error).message); }
-    finally { setBusy(false); }
+    finally { setBusy(false);setInitializing(false); }
   }
   useEffect(() => { void load(); }, []);
   const known = new Set(inventory?.cameras.map(c => c.uuid) ?? []);
@@ -89,7 +92,8 @@ function App() {
     } catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }
   }
-  if(serverMode)return <div className="app server-monitor"><header><h1>산불감시 모니터링</h1><button onClick={()=>void monitorFetch('/api/logout',{method:'POST'}).then(()=>location.assign('/login'))}>로그아웃</button></header><MonitoringMap serverMode/></div>;
+  if(initializing||!healthKnown)return <div className="app"><h1>산불감시 모니터링</h1><p role={error?'alert':'status'}>{error||'모니터링 연결 확인 중…'}</p>{error&&<button onClick={()=>void load()}>다시 연결</button>}</div>;
+  if(serverMode)return <div className="app server-monitor"><header><h1>산불감시 모니터링</h1><span>{monitorSession&&`${monitorSession.userName} · ${monitorSession.role==='admin'?'관리자':'일반 사용자'}`}</span><button onClick={()=>void monitorFetch('/api/logout',{method:'POST'}).then(()=>location.assign('/login'))}>로그아웃</button></header>{monitorSession?<MonitoringMap serverMode canManage={monitorSession.role==='admin'}/>:<p role="alert">{error||'로그인 권한 확인 중…'}</p>}</div>;
   return <div className="app">
     <header><p className="eyebrow">중앙 PTZ Bridge · Camera Inventory</p><h1>산불감시 모니터링</h1>
       <p>카메라 목록을 확인하고 사용할 대상을 UUID 기준으로 저장합니다.</p></header>

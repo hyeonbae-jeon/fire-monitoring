@@ -7,7 +7,7 @@ import {sector} from './map-model';
 import {approximateNativePose} from './native-approximation';
 import {coverageColor,type CoverageShape} from './coverage-model';
 
-export type AutomaticCamera={cameraId:string;name:string;source:string;displayRangeM:number;needsAttention:boolean;retryAt:string|null;feed:{status:string;reasonCode?:string;liveFrameAvailable:boolean;observation:Observation|null;devicePtz?:DevicePtz}};
+export type AutomaticCamera={cameraId:string;name:string;source:string;displayRangeM:number;needsAttention:boolean;retryAt:string|null;feed:{status:string;reasonCode?:string;liveFrameAvailable:boolean;observation:(Observation&{width?:number;height?:number})|null;devicePtz?:DevicePtz}};
 export type AutomaticStatus={configured:boolean;serverNow?:string;cameras:AutomaticCamera[]};
 export const recent=(value:string|null|undefined,now:number)=>{const time=Date.parse(value??'');return Number.isFinite(time)&&now-time<4000&&time-now<=2000;};
 export function automaticPose(p:Position,c:AutomaticCamera|undefined,now:number){

@@ -23,6 +23,7 @@ DLL = ROOT / 'bridge/WisenetPtzBridge/bin/Release/net8.0/WisenetPtzBridge.dll'
 PTZ = '/stw-cgi/ptzcontrol.cgi?msubmenu=query&action=view&Query=Pan,Tilt,Zoom'
 NVT_PTZ = '/api/ptz.cgi?PTZNumber=1&GetPTZPosition=do'
 PASSWORD = 'synthetic-monitor-password'
+VIEWER_PASSWORD = 'synthetic-viewer-password'
 TOKEN = 'synthetic-nvt-encoded-token'
 
 
@@ -84,7 +85,9 @@ class AutomaticMonitoringTests(unittest.TestCase):
         with socket.socket() as s: s.bind(('127.0.0.1', 0)); port = s.getsockname()[1]
         cls.base = f'http://127.0.0.1:{port}'
         env = os.environ.copy(); env.update(MONITOR_SERVER_MODE='true', MONITOR_PORT=str(port), CCTV_DATA_DIR=str(cls.work), CCTV_MONITOR_USER='monitor', CCTV_MONITOR_PASSWORD_HASH=password_hash,
+            CCTV_VIEWER_USER='viewer', CCTV_VIEWER_PASSWORD_HASH='pbkdf2-sha256$600000$'+base64.b64encode(salt).decode()+'$'+base64.b64encode(hashlib.pbkdf2_hmac('sha256', VIEWER_PASSWORD.encode(), salt, 600000)).decode(),
             CCTV_CONNECTIONS_JSON=json.dumps(dict(schemaVersion=1, cameras=connections)), CCTV_MAP_CONFIGURATION_JSON=json.dumps(cls.map), ASPNETCORE_ENVIRONMENT='Production')
+        cls.env = env
         cls.log_path = cls.work/'bridge.log'; cls.log = cls.log_path.open('wb')
         cls.process = subprocess.Popen([os.environ.get('DOTNET_EXECUTABLE') or shutil.which('dotnet'), str(DLL)], cwd=ROOT/'bridge/WisenetPtzBridge', env=env, stdout=cls.log, stderr=cls.log)
         for _ in range(120):
@@ -100,12 +103,18 @@ class AutomaticMonitoringTests(unittest.TestCase):
         code, _, _ = cls.request('/login', 'POST', urllib.parse.urlencode(dict(username='monitor', password=PASSWORD, __RequestVerificationToken=token)).encode(), {'Content-Type': 'application/x-www-form-urlencoded'})
         if code != 200: raise RuntimeError('Synthetic login failed')
         cls.csrf = json.loads(cls.request('/api/session')[1])['csrfToken']
+        cls.viewer = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+        _, html, _ = cls.request('/login', client=cls.viewer)
+        token = re.search("name=__RequestVerificationToken value='([^']+)'", html.decode())[1]
+        code, _, _ = cls.request('/login', 'POST', urllib.parse.urlencode(dict(username='viewer', password=VIEWER_PASSWORD, role='admin', __RequestVerificationToken=token)).encode(), {'Content-Type':'application/x-www-form-urlencoded'}, client=cls.viewer)
+        if code != 200: raise RuntimeError('Synthetic viewer login failed')
+        cls.viewer_csrf = json.loads(cls.request('/api/session',client=cls.viewer)[1])['csrfToken']
     @classmethod
     def tearDownClass(cls):
         cls.process.terminate(); cls.process.wait(timeout=10); cls.log.close(); cls.camera.shutdown(); cls.camera.server_close(); cls.temp.cleanup()
     @classmethod
-    def request(cls, path, method='GET', data=None, headers=None, anonymous=False):
-        client = urllib.request.build_opener() if anonymous else cls.client
+    def request(cls, path, method='GET', data=None, headers=None, anonymous=False, client=None):
+        client = urllib.request.build_opener() if anonymous else client or cls.client
         req = urllib.request.Request(cls.base+path, method=method, data=data, headers=headers or {})
         try: response = client.open(req, timeout=10)
         except urllib.error.HTTPError as e: response = e
@@ -159,12 +168,37 @@ class AutomaticMonitoringTests(unittest.TestCase):
             self.assertTrue(all(Cameras.counts[i] > before[i] for i in range(1,9)))
         finally: Cameras.broken.discard(0)
         self.wait_for(lambda: any(c['cameraId']=='camera-0' and c['feed']['liveFrameAvailable'] for c in self.status()['cameras']))
+    def test_viewer_role_is_server_enforced_even_with_forged_role_and_valid_csrf(self):
+        admin=json.loads(self.request('/api/session')[1]);viewer=json.loads(self.request('/api/session',client=self.viewer)[1])
+        self.assertEqual((admin['role'],viewer['role'],viewer['userName']),('admin','viewer','viewer'))
+        self.assertEqual(self.request('/api/map-configuration',client=self.viewer)[0],200)
+        code,raw,_=self.request('/api/auto-monitor/status',client=self.viewer);self.assertEqual(code,200)
+        observation=next(c for c in json.loads(raw)['cameras'] if c['feed']['liveFrameAvailable'])
+        o=observation['feed']['observation'];query=urllib.parse.urlencode(dict(cameraId=observation['cameraId'],sessionId=o['sessionId'],sequence=o['sequence']))
+        self.assertEqual(self.request('/api/auto-monitor/frame?'+query,client=self.viewer)[0],200)
+        for path in ['/api/inventory','/api/cameras','/api/camera-snapshot/status','/api/screen-capture/status']:
+            self.assertEqual(self.request(path,client=self.viewer)[0],403)
+        for path in ['/api/map-configuration','/api/cameras','/api/inventory','/api/camera-snapshot/session']:
+            self.assertEqual(self.request(path,'PUT' if path in ['/api/map-configuration','/api/cameras'] else 'POST',b'{}',
+                {'Content-Type':'application/json','X-Monitor-CSRF':self.viewer_csrf,'X-Role':'admin'},client=self.viewer)[0],403)
+        self.assertNotIn(VIEWER_PASSWORD,raw.decode()+self.log_path.read_text())
     def test_z_authentication_denial_stops_repeated_credentials_for_only_that_camera(self):
         Cameras.blocked.add(7)
         self.wait_for(lambda: any(c['cameraId']=='camera-7' and c['needsAttention'] for c in self.status()['cameras']))
         before = sum(i==7 for i,_ in Cameras.reads); time.sleep(2.2)
         self.assertEqual(sum(i==7 for i,_ in Cameras.reads), before)
         self.assertTrue(all(c['feed']['liveFrameAvailable'] for c in self.status()['cameras'] if c['cameraId']!='camera-7'))
+    def test_zz_disabled_viewer_cookie_is_rejected_after_restart_while_admin_remains_valid(self):
+        self.process.terminate();self.process.wait(timeout=10)
+        env=self.env.copy();env.update(CCTV_VIEWER_USER='',CCTV_VIEWER_PASSWORD_HASH='')
+        self.__class__.process=subprocess.Popen([os.environ.get('DOTNET_EXECUTABLE') or shutil.which('dotnet'),str(DLL)],cwd=ROOT/'bridge/WisenetPtzBridge',env=env,stdout=self.log,stderr=self.log)
+        for _ in range(100):
+            try:
+                with urllib.request.urlopen(self.base+'/health',timeout=1):break
+            except urllib.error.URLError:time.sleep(.1)
+        else:self.fail('Restart timeout')
+        self.assertEqual(self.request('/api/session',client=self.viewer)[0],401)
+        self.assertEqual(json.loads(self.request('/api/session')[1])['role'],'admin')
 
 
 if __name__ == '__main__': unittest.main()
