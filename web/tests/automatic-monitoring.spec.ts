@@ -79,6 +79,15 @@ test('viewer sees monitoring tools and current-camera view without any configura
  await page.getByRole('button',{name:'AI 감지 알림',exact:true}).click();await expect(page.getByText('AI 연동 준비 중 · 현재 실제 감지 알림을 수신하지 않습니다.')).toBeVisible();
  await expect(page.locator('input[type=file]')).toHaveCount(0);
 });
+test('expired image downloads are discarded without accumulating blob buffers',async({page})=>{
+ test.setTimeout(20000);let images=0;
+ await page.addInitScript(()=>{const w=window as any;w.activeImageUrls=new Set();w.createdImageUrls=0;const create=URL.createObjectURL.bind(URL),revoke=URL.revokeObjectURL.bind(URL);URL.createObjectURL=(blob:Blob|MediaSource)=>{const url=create(blob);w.activeImageUrls.add(url);w.createdImageUrls++;return url;};URL.revokeObjectURL=(url:string)=>{w.activeImageUrls.delete(url);revoke(url);};});
+ await mockServer(page,'viewer',()=>state(Date.now()),()=>++images===1?0:4500);
+ await expect(page.getByRole('img',{name:'합성 자동 카메라 0 현재 영상'})).toBeVisible();
+ await expect.poll(()=>page.evaluate('window.createdImageUrls'),{timeout:10000}).toBeGreaterThanOrEqual(2);
+ await expect.poll(()=>page.evaluate('window.activeImageUrls.size')).toBeLessThanOrEqual(1);
+ await expect(page.getByRole('img',{name:'합성 자동 카메라 0 현재 영상'})).toHaveCount(0);
+});
 test('server opens nine current ranges without manual starts, switches frames, hides expired sectors and sends CSRF on saves',async({page})=>{
  test.setTimeout(45000);let pan=1,zoom=1,expired=false,hold=false,sequence=0,saveCount=0;
  const image=readFileSync('tests/fixtures/vision/current-1.png'),requests:string[]=[];

@@ -6,29 +6,30 @@ import {DevicePtzStatus} from './DevicePtzStatus';
 
 function AutomaticImage({camera,now}:{camera:AutomaticCamera|undefined;now:number}){
  const [shown,setShown]=useState<{url:string;identity:string;capturedAt:string}|null>(null),[error,setError]=useState('');
- const urls=useRef(new Set<string>()),loading=useRef<{abort:AbortController;identity:string}|null>(null);
+ const urls=useRef(new Set<string>()),loading=useRef<{abort:AbortController;identity:string;url?:string}|null>(null);
  const o=camera?.feed.observation,identity=camera?.cameraId+':'+o?.sessionId,fresh=!!camera?.feed.liveFrameAvailable&&recent(o?.capturedAt,now);
  function releaseAll(){urls.current.forEach(url=>URL.revokeObjectURL(url));urls.current.clear();}
  useEffect(()=>()=>{loading.current?.abort.abort();loading.current=null;releaseAll();},[identity]);
  useEffect(()=>{
   if(!camera||!o||!fresh){loading.current?.abort.abort();loading.current=null;setShown(null);releaseAll();return;}
   if(loading.current)return;
-  const request={abort:new AbortController(),identity};loading.current=request;let candidate:string|null=null;
+  const request:{abort:AbortController;identity:string;url?:string}={abort:new AbortController(),identity};loading.current=request;let candidate:string|null=null;
+  const deadline=performance.now()+Math.max(0,4000-(now-Date.parse(o.capturedAt??'')));
   void (async()=>{
    try{
     const r=await monitorFetch('/api/auto-monitor/frame?'+new URLSearchParams({cameraId:camera.cameraId,sessionId:o.sessionId,sequence:String(o.sequence)}),{signal:AbortSignal.any([request.abort.signal,AbortSignal.timeout(5000)])});
     if(!r.ok)throw new Error('영상 갱신을 기다립니다.');const blob=await r.blob();
     if(loading.current!==request)return;
-    candidate=URL.createObjectURL(blob);urls.current.add(candidate);
+    candidate=URL.createObjectURL(blob);request.url=candidate;urls.current.add(candidate);
     const next=new Image();next.src=candidate;await next.decode();
-    if(loading.current!==request){URL.revokeObjectURL(candidate);urls.current.delete(candidate);return;}
+    if(loading.current!==request||performance.now()>=deadline){URL.revokeObjectURL(candidate);urls.current.delete(candidate);candidate=null;return;}
     setShown({url:candidate,identity,capturedAt:o.capturedAt!});setError('');candidate=null;
    }catch{if(loading.current===request)setError('영상 갱신 지연 · 다시 수신 중');}
    finally{if(candidate){URL.revokeObjectURL(candidate);urls.current.delete(candidate);}if(loading.current===request)loading.current=null;}
   })();
  },[camera?.cameraId,o?.sessionId,o?.sequence,fresh]);
  const visible=shown&&shown.identity===identity&&fresh&&recent(shown.capturedAt,now);
- return <div className="automatic-image-frame">{visible?<img className="automatic-camera-image" src={shown.url} alt={(camera?.name??'선택 카메라')+' 현재 영상'} onLoad={()=>{urls.current.forEach(url=>{if(url!==shown.url){URL.revokeObjectURL(url);urls.current.delete(url);}});}}/>:<p role="status">{error||'최신 영상을 기다립니다.'}</p>}</div>;
+ return <div className="automatic-image-frame">{visible?<img className="automatic-camera-image" src={shown.url} alt={(camera?.name??'선택 카메라')+' 현재 영상'} onLoad={()=>{urls.current.forEach(url=>{if(url!==shown.url&&url!==loading.current?.url){URL.revokeObjectURL(url);urls.current.delete(url);}});}}/>:<p role="status">{error||'최신 영상을 기다립니다.'}</p>}</div>;
 }
 export function AutomaticMonitoringPanel({positions,current,state,now,error,onSelect,onFit,onView,viewing,viewReady,viewError}:{positions:Position[];current:Position|undefined;state:AutomaticStatus|null;now:number;error:string;onSelect:(id:string)=>void;onFit:()=>void;onView:()=>void;viewing:boolean;viewReady:boolean;viewError:string}){
  const live=positions.filter(p=>automaticPose(p,state?.cameras.find(c=>c.cameraId===p.id),now)),camera=state?.cameras.find(c=>c.cameraId===current?.id);
