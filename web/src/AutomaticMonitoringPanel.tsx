@@ -7,6 +7,7 @@ import {AutomaticTrackingEditor} from './AutomaticTrackingEditor';
 import type {NativeProfile} from './native-profile';
 
 type Management={onApply:(profile:NativeProfile)=>void;onSave:()=>void;dirty:boolean;saving:boolean;canSave:boolean;status:string};
+type CoverageControls={visible:boolean;selectedOnly:boolean;onVisible:(value:boolean)=>void;onSelectedOnly:(value:boolean)=>void};
 
 function AutomaticImage({camera,now}:{camera:AutomaticCamera|undefined;now:number}){
  const [shown,setShown]=useState<{url:string;identity:string;capturedAt:string}|null>(null),[error,setError]=useState('');
@@ -35,9 +36,13 @@ function AutomaticImage({camera,now}:{camera:AutomaticCamera|undefined;now:numbe
  const visible=shown&&shown.identity===identity&&fresh&&recent(shown.capturedAt,now);
  return <div className="automatic-image-frame">{visible?<img className="automatic-camera-image" src={shown.url} alt={(camera?.name??'선택 카메라')+' 현재 영상'} onLoad={()=>{urls.current.forEach(url=>{if(url!==shown.url&&url!==loading.current?.url){URL.revokeObjectURL(url);urls.current.delete(url);}});}}/>:<p role="status">{error||'최신 영상을 기다립니다.'}</p>}</div>;
 }
-export function AutomaticMonitoringPanel({positions,current,state,now,error,onSelect,onFit,onView,viewing,viewReady,viewError,management}:{positions:Position[];current:Position|undefined;state:AutomaticStatus|null;now:number;error:string;onSelect:(id:string)=>void;onFit:()=>void;onView:()=>void;viewing:boolean;viewReady:boolean;viewError:string;management?:Management}){
+export function AutomaticMonitoringPanel({positions,current,state,now,error,onSelect,onFit,onView,viewing,viewReady,viewError,management,coverage}:{positions:Position[];current:Position|undefined;state:AutomaticStatus|null;now:number;error:string;onSelect:(id:string)=>void;onFit:()=>void;onView:()=>void;viewing:boolean;viewReady:boolean;viewError:string;management?:Management;coverage?:CoverageControls}){
  const live=positions.filter(p=>automaticPose(p,state?.cameras.find(c=>c.cameraId===p.id),now)),camera=state?.cameras.find(c=>c.cameraId===current?.id);
  return <><h2>자동 감시</h2><p>최신 관측 방향 {live.length}/{positions.length}대 · 저장한 기준과 현재 PTZ로 범위를 갱신합니다.</p>
+  {coverage&&<fieldset><legend>관측 범위 표시</legend>
+   <label><input type="checkbox" checked={coverage.visible} onChange={e=>coverage.onVisible(e.target.checked)}/>현재 관측 범위 표시</label>
+   <label><input type="checkbox" checked={coverage.selectedOnly} onChange={e=>coverage.onSelectedOnly(e.target.checked)}/>선택 카메라만 표시</label>
+  </fieldset>}
   <button onClick={onFit}>전체 현재 범위 보기</button>
   {error&&<p role="alert">{error}</p>}
   {state?.configured===false&&<p>수신 서버의 카메라 접속 설정이 필요합니다. 서버설정.cmd 또는 GitHub 서버용 Secrets로 등록하세요.</p>}

@@ -77,7 +77,16 @@ test('viewer sees monitoring tools and current-camera view without any configura
  await expect(page.getByRole('button',{name:'근사 기준을 지도 설정에 반영',exact:true,includeHidden:true})).toHaveCount(0);
  await page.getByRole('button',{name:'현재 카메라 시점 보기',exact:true}).click();await expect.poll(()=>frame.evaluate('views.at(-1)?.destination')).toEqual([127.1,37.5,503]);
  await page.getByRole('button',{name:'전체 감시 지도로 돌아가기',exact:true}).click();await expect.poll(()=>frame.evaluate('ws3d.viewer.scene.screenSpaceCameraController.enableInputs')).toBe(true);
- await page.getByRole('button',{name:'관측 범위',exact:true}).click();await expect(page.getByRole('heading',{name:'현재 관측 범위',exact:true})).toBeVisible();
+ await expect(page.getByRole('button',{name:'관측 범위',exact:true,includeHidden:true})).toHaveCount(0);
+ const sectors='activeEntities.filter(e=>e.polygon&&e.name?.includes("현재 관측 방향"))';
+ await expect(page.getByRole('group',{name:'관측 범위 표시',exact:true})).toBeVisible();
+ await page.getByLabel('선택 카메라만 표시',{exact:true}).check();await expect.poll(()=>frame.evaluate(sectors+'.length')).toBe(1);
+ await page.locator('.automatic-camera-list button').nth(2).click();
+ await expect.poll(()=>frame.evaluate(sectors+'[0].name')).toContain('합성 자동 카메라 2');
+ await expect(page.getByRole('img',{name:'합성 자동 카메라 2 현재 영상'})).toBeVisible();
+ await page.getByLabel('현재 관측 범위 표시',{exact:true}).uncheck();await expect.poll(()=>frame.evaluate(sectors+'.length')).toBe(0);
+ await expect(page.getByRole('img',{name:'합성 자동 카메라 2 현재 영상'})).toBeVisible();
+ await page.getByLabel('선택 카메라만 표시',{exact:true}).uncheck();await page.getByLabel('현재 관측 범위 표시',{exact:true}).check();await expect.poll(()=>frame.evaluate(sectors+'.length')).toBe(9);
  await page.getByRole('button',{name:'AI 감지 알림',exact:true}).click();await expect(page.getByText('AI 연동 준비 중 · 현재 실제 감지 알림을 수신하지 않습니다.')).toBeVisible();
  await expect(page.locator('input[type=file]')).toHaveCount(0);
 });
