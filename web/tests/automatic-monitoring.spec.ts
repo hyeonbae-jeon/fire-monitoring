@@ -73,6 +73,8 @@ test('viewer sees monitoring tools and current-camera view without any configura
  await expect(page.getByText('synthetic-viewer · 일반 사용자')).toBeVisible();
  for(const name of ['카메라·설정','지도 레이어','지도 연결','위치·지번','중앙 지도 설정 저장'])await expect(page.getByRole('button',{name,exact:true,includeHidden:true})).toHaveCount(0);
  await expect(page.locator('input[type=file]')).toHaveCount(0);
+ await expect(page.getByText('감시 방향 보정 (관리자)',{exact:true})).toHaveCount(0);
+ await expect(page.getByRole('button',{name:'근사 기준을 지도 설정에 반영',exact:true,includeHidden:true})).toHaveCount(0);
  await page.getByRole('button',{name:'현재 카메라 시점 보기',exact:true}).click();await expect.poll(()=>frame.evaluate('views.at(-1)?.destination')).toEqual([127.1,37.5,503]);
  await page.getByRole('button',{name:'전체 감시 지도로 돌아가기',exact:true}).click();await expect.poll(()=>frame.evaluate('ws3d.viewer.scene.screenSpaceCameraController.enableInputs')).toBe(true);
  await page.getByRole('button',{name:'관측 범위',exact:true}).click();await expect(page.getByRole('heading',{name:'현재 관측 범위',exact:true})).toBeVisible();
@@ -128,4 +130,38 @@ test('server opens nine current ranges without manual starts, switches frames, h
  await expect(page.getByLabel('지도 저장 키',{exact:true})).toHaveCount(0);
  expect(requests.filter(u=>u.includes('camera-snapshot')||u.includes('/api/inventory')||u.includes('/api/cameras'))).toEqual([]);
  expect(await page.evaluate(()=>({local:localStorage.length,session:sessionStorage.length}))).toEqual({local:0,session:0});
+});
+
+test('administrator corrects the selected automatic range and saves centrally without changing device anchors or other cameras',async({page})=>{
+ let expired=false,saveCount=0,stored=structuredClone(configuration);
+ const frame=await mockServer(page,'admin',()=>{const s=state(Date.now());if(expired)s.cameras[0].feed.devicePtz!.sample!.receivedAt=new Date(Date.now()-10000).toISOString();return s;});
+ await page.route('**/api/map-configuration',r=>{
+  if(r.request().method()==='PUT'){
+   expect(r.request().headers()['x-monitor-csrf']).toBe('synthetic-csrf-token');
+   const body=r.request().postDataJSON();expect(body.configurationRevision).toBe('synthetic-revision');stored=body.configuration;saveCount++;
+  }
+  return r.fulfill({json:{revision:'synthetic-revision',configuration:stored}});
+ });
+ const panel=page.getByRole('region',{name:'자동 감시 설정 저장'}),save=panel.getByRole('button',{name:'중앙 지도 설정 저장',exact:true});
+ await expect(save).toBeVisible();await expect(save).toBeDisabled();
+ await page.getByRole('button',{name:'현재 카메라 시점 보기',exact:true}).click();
+ await expect.poll(async()=>frame.evaluate('views.at(-1)?.orientation.heading*180/Math.PI')).toBeCloseTo(102);
+ await panel.getByText('감시 방향 보정 (관리자)',{exact:true}).click();
+ await panel.getByLabel('방위각 보정량(°)',{exact:true}).fill('-110');
+ await panel.getByLabel('기울기 보정량(°)',{exact:true}).fill('1');
+ await panel.getByLabel('저장 기준 수평 화각(°)',{exact:true}).fill('65');
+ await panel.getByRole('button',{name:'근사 기준을 지도 설정에 반영',exact:true}).click();
+ await expect.poll(async()=>frame.evaluate('views.at(-1)?.orientation.heading*180/Math.PI')).toBeCloseTo(352);
+ await expect.poll(async()=>frame.evaluate('views.at(-1)?.orientation.pitch*180/Math.PI')).toBeCloseTo(-1);
+ expect(saveCount).toBe(0);await expect(save).toBeEnabled();await save.click();await expect.poll(()=>saveCount).toBe(1);await expect(save).toBeDisabled();
+ const before=configuration.positions[0],after=stored.positions[0];
+ expect(after.lat).toBe(before.lat);expect(after.lon).toBe(before.lon);
+ expect(after.nativeTracking!.deviceAnchor).toEqual(before.nativeTracking!.deviceAnchor);
+ expect(after.nativeTracking!.pose).toEqual({...before.nativeTracking!.pose,headingDeg:350,pitchDeg:1,horizontalFovDeg:65});
+ expect(after.nativeTracking!.groundElevationM).toBe(before.nativeTracking!.groundElevationM);
+ expect(stored.positions.slice(1)).toEqual(configuration.positions.slice(1));
+ await page.reload();await expect(page.getByText('최신 관측 방향 9/9대',{exact:false})).toBeVisible();
+ await page.getByRole('region',{name:'자동 감시 설정 저장'}).getByText('감시 방향 보정 (관리자)',{exact:true}).click();
+ await expect(page.getByText('저장 기준: 방위각 350.00° · 기울기 1.00° · 화각 65.00°',{exact:true})).toBeVisible();
+ expired=true;await expect(page.getByRole('button',{name:'근사 기준을 지도 설정에 반영',exact:true})).toBeDisabled();
 });

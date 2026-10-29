@@ -3,6 +3,10 @@ import type {Position} from './map-model';
 import {automaticPose,recent,type AutomaticStatus,type AutomaticCamera} from './automatic-monitoring';
 import {monitorFetch} from './monitor-server';
 import {DevicePtzStatus} from './DevicePtzStatus';
+import {AutomaticTrackingEditor} from './AutomaticTrackingEditor';
+import type {NativeProfile} from './native-profile';
+
+type Management={onApply:(profile:NativeProfile)=>void;onSave:()=>void;dirty:boolean;saving:boolean;canSave:boolean;status:string};
 
 function AutomaticImage({camera,now}:{camera:AutomaticCamera|undefined;now:number}){
  const [shown,setShown]=useState<{url:string;identity:string;capturedAt:string}|null>(null),[error,setError]=useState('');
@@ -31,7 +35,7 @@ function AutomaticImage({camera,now}:{camera:AutomaticCamera|undefined;now:numbe
  const visible=shown&&shown.identity===identity&&fresh&&recent(shown.capturedAt,now);
  return <div className="automatic-image-frame">{visible?<img className="automatic-camera-image" src={shown.url} alt={(camera?.name??'선택 카메라')+' 현재 영상'} onLoad={()=>{urls.current.forEach(url=>{if(url!==shown.url&&url!==loading.current?.url){URL.revokeObjectURL(url);urls.current.delete(url);}});}}/>:<p role="status">{error||'최신 영상을 기다립니다.'}</p>}</div>;
 }
-export function AutomaticMonitoringPanel({positions,current,state,now,error,onSelect,onFit,onView,viewing,viewReady,viewError}:{positions:Position[];current:Position|undefined;state:AutomaticStatus|null;now:number;error:string;onSelect:(id:string)=>void;onFit:()=>void;onView:()=>void;viewing:boolean;viewReady:boolean;viewError:string}){
+export function AutomaticMonitoringPanel({positions,current,state,now,error,onSelect,onFit,onView,viewing,viewReady,viewError,management}:{positions:Position[];current:Position|undefined;state:AutomaticStatus|null;now:number;error:string;onSelect:(id:string)=>void;onFit:()=>void;onView:()=>void;viewing:boolean;viewReady:boolean;viewError:string;management?:Management}){
  const live=positions.filter(p=>automaticPose(p,state?.cameras.find(c=>c.cameraId===p.id),now)),camera=state?.cameras.find(c=>c.cameraId===current?.id);
  return <><h2>자동 감시</h2><p>최신 관측 방향 {live.length}/{positions.length}대 · 저장한 기준과 현재 PTZ로 범위를 갱신합니다.</p>
   <button onClick={onFit}>전체 현재 범위 보기</button>
@@ -45,6 +49,11 @@ export function AutomaticMonitoringPanel({positions,current,state,now,error,onSe
   {current&&<><h3>{current.name}</h3><button disabled={!viewing&&(!viewReady||!automaticPose(current,camera,now))} aria-pressed={viewing} onClick={onView}>{viewing?'전체 감시 지도로 돌아가기':'현재 카메라 시점 보기'}</button>{viewing&&<p>현재 영상의 장비 값에 맞춰 지도 시점을 갱신합니다.</p>}{viewError&&<p role="status">{viewError}</p>}<AutomaticImage key={current.id} camera={camera} now={now}/>
    <DevicePtzStatus value={camera?.feed.devicePtz} active mapApproximate clockNow={now}/>
    {camera?.feed.observation&&<p>영상 {camera.feed.observation.sequence}장 · 최근 수신 {new Date(camera.feed.observation.capturedAt??'').toLocaleTimeString()}</p>}
-   <p>표시 거리 {camera?.displayRangeM??1000}m · 지도에 표시하는 수평 거리입니다. 지형 가림·실제 식별 거리를 뜻하지 않습니다.</p></>}
+   <p>표시 거리 {camera?.displayRangeM??1000}m · 지도에 표시하는 수평 거리입니다. 지형 가림·실제 식별 거리를 뜻하지 않습니다.</p>
+   {management&&<section aria-label="자동 감시 설정 저장"><AutomaticTrackingEditor key={current.id+':'+current.nativeTracking?.savedAt} position={current} fresh={!!automaticPose(current,camera,now)} onApply={management.onApply}/>
+    <p role="status">{management.status}{management.dirty?' · 저장하지 않은 변경':''}</p>
+    <button disabled={!management.canSave||!management.dirty||management.saving} onClick={management.onSave}>중앙 지도 설정 저장</button>
+    <p className="help">보정 반영 후 이 버튼으로 저장하세요. 같은 수신 서버의 다른 접속 화면은 새로고침하면 반영됩니다.</p>
+   </section>}</>}
  </>;
 }
