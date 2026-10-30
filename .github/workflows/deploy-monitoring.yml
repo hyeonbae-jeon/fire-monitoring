@@ -1,0 +1,75 @@
+name: Deploy private monitoring server
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Private runner platform
+        type: choice
+        options: [windows, docker]
+        default: windows
+permissions:
+  contents: read
+concurrency:
+  group: private-monitoring-deployment
+  cancel-in-progress: false
+jobs:
+  windows:
+    if: inputs.target == 'windows'
+    runs-on: [self-hosted, Windows, X64, cctv-monitor]
+    environment: cctv-runtime
+    env:
+      CCTV_CONNECTIONS_JSON: ${{ secrets.CCTV_CONNECTIONS_JSON }}
+      CCTV_MAP_CONFIGURATION_JSON: ${{ secrets.CCTV_MAP_CONFIGURATION_JSON }}
+      CCTV_MONITOR_USER: ${{ secrets.CCTV_MONITOR_USER }}
+      CCTV_MONITOR_PASSWORD_HASH: ${{ secrets.CCTV_MONITOR_PASSWORD_HASH }}
+      CCTV_VIEWER_USER: ${{ secrets.CCTV_VIEWER_USER }}
+      CCTV_VIEWER_PASSWORD_HASH: ${{ secrets.CCTV_VIEWER_PASSWORD_HASH }}
+      CCTV_VWORLD_API_KEY: ${{ secrets.CCTV_VWORLD_API_KEY }}
+    steps:
+      - name: Import server settings without putting secrets in an artifact
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (!$env:CCTV_BRIDGE_EXE -or !(Test-Path $env:CCTV_BRIDGE_EXE)) { throw 'Set CCTV_BRIDGE_EXE on this private runner.' }
+          $settings = @{
+            MONITOR_SERVER_MODE = 'true'
+            CCTV_CONNECTIONS_JSON = $env:CCTV_CONNECTIONS_JSON
+            CCTV_MAP_CONFIGURATION_JSON = $env:CCTV_MAP_CONFIGURATION_JSON
+            CCTV_MONITOR_USER = $env:CCTV_MONITOR_USER
+            CCTV_MONITOR_PASSWORD_HASH = $env:CCTV_MONITOR_PASSWORD_HASH
+            CCTV_VIEWER_USER = $env:CCTV_VIEWER_USER
+            CCTV_VIEWER_PASSWORD_HASH = $env:CCTV_VIEWER_PASSWORD_HASH
+            VWORLD_API_KEY = $env:CCTV_VWORLD_API_KEY
+          }
+          $start = [System.Diagnostics.ProcessStartInfo]::new($env:CCTV_BRIDGE_EXE)
+          $start.ArgumentList.Add('--import-server-settings-stdin')
+          $start.UseShellExecute = $false
+          $start.RedirectStandardInput = $true
+          $start.StandardInputEncoding = [System.Text.UTF8Encoding]::new($false)
+          $process = [System.Diagnostics.Process]::Start($start)
+          $process.StandardInput.Write(($settings | ConvertTo-Json -Compress))
+          $process.StandardInput.Close()
+          $process.WaitForExit()
+          if ($process.ExitCode -ne 0) { throw 'Server settings import failed; existing settings retained.' }
+          if (Get-ScheduledTask -TaskName FireMonitoringServer -ErrorAction SilentlyContinue) {
+            Stop-ScheduledTask -TaskName FireMonitoringServer
+            Start-ScheduledTask -TaskName FireMonitoringServer
+          } else { Write-Host 'Settings saved. Restart the installed monitoring server to apply.' }
+  docker:
+    if: inputs.target == 'docker'
+    runs-on: [self-hosted, Linux, X64, cctv-monitor]
+    environment: cctv-runtime
+    env:
+      CCTV_CONNECTIONS_JSON: ${{ secrets.CCTV_CONNECTIONS_JSON }}
+      CCTV_MAP_CONFIGURATION_JSON: ${{ secrets.CCTV_MAP_CONFIGURATION_JSON }}
+      CCTV_MONITOR_USER: ${{ secrets.CCTV_MONITOR_USER }}
+      CCTV_MONITOR_PASSWORD_HASH: ${{ secrets.CCTV_MONITOR_PASSWORD_HASH }}
+      CCTV_VIEWER_USER: ${{ secrets.CCTV_VIEWER_USER }}
+      CCTV_VIEWER_PASSWORD_HASH: ${{ secrets.CCTV_VIEWER_PASSWORD_HASH }}
+      CCTV_VWORLD_API_KEY: ${{ secrets.CCTV_VWORLD_API_KEY }}
+      CCTV_MONITOR_DOMAIN: ${{ vars.CCTV_MONITOR_DOMAIN }}
+      COMPOSE_PROJECT_NAME: fire-monitoring
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start private server using runtime secrets only
+        run: docker compose -f deploy/compose.yml up -d --build --wait

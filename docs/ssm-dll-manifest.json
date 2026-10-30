@@ -1,0 +1,32 @@
+[
+  {
+    "file": "HTW.SSM.Libraries.DataStructure.dll",
+    "bytes": 776192,
+    "sha256": "98d6c3ba3844be83a9ca2b176fc94dde9d2ca107fd56048c9020310bf1b15ca6"
+  },
+  {
+    "file": "HTW.SSM.ConsoleStudio.Services.MediaService.dll",
+    "bytes": 158208,
+    "sha256": "80c237280bed90c2b9b568f625e3aa0068797a681d64423c8ff3e9c58d4fd1ab"
+  },
+  {
+    "file": "HTW.SSM.Libraries.MediaProcessings.XMapTile11.dll",
+    "bytes": 249856,
+    "sha256": "be74f221bf9279af82ba190eed5212c3cbe7ef1a22fd6adac79653cdd7d1453e"
+  },
+  {
+    "file": "HTW.SSM.ConsoleStudio.Services.DataService.dll",
+    "bytes": 479744,
+    "sha256": "e75123a1f18d370fe07d587c66a67b53319273d0043a539c29ef88013851f37b"
+  },
+  {
+    "file": "HTW.SSM.Libraries.Network.dll",
+    "bytes": 41984,
+    "sha256": "486351ce7b91ecc235fcaaf55fd666d8b60ff6aa7f8e791ca966b78b4a27d6a6"
+  },
+  {
+    "file": "HTW.SSM.Libraries.MediaProcessings.XTileControl11.dll",
+    "bytes": 374272,
+    "sha256": "4ad59f676490f0fefccb471195f6d486d6ca9a0c930f85470874094838c8300d"
+  }
+]

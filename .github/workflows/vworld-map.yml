@@ -1,0 +1,60 @@
+name: VWorld map preview
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, feat/vworld-monitoring-prototype]
+    paths:
+      - '.github/workflows/vworld-map.yml'
+      - 'web/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vworld-pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Check VWorld browser key configuration
+        env:
+          VWORLD_BROWSER_KEY: ${{ secrets.VWORLD_API_KEY }}
+        run: |
+          if [ -z "$VWORLD_BROWSER_KEY" ]; then
+            echo '::error::Add repository Actions secret VWORLD_API_KEY, then rerun this workflow. Do not enter SSM credentials.'
+            exit 1
+          fi
+      - name: Build map-only website
+        working-directory: web
+        env:
+          VITE_VWORLD_API_KEY: ${{ secrets.VWORLD_API_KEY }}
+          VITE_MAP_ONLY: 'true'
+          VITE_BASE_PATH: /${{ github.event.repository.name }}/
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web/dist
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy map preview
+        id: deployment
+        uses: actions/deploy-pages@v4

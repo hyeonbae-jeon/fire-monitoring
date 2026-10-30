@@ -1,0 +1,216 @@
+name: Windows portable demo
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feat/windows-portable-demo
+      - feat/vworld-monitoring-prototype
+    paths:
+      - '.github/workflows/windows-demo.yml'
+      - 'bridge/WisenetPtzBridge/**'
+      - 'bridge/ScreenCapture.Core/**'
+      - 'bridge/SsmScreenCapture/**'
+      - 'web/**'
+      - 'scripts/build-portable.py'
+      - 'tests/test_inventory.py'
+      - 'tests/test_portable_demo.py'
+      - 'tests/serve_e2e.py'
+      - 'tests/serve_map_preview.py'
+      - 'tests/test_screen_capture.py'
+      - 'tests/test_direct_snapshot.py'
+      - 'tests/test_automatic_monitoring.py'
+      - 'tests/test_server_container.py'
+      - 'tests/ServerSecurityChecks/**'
+      - 'scripts/register-monitor-startup.ps1'
+      - 'deploy/**'
+      - '.dockerignore'
+      - 'docs/automatic-monitoring.md'
+      - 'tests/ScreenCaptureChecks/**'
+      - 'tests/WindowsCaptureSmoke/**'
+      - 'config/inventory.example.json'
+      - 'docs/windows-demo.md'
+      - 'docs/terrain-calibration.md'
+      - 'docs/geographic-calibration.md'
+      - 'docs/visual-tracking.md'
+      - 'docs/vworld-monitoring.md'
+      - 'docs/video-direction-feasibility.md'
+      - 'docs/screen-capture.md'
+      - 'global.json'
+
+permissions:
+  contents: read
+
+jobs:
+  windows-capture-check:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.425'
+      - name: Windows encrypted server settings and login checks
+        run: dotnet run --project tests/ServerSecurityChecks -c Release
+      - name: Synthetic Windows window, pixel capture and occlusion checks
+        shell: pwsh
+        run: |
+          dotnet publish tests/WindowsCaptureSmoke -c Release -r win-x64 --self-contained false -o artifacts/windows-smoke --nologo
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & ./artifacts/windows-smoke/ConsoleStudio2.exe
+          exit $LASTEXITCODE
+  server-container-check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build server without operational credentials
+        run: docker build -f deploy/Dockerfile -t fire-monitoring:server-check .
+      - name: Test container using synthetic disabled camera settings
+        run: python3 tests/test_server_container.py
+  package:
+    needs: [windows-capture-check, server-container-check]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.425'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Build web and Bridge
+        run: |
+          cd web
+          npm ci --no-audit --no-fund
+          npm run build -- --outDir ../bridge/WisenetPtzBridge/wwwroot --emptyOutDir
+          cd ..
+          dotnet build bridge/WisenetPtzBridge -c Release --nologo
+      - name: Test synthetic inventory and portable startup
+        run: |
+          dotnet run --project tests/ScreenCaptureChecks -c Release
+          python3 tests/test_screen_capture.py
+          python3 tests/test_direct_snapshot.py
+          python3 tests/test_automatic_monitoring.py
+          python3 tests/test_inventory.py
+          python3 tests/test_portable_demo.py
+      - name: Prepare browser for checks
+        timeout-minutes: 4
+        run: |
+          cctv_browser_path="$(command -v google-chrome || command -v chromium || true)"
+          if [ -n "$cctv_browser_path" ]; then
+            "$cctv_browser_path" --version
+            echo "CHROMIUM_EXECUTABLE=$cctv_browser_path" >> "$GITHUB_ENV"
+          else
+            cd web
+            npx playwright install --with-deps chromium
+          fi
+      - name: Test browser inventory, map and terrain calibration (mock SDK)
+        timeout-minutes: 4
+        run: |
+          cd web
+          PLAYWRIGHT_JSON_OUTPUT_FILE=../artifacts/browser-normal-results.json npm run test:e2e -- --reporter=line,json
+      - name: Test Pages map and numerical calibration (mock SDK)
+        timeout-minutes: 4
+        run: |
+          cd web
+          VITE_MAP_ONLY=true VITE_BASE_PATH=/fire-monitoring/ VITE_VWORLD_API_KEY=synthetic-pages-key npm run build
+          PLAYWRIGHT_JSON_OUTPUT_FILE=../artifacts/browser-pages-results.json npx playwright test --config playwright.pages.config.ts --reporter=line,json
+      - name: Report browser failures through check annotations
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          import json, re
+          from pathlib import Path
+          def suites(items):
+              for suite in items:
+                  for spec in suite.get('specs', []):
+                      for test in spec.get('tests', []):
+                          if test.get('status') not in ('unexpected', 'flaky'):
+                              continue
+                          errors = [e.get('message', '') for r in test.get('results', []) for e in r.get('errors', [])]
+                          message = spec['title'] + ': ' + ' '.join(errors)
+                          message = re.sub(r'\x1b\[[0-9;]*m', '', message)
+                          message = re.sub(r'https?://\S+', '[request URL omitted]', message)[:1800]
+                          message = message.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+                          print('::error title=Browser check failed::' + message)
+                  suites(suite.get('suites', []))
+          for path in Path('artifacts').glob('browser-*-results.json'):
+              suites(json.loads(path.read_text()).get('suites', []))
+          PY
+      - name: Package Windows x64 demo
+        run: python3 scripts/build-portable.py
+      - name: Prepare monitoring update without replacing saved data
+        run: |
+          python3 - <<'PYUPDATE'
+          from pathlib import Path
+          import zipfile
+          update = Path('artifacts/Windows-Monitoring-Update')
+          update.mkdir(parents=True, exist_ok=True)
+          with zipfile.ZipFile('artifacts/Wisenet-Camera-Inventory-Demo-win-x64.zip') as archive:
+              prefix = 'Wisenet-Camera-Inventory-Demo/'
+              for entry in archive.namelist():
+                  if not entry.startswith(prefix) or entry.endswith('/'): continue
+                  name = entry[len(prefix):]
+                  if name.startswith('wwwroot/') or name in ['WisenetPtzBridge.dll', 'WisenetPtzBridge.pdb', '계정권한설정.cmd', '기본보정설정.json', 'docs/automatic-monitoring.md']:
+                      assert '..' not in Path(name).parts
+                      destination = update / name
+                      destination.parent.mkdir(parents=True, exist_ok=True)
+                      destination.write_bytes(archive.read(entry))
+          update.joinpath('업데이트방법.txt').write_text(
+              '자동 감시 안정화 및 관리자·일반 사용자 권한 업데이트\n\n'
+              '적용 대상: 자동 수신 서버 기능이 포함된 Windows 실행패키지\n'
+              '1. 실행 중인 WisenetPtzBridge 프로그램 창을 종료합니다.\n'
+              '2. 압축을 푼 내용 전체(DLL·PDB·wwwroot·계정권한설정.cmd·docs)를 기존 실행파일 폴더에 복사하고 같은 파일을 덮어씁니다.\n'
+              '3. 기존 data 폴더는 그대로 둡니다. 카메라 접속 정보와 지도 설정을 다시 입력하지 않습니다.\n'
+              '4. 일반 사용자 계정을 만들려면 계정권한설정.cmd를 실행합니다. 기존 계정은 관리자입니다.\n'
+              '5. WisenetPtzBridge.exe를 다시 실행하고 로그인합니다. 일반 사용자는 감시용 메뉴만 표시됩니다.\n'
+              '6. 자동 감시에서 현재 카메라 시점 보기를 누르면 지도가 현재 PTZ를 따라갑니다.\n'
+              '7. 방향 수정은 자동 감시에서 카메라를 선택한 뒤 영상 아래 감시 방향 보정 (관리자)을 펼쳐 진행합니다.\n'
+              '8. 보정 반영 후 같은 패널의 중앙 지도 설정 저장을 누릅니다.\n'
+              '9. 일반 사용자는 자동 감시 한 화면에서 영상과 관측 범위 표시를 함께 사용합니다.\n'
+              '10. 계정 변경을 GitHub 서버 배포에도 적용하려면 GitHub시크릿등록.cmd를 다시 실행합니다.\n\n'
+              '9대의 최종 보정값은 프로그램에 기본 포함됩니다. 새 설치는 자동 적용하며 기존 data는 덮어쓰지 않습니다.\n'
+              '기존 PC에도 이 배포의 보정값을 적용하려면 관리자 카메라·설정에서 기본보정설정.json을 불러와 중앙 저장합니다.\n'
+              '새 PC에서는 Windows 사용자 암호화 설정을 최초 한 번 등록해야 합니다.\n'
+              '자세한 권한·표시 거리·다른 PC 사용 안내는 docs/automatic-monitoring.md를 확인하세요.\n', encoding='utf-8-sig')
+          assert not (update/'data').exists()
+          assert (update/'wwwroot/index.html').is_file() and (update/'계정권한설정.cmd').is_file()
+          assert not list(update.rglob('*.protected'))
+          import json
+          assert len(json.loads((update/'기본보정설정.json').read_text())['positions']) == 9
+          PYUPDATE
+      - name: Register monitoring update download
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-Monitoring-Update
+          path: artifacts/Windows-Monitoring-Update/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Register downloadable artifact
+        id: artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-Camera-Inventory-Demo
+          path: |
+            artifacts/Wisenet-Camera-Inventory-Demo-win-x64.zip
+            artifacts/Wisenet-Camera-Inventory-Demo-win-x64.zip.sha256
+          if-no-files-found: error
+          retention-days: 30
+      - name: Download instructions
+        env:
+          ARTIFACT_URL: ${{ steps.artifact.outputs.artifact-url }}
+        run: |
+          echo "## Windows x64 sample demo" >> "$GITHUB_STEP_SUMMARY"
+          echo "Download: $ARTIFACT_URL" >> "$GITHUB_STEP_SUMMARY"
+          echo "Extract the artifact ZIP, then the package ZIP. Double-click WisenetPtzBridge.exe." >> "$GITHUB_STEP_SUMMARY"
+          echo "SSM is not connected. Uses synthetic cameras only. Demo save key: local-demo-only." >> "$GITHUB_STEP_SUMMARY"
+          echo "Manual image/terrain calibration and map settings persistence are included. Direction accuracy and live VWorld terrain remain unverified." >> "$GITHUB_STEP_SUMMARY"
+          echo "Windows server setup: run 서버설정.cmd once with saved map settings and camera credentials. Automatic nine-camera reception, authenticated monitoring and current approximate coverage are included. Actual credentials are never included in this artifact. See docs/automatic-monitoring.md." >> "$GITHUB_STEP_SUMMARY"
+          echo "On the SSM display PC, run 화면캡처.cmd and select a single video region, then open 실시간 화면 시험 in the browser. Optional local reference-image matching and map-view estimates are included; field accuracy is unverified. See docs/visual-tracking.md." >> "$GITHUB_STEP_SUMMARY"
