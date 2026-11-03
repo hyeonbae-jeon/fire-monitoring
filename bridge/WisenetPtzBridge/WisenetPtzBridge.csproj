@@ -9,4 +9,7 @@
     <Content Remove="Defaults/monitoring-map.json" />
     <EmbeddedResource Include="Defaults/monitoring-map.json" LogicalName="WisenetPtzBridge.MonitoringMapDefaults.json" />
   </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="MailKit" Version="4.18.2" />
+  </ItemGroup>
 </Project>

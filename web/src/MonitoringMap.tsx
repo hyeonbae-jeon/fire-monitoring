@@ -12,6 +12,8 @@ import {validLocation,type SelectedLocation} from './location-model';
 import {useTerrainVisibility} from './useTerrainVisibility';
 import {TerrainVisibilityControls} from './TerrainVisibilityControls';
 import {SmokeAlerts} from './SmokeAlerts';
+import {FirewatcherMailPanel} from './FirewatcherMailPanel';
+import {mailMarkers,useFirewatcherMail} from './firewatcher-mail';
 import {LiveCapture,type CapturedFrame} from './LiveCapture';
 import {NativePtzTracking} from './NativePtzTracking';
 import {InstallationPositionEditor} from './InstallationPositionEditor';
@@ -67,6 +69,9 @@ export function MonitoringMap({active=true,standalone=false,desktopDemo=false,se
  const edits=useRef(0),iframe=useRef<HTMLIFrameElement>(null),pending=useRef(new Map<string,{resolve:(ground:PreviewGround)=>void;reject:(error:Error)=>void;timer:number}>());
  const positions=configuration.positions,current=positions.find(p=>p.id===selected);
  const automatic=useAutomaticMonitoring(serverMode&&active);
+ const mail=useFirewatcherMail(serverMode&&active);
+ const mailMarkerKey=JSON.stringify(mailMarkers(mail.state,positions));
+ const mailAlarmMarkers=useMemo(()=>JSON.parse(mailMarkerKey) as ReturnType<typeof mailMarkers>,[mailMarkerKey]);
  // Image counters and receive timestamps must not rebuild unchanged map geometry.
  const runtimeCoverageKey=JSON.stringify(automaticCoverage(positions,automatic.state,automatic.now));
  const runtimeCoverage=useMemo<CoverageShape[]>(()=>JSON.parse(runtimeCoverageKey),[runtimeCoverageKey]);
@@ -87,7 +92,7 @@ export function MonitoringMap({active=true,standalone=false,desktopDemo=false,se
  const visibilityReceiver=useRef(visibility.receive);visibilityReceiver.current=visibility.receive;
  const displayedVisibility=useMemo(()=>!ready||calibrating?[]:visibility.results.filter(v=>coverageShapes.some(s=>s.cameraId===v.cameraId)),[visibility.results,coverageShapes,ready,calibrating]);
  const computedCoverageShapes=useMemo(()=>coverageShapes.map(s=>({...s,visibilityComputed:displayedVisibility.some(v=>v.cameraId===s.cameraId)})),[coverageShapes,displayedVisibility]);
- const alertMarkers=useMemo(()=>alertsHidden||calibrating?[]:buildAlertMarkers(alertDocument,alertBindings,positions),[alertDocument,alertBindings,positions,alertsHidden,calibrating]);
+ const alertMarkers=useMemo(()=>alertsHidden||calibrating?[]:[...buildAlertMarkers(alertDocument,alertBindings,positions),...mailAlarmMarkers],[alertDocument,alertBindings,positions,alertsHidden,calibrating,mailAlarmMarkers]);
  const polygon=calibrating||coverageShapes.some(s=>s.cameraId===selected)?null:simulation&&current?sector(current,heading,fov,range):!serverMode&&showEstimate&&estimate&&current?sector(current,estimate.headingDeg,estimate.horizontalFovDeg,range):null;
  const displayedLines=layers.filter(l=>visibleLayers.includes(l.id)).map(l=>({layer:l,lines:layerLines(l)}));
  const extentPoints=[...positions.map(p=>[p.lon,p.lat]),...displayedLines.flatMap(l=>l.lines.flat()),...coverageShapes.flatMap(s=>s.coordinates),...diagnosticPoints.map(p=>[p.lon,p.lat])];
@@ -322,7 +327,7 @@ export function MonitoringMap({active=true,standalone=false,desktopDemo=false,se
    <p className="help">{deploymentKey?'배포된 지도 키를 사용합니다.':'등록된 키가 없으면 이 화면에서 직접 입력할 수 있습니다.'} 키는 지도 요청 시 브라우저에 전달됩니다. VWorld에 이 사이트 주소를 등록하세요.</p><p className="help">현재 사이트: {location.origin}{import.meta.env.BASE_URL}</p>
   </aside>}
   {canManage&&<aside className="map-floating location-panel" hidden={tools!=='location'}><LocationLookup point={locationPoint} picking={locationPicking} ready={ready} apiKey={appliedKey} pickError={locationError} onPicking={v=>{setLocationPicking(v);setLocationError('');}} onPoint={p=>{setLocationPoint(p);setLocationError('');}}/></aside>}
-  <aside className="map-floating smoke-alert-panel" hidden={tools!=='alerts'}>{calibrating&&<p className="help">가상 시점 보정 중 알림 카메라 표시 숨김</p>}{canManage?<SmokeAlerts document={alertDocument} bindings={alertBindings} positions={positions} hidden={alertsHidden} onDocument={setAlertDocument} onBindings={setAlertBindings} onHidden={setAlertsHidden} onSelect={selectPosition} renderError={alarmRenderError}/>:<><h2>AI 감지 알림</h2><p>AI 연동 준비 중 · 현재 실제 감지 알림을 수신하지 않습니다.</p></>}</aside>
+  <aside className="map-floating smoke-alert-panel" hidden={tools!=='alerts'}>{calibrating&&<p className="help">가상 시점 보정 중 알림 카메라 표시 숨김</p>}{serverMode?<><FirewatcherMailPanel state={mail.state} error={mail.error} canManage={canManage} positions={positions} onRefresh={mail.refresh} onSelect={selectPosition}/>{canManage&&<details><summary>수동 알림 자료 시험</summary><SmokeAlerts document={alertDocument} bindings={alertBindings} positions={positions} hidden={alertsHidden} onDocument={setAlertDocument} onBindings={setAlertBindings} onHidden={setAlertsHidden} onSelect={selectPosition} renderError={alarmRenderError}/></details>}</>:<SmokeAlerts document={alertDocument} bindings={alertBindings} positions={positions} hidden={alertsHidden} onDocument={setAlertDocument} onBindings={setAlertBindings} onHidden={setAlertsHidden} onSelect={selectPosition} renderError={alarmRenderError}/>}</aside>
   {serverMode&&tools==='auto'&&<aside className="map-floating map-live-panel"><AutomaticMonitoringPanel coverage={!canManage?{visible:!coverageHidden,selectedOnly:coverageSelectedOnly,onVisible:value=>setCoverageHidden(!value),onSelectedOnly:setCoverageSelectedOnly}:undefined} management={canManage?{onApply:saveNativeProfile,onSave:()=>void saveCentral(),dirty,saving,canSave:revision!==null,status:storageStatus}:undefined} positions={positions} current={current} state={automatic.state} now={automatic.now} error={automatic.error} onView={toggleAutomaticView} viewing={automaticView} viewReady={ready} viewError={automaticViewError} onSelect={selectPosition} onFit={()=>{exitPreview();post('fit-layers',{bounds:extent});}}/></aside>}
   {!standalone&&active&&tools==='live'&&<aside className="map-floating map-live-panel"><p className="help">선택 지도 위치: {current?.name??'없음'} · 수집 영상과의 장비 일치 미확인</p><label>추종할 설치 카메라<select value={selected} onChange={e=>selectPosition(e.target.value)}>{positions.map(p=><option key={p.id} value={p.id}>{p.name}{p.nativeTracking?' · 기준 저장됨':''}</option>)}</select></label><LiveCapture key={current?.id} active desktopDemo={desktopDemo} embedded cameraLabel={current?.name} onFrame={setCaptureFrame} onPtz={setNativePtz}/><label>지도 추종 방식<select value={trackingMode} onChange={e=>{stopLiveView();setTrackingMode(e.target.value);}}><option value="visual">영상 대응 추정</option><option value="device">장비 PTZ 근사 추종</option></select></label>{trackingMode==='device'?<NativePtzTracking key={current?.id+':'+current?.lat+':'+current?.lon} position={current} frame={captureFrame} device={nativePtz} initial={trialView&&trialView.position.id===current?.id&&trialView.position.lat===current.lat&&trialView.position.lon===current.lon?trialView:null} mapReady={ready} onView={updateLiveView} onStop={stopLiveView} onSave={saveNativeProfile}/>:<VisualTracking key={JSON.stringify([current?.id,current?.lat,current?.lon,current?.orientation])} position={current} frame={captureFrame} mapReady={ready} onView={updateLiveView} onStop={stopLiveView}/>}<p className="help">시험 시점은 지도 설정에 자동 저장하지 않습니다.</p></aside>}
   <div className="terrain-workspace">

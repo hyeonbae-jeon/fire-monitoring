@@ -17,6 +17,7 @@ if (args.Contains("--health-probe"))
 if (args.Contains("--import-server-settings-stdin")) { Environment.ExitCode = await MonitoringServerSetup.ImportAsync(); return; }
 if (args.Contains("--configure-monitoring-server")) { Environment.ExitCode = await MonitoringServerSetup.ConfigureAsync(); return; }
 if (args.Contains("--configure-monitoring-accounts")) { Environment.ExitCode = await MonitoringServerSetup.ConfigureAccountsAsync(); return; }
+if (args.Contains("--configure-firewatcher-mail")) { Environment.ExitCode = await FirewatcherMailSettings.ConfigureAsync(); return; }
 if (args.Contains("--register-github-secrets")) { Environment.ExitCode = await MonitoringServerSetup.RegisterGitHubAsync(); return; }
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 {
@@ -57,6 +58,8 @@ builder.Services.AddSingleton<ScreenFrameSource>();
 builder.Services.AddSingleton<DirectSnapshotSource>();
 builder.Services.AddSingleton<AutomaticMonitoring>();
 builder.Services.AddHostedService(services => services.GetRequiredService<AutomaticMonitoring>());
+builder.Services.AddSingleton<FirewatcherMailReceiver>();
+builder.Services.AddHostedService(services => services.GetRequiredService<FirewatcherMailReceiver>());
 MonitoringServerSecurity.Add(builder);
 await MonitoringServerSetup.InitializeMapAsync(builder.Configuration, useBundledDefaults: desktopDemo || serverMode);
 builder.WebHost.ConfigureKestrel(options =>
@@ -82,6 +85,11 @@ MonitoringServerSecurity.Use(app);
 app.UseDefaultFiles();
 app.UseStaticFiles();
 app.MapDirectSnapshotEndpoints();
+// Mail links are visible only inside the authenticated receiver, never on Pages or a standalone Bridge.
+app.MapGet("/api/firewatcher-mail", async (FirewatcherMailReceiver mail, CancellationToken ct) =>
+    serverMode ? Results.Ok(await mail.StatusAsync(ct)) : Results.NotFound());
+app.MapPost("/api/firewatcher-mail/binding", async (MailAlertBindingRequest request, FirewatcherMailReceiver mail, MapConfiguration maps, CancellationToken ct) =>
+    serverMode ? await mail.SaveBindingAsync(request, maps, ct) : Results.NotFound());
 app.MapGet("/health", () => Results.Ok(new
 {
     ok = true, service = "WisenetPtzBridge", phase = "camera-inventory",

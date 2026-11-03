@@ -129,6 +129,18 @@ class AutomaticMonitoringTests(unittest.TestCase):
             if result: return result
             time.sleep(.15)
         self.fail('Synthetic camera state timeout')
+    def test_mail_status_is_authenticated_and_binding_requires_admin_csrf(self):
+        for client in [self.client, self.viewer]:
+            code, raw, _ = self.request('/api/firewatcher-mail', client=client)
+            self.assertEqual(code, 200)
+            state = json.loads(raw)
+            self.assertEqual(state['source'], 'iphone-mail-forward')
+            self.assertEqual(state['events'], [])
+            self.assertNotIn('appPassword', raw.decode())
+        payload = json.dumps(dict(eventId='0'*64, cameraId='camera-0', confirmCamera=True)).encode()
+        self.assertEqual(self.request('/api/firewatcher-mail/binding', 'POST', payload, {'Content-Type':'application/json'}, client=self.viewer)[0], 403)
+        self.assertEqual(self.request('/api/firewatcher-mail/binding', 'POST', payload, {'Content-Type':'application/json'})[0], 403)
+        self.assertEqual(self.request('/api/firewatcher-mail/binding', 'POST', payload, {'Content-Type':'application/json','X-Monitor-CSRF':self.csrf})[0], 409)
     def test_autonomous_nine_sessions_are_fresh_isolated_and_secret_free(self):
         state = self.status(); self.assertTrue(state['configured']); self.assertEqual(len(state['cameras']), 9)
         self.assertTrue(all(n >= 8 for n in Cameras.counts), Cameras.counts)
@@ -147,7 +159,7 @@ class AutomaticMonitoringTests(unittest.TestCase):
             self.assertNotIn(secret, public)
         self.assertTrue(all(path == PTZ or path == NVT_PTZ or path.startswith('/cgi-bin/GetImage.cgi?') or path.startswith('/stw-cgi/video.cgi?') for _, path in Cameras.reads))
     def test_authentication_https_proxy_and_csrf_protect_reads_and_writes(self):
-        for path in ['/api/auto-monitor/status', '/api/map-configuration', '/api/map-client-settings', '/api/session']:
+        for path in ['/api/auto-monitor/status', '/api/map-configuration', '/api/map-client-settings', '/api/session', '/api/firewatcher-mail']:
             self.assertEqual(self.request(path, anonymous=True)[0], 401)
         self.assertEqual(self.request('/login', 'POST', b'username=monitor&password=ignored', {'Content-Type':'application/x-www-form-urlencoded'}, anonymous=True)[0], 403)
         self.assertEqual(self.request('/health', headers={'Host':'remote.invalid'}, anonymous=True)[0], 400)

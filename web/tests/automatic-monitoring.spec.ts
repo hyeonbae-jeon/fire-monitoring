@@ -42,6 +42,7 @@ async function mockServer(page:Page,role:'admin'|'viewer',status:()=>AutomaticSt
  await page.route('**/api/session',r=>r.fulfill({json:{serverMode:true,role,userName:'synthetic-'+role,csrfToken:'synthetic-csrf-token'}}));
  await page.route('**/api/map-client-settings',r=>r.fulfill({json:{vworldApiKey:'synthetic-browser-key'}}));
  await page.route('**/api/map-configuration',r=>r.fulfill({json:{revision:'synthetic-revision',configuration}}));
+ await page.route('**/api/firewatcher-mail',r=>r.fulfill({json:{configured:false,enabled:false,status:'not-configured',checkedAt:null,pollSeconds:30,skippedMessages:0,retainedLimit:1000,source:'iphone-mail-forward',events:[]}}));
  await page.route('**/api/auto-monitor/status',r=>r.fulfill({json:status()}));
  await page.route('**/api/auto-monitor/frame?*',async r=>{const delay=onImage();if(delay)await new Promise(resolve=>setTimeout(resolve,delay));await r.fulfill({contentType:'image/png',body:image}).catch(()=>{});});
  await page.goto('/');await expect(page.getByText('최신 관측 방향 9/9대',{exact:false})).toBeVisible();await expect(page.getByText(/VWorld 3D 뷰어 초기화 완료 ·/)).toBeVisible();
@@ -87,7 +88,7 @@ test('viewer sees monitoring tools and current-camera view without any configura
  await page.getByLabel('현재 관측 범위 표시',{exact:true}).uncheck();await expect.poll(()=>frame.evaluate(sectors+'.length')).toBe(0);
  await expect(page.getByRole('img',{name:'합성 자동 카메라 2 현재 영상'})).toBeVisible();
  await page.getByLabel('선택 카메라만 표시',{exact:true}).uncheck();await page.getByLabel('현재 관측 범위 표시',{exact:true}).check();await expect.poll(()=>frame.evaluate(sectors+'.length')).toBe(9);
- await page.getByRole('button',{name:'AI 감지 알림',exact:true}).click();await expect(page.getByText('AI 연동 준비 중 · 현재 실제 감지 알림을 수신하지 않습니다.')).toBeVisible();
+ await page.getByRole('button',{name:'AI 감지 알림',exact:true}).click();await expect(page.getByText('메일 수신 설정 전',{exact:true})).toBeVisible();
  await expect(page.locator('input[type=file]')).toHaveCount(0);
 });
 test('expired image downloads are discarded without accumulating blob buffers',async({page})=>{
@@ -173,4 +174,52 @@ test('administrator corrects the selected automatic range and saves centrally wi
  await page.getByRole('region',{name:'자동 감시 설정 저장'}).getByText('감시 방향 보정 (관리자)',{exact:true}).click();
  await expect(page.getByText('저장 기준: 방위각 350.00° · 기울기 1.00° · 화각 65.00°',{exact:true})).toBeVisible();
  expired=true;await expect(page.getByRole('button',{name:'근사 기준을 지도 설정에 반영',exact:true})).toBeDisabled();
+});
+
+test('mail alert requires explicit camera confirmation, stores binding with CSRF and displays a camera-installation marker',async({page})=>{
+ const requests:string[]=[];page.on('request',r=>requests.push(r.url()));
+ const frame=await mockServer(page,'admin',()=>state(Date.now()));
+ const event={id:'a'.repeat(64),link:'https://alert.example/sms/synthetic-event/synthetic-recipient',mailSentAt:'2026-11-03T10:00:00Z',mailReceivedAt:'2026-11-03T10:01:00Z',firstSeenAt:'2026-11-03T10:02:00Z',binding:null as null|{cameraId:string;lat:number;lon:number}};
+ const mail={configured:true,enabled:true,status:'connected',checkedAt:new Date().toISOString(),pollSeconds:30,skippedMessages:0,retainedLimit:1000,source:'iphone-mail-forward',events:[event]};
+ await page.route('**/api/firewatcher-mail',r=>r.fulfill({json:mail}));
+ let writes=0;
+ await page.route('**/api/firewatcher-mail/binding',r=>{
+  expect(r.request().headers()['x-monitor-csrf']).toBe('synthetic-csrf-token');
+  expect(r.request().postDataJSON()).toEqual({eventId:event.id,cameraId:'auto-2',confirmCamera:true});
+  const p=configuration.positions[2];event.binding={cameraId:p.id,lat:p.lat,lon:p.lon};writes++;
+  return r.fulfill({json:{ok:true}});
+ });
+ await page.getByRole('button',{name:'AI 감지 알림',exact:true}).click();
+ const panel=page.getByRole('region',{name:'FIREWATCHER 메일 알림'});
+ await panel.getByRole('button',{name:'수신 상태 새로고침'}).click();
+ await expect(panel.getByText('네이버 메일 연결 정상',{exact:true})).toBeVisible();
+ await panel.getByRole('button',{name:/카메라 확인 필요/}).click();
+ const save=panel.getByRole('button',{name:'알림 카메라 연결 저장'});
+ await expect(save).toBeDisabled();
+ await panel.getByLabel('연결할 지도 카메라').selectOption('auto-2');await expect(save).toBeDisabled();
+ await expect(panel.getByText('원본 감지 시각: 미확인',{exact:false})).toBeVisible();
+ const link=panel.getByRole('link',{name:'원본 알림 페이지 열기 ↗'});await expect(link).toHaveAttribute('referrerpolicy','no-referrer');
+ await expect.poll(()=>frame.evaluate('activeEntities.filter(e=>e.name?.includes("알림 자료 카메라 위치")).length')).toBe(0);
+ await panel.getByLabel('원본 알림과 같은 카메라임을 확인했습니다.').check();await save.click();
+ await expect.poll(()=>writes).toBe(1);
+ await expect.poll(()=>frame.evaluate('activeEntities.filter(e=>e.name?.includes("알림 자료 카메라 위치")).length')).toBe(1);
+ await expect(panel.getByRole('button',{name:'지도에서 알림 카메라 보기'})).toBeVisible();
+ expect(requests.filter(r=>r.startsWith('https://alert.example'))).toEqual([]);
+ expect(await page.evaluate(()=>({local:localStorage.length,session:sessionStorage.length}))).toEqual({local:0,session:0});
+});
+
+test('viewer can read forwarded mail and see confirmed camera but receives no binding or mailbox administration controls',async({page})=>{
+ await mockServer(page,'viewer',()=>state(Date.now()));
+ const p=configuration.positions[1];
+ await page.route('**/api/firewatcher-mail',r=>r.fulfill({json:{configured:true,enabled:true,status:'connected',checkedAt:new Date().toISOString(),pollSeconds:30,skippedMessages:0,retainedLimit:1000,source:'iphone-mail-forward',events:[{
+  id:'b'.repeat(64),link:'https://alert.example/sms/test/recipient',mailSentAt:null,mailReceivedAt:null,firstSeenAt:new Date().toISOString(),binding:{cameraId:p.id,lat:p.lat,lon:p.lon}
+ }]}}));
+ await page.getByRole('button',{name:'AI 감지 알림',exact:true}).click();
+ const panel=page.getByRole('region',{name:'FIREWATCHER 메일 알림'});await panel.getByRole('button',{name:'수신 상태 새로고침'}).click();
+ await panel.getByRole('button',{name:/합성 자동 카메라 1/}).click();
+ await expect(panel.getByRole('button',{name:'지도에서 알림 카메라 보기'})).toBeVisible();
+ await expect(panel.getByLabel('연결할 지도 카메라')).toHaveCount(0);
+ await expect(panel.getByRole('button',{name:'알림 카메라 연결 저장'})).toHaveCount(0);
+ await expect(page.getByText('수동 알림 자료 시험',{exact:true})).toHaveCount(0);
+ await expect(panel.locator('input')).toHaveCount(0);
 });

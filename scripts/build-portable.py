@@ -48,15 +48,33 @@ with tempfile.TemporaryDirectory() as temporary:
     for name in ['vworld-monitoring.md', 'terrain-calibration.md', 'geographic-calibration.md', 'visual-tracking.md', 'video-direction-feasibility.md', 'ssm-report-import.md', 'screen-capture.md']:
         shutil.copyfile(ROOT / 'docs' / name, package / 'docs' / name)
     (package / '문제진단.cmd').write_bytes(b'@echo off\r\ncd /d "%~dp0"\r\nWisenetPtzBridge.exe --no-browser\r\npause\r\n')
-    for name, option in [('서버설정.cmd', '--configure-monitoring-server'), ('계정권한설정.cmd', '--configure-monitoring-accounts'), ('GitHub시크릿등록.cmd', '--register-github-secrets')]:
+    for name, option in [('서버설정.cmd', '--configure-monitoring-server'), ('계정권한설정.cmd', '--configure-monitoring-accounts'), ('메일수신설정.cmd', '--configure-firewatcher-mail'), ('GitHub시크릿등록.cmd', '--register-github-secrets')]:
         (package / name).write_bytes(('@echo off\r\ncd /d "%~dp0"\r\nWisenetPtzBridge.exe '+option+'\r\npause\r\n').encode('ascii'))
     shutil.copyfile(ROOT / 'scripts/register-monitor-startup.ps1', package / '서버자동시작등록.ps1')
     shutil.copyfile(ROOT / 'docs/automatic-monitoring.md', package / 'docs/automatic-monitoring.md')
+    shutil.copyfile(ROOT / 'docs/firewatcher-mail.md', package / 'docs/firewatcher-mail.md')
     (package / '화면캡처.cmd').write_bytes(b'@echo off\r\ncd /d "%~dp0"\r\nstart "" "capture\\SsmScreenCapture.exe" --output-dir "%~dp0data\\capture.private"\r\n')
+    # Ship license texts from restored dependency packages without including credentials.
+    # MailKit/MimeKit distribute MIT via their repositories; those texts are checked in.
+    dependency_notices = package / 'licenses'
+    dependency_notices.mkdir(exist_ok=True)
+    assets = json.loads((ROOT / 'bridge/WisenetPtzBridge/obj/project.assets.json').read_text())
+    for library in assets['libraries'].values():
+        if library.get('type') != 'package': continue
+        for folder in assets['packageFolders']:
+            directory = Path(folder) / library['path']
+            for nupkg in directory.glob('*.nupkg'):
+                with zipfile.ZipFile(nupkg) as dependency:
+                    for entry in dependency.namelist():
+                        basename = Path(entry).name
+                        if not entry.endswith('/') and ('license' in basename.lower() or 'notice' in basename.lower()):
+                            target = dependency_notices / (directory.parent.name + '-' + basename)
+                            target.write_bytes(dependency.read(entry))
     # Ship the runtime's notices and application dependency license information.
     shutil.copyfile(ROOT / 'web/package-lock.json', package / 'web-package-lock.json')
     notices = package / 'licenses'
-    notices.mkdir()
+    notices.mkdir(exist_ok=True)
+    shutil.copyfile(ROOT / 'docs/mail-components-notices.txt', notices / 'mail-components-notices.txt')
     for name in ['react', 'react-dom', 'scheduler']:
         shutil.copyfile(ROOT / 'web/node_modules' / name / 'LICENSE', notices / (name + '-LICENSE.txt'))
     shutil.copyfile(ROOT / 'web/node_modules/@techstark/opencv-js/LICENSE', notices / 'opencv-js-LICENSE.txt')

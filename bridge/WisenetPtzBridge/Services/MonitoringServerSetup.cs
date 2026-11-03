@@ -52,7 +52,7 @@ public static class MonitoringServerSetup
         }
         finally { Marshal.FreeHGlobal(input.Data); if (output.Data != IntPtr.Zero) LocalFree(output.Data); }
     }
-    private static string Read(string label, string fallback = "", bool secret = false)
+    public static string Read(string label, string fallback = "", bool secret = false)
     {
         Console.Write(label + (fallback.Length > 0 ? " (Enter: 기존 값 유지)" : "") + ": ");
         if (!secret) { var line = Console.ReadLine()?.Trim() ?? ""; return line.Length == 0 ? fallback : line; }

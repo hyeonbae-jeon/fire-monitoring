@@ -4,7 +4,7 @@ import type {Position} from './map-model';
 export type SmokeAlert={eventId:string;cameraKey:string;cameraName:string;detectedAt:string;frameSize:{width:number;height:number}|null;box:{x:number;y:number;width:number;height:number}|null};
 export type SmokeAlertDocument={schemaVersion:1;kind:'smoke-alert-preview';source:'operator-input';sourceInstance:string;events:SmokeAlert[]};
 export type AlertBinding={key:string;cameraId:string;positionAtBinding:{lat:number;lon:number}};
-export type AlertMarker={cameraId:string;name:string;lat:number;lon:number;count:number;latestAt:string;locationMeaning:'camera-installation';sourceMode:'operator-input'};
+export type AlertMarker={cameraId:string;name:string;lat:number;lon:number;count:number;latestAt:string;locationMeaning:'camera-installation';sourceMode:'operator-input'|'iphone-mail-forward'};
 export const MAX_ALERT_BYTES=1024*1024;
 const fields=(v:any,keys:string[])=>v&&typeof v==='object'&&!Array.isArray(v)&&Object.keys(v).length===keys.length&&keys.every(k=>Object.hasOwn(v,k));
 const text=(v:unknown,max:number)=>typeof v==='string'&&v.trim().length>0&&v.length<=max;
