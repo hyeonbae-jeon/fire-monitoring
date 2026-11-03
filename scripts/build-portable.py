@@ -53,6 +53,7 @@ with tempfile.TemporaryDirectory() as temporary:
     shutil.copyfile(ROOT / 'scripts/register-monitor-startup.ps1', package / '서버자동시작등록.ps1')
     shutil.copyfile(ROOT / 'docs/automatic-monitoring.md', package / 'docs/automatic-monitoring.md')
     shutil.copyfile(ROOT / 'docs/firewatcher-mail.md', package / 'docs/firewatcher-mail.md')
+    shutil.copyfile(ROOT / 'docs/alert-location.md', package / 'docs/alert-location.md')
     (package / '화면캡처.cmd').write_bytes(b'@echo off\r\ncd /d "%~dp0"\r\nstart "" "capture\\SsmScreenCapture.exe" --output-dir "%~dp0data\\capture.private"\r\n')
     # Ship license texts from restored dependency packages without including credentials.
     # MailKit/MimeKit distribute MIT via their repositories; those texts are checked in.

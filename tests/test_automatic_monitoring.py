@@ -141,6 +141,11 @@ class AutomaticMonitoringTests(unittest.TestCase):
         self.assertEqual(self.request('/api/firewatcher-mail/binding', 'POST', payload, {'Content-Type':'application/json'}, client=self.viewer)[0], 403)
         self.assertEqual(self.request('/api/firewatcher-mail/binding', 'POST', payload, {'Content-Type':'application/json'})[0], 403)
         self.assertEqual(self.request('/api/firewatcher-mail/binding', 'POST', payload, {'Content-Type':'application/json','X-Monitor-CSRF':self.csrf})[0], 409)
+        self.assertEqual(self.request('/api/firewatcher-mail/image?id='+('0'*64), client=self.viewer)[0], 404)
+        for route in ['/api/firewatcher-mail/import','/api/firewatcher-mail/refresh']:
+            self.assertEqual(self.request(route, 'POST', payload, {'Content-Type':'application/json'}, client=self.viewer)[0], 403)
+            self.assertEqual(self.request(route, 'POST', payload, {'Content-Type':'application/json'})[0], 403)
+
     def test_autonomous_nine_sessions_are_fresh_isolated_and_secret_free(self):
         state = self.status(); self.assertTrue(state['configured']); self.assertEqual(len(state['cameras']), 9)
         self.assertTrue(all(n >= 8 for n in Cameras.counts), Cameras.counts)
@@ -159,7 +164,7 @@ class AutomaticMonitoringTests(unittest.TestCase):
             self.assertNotIn(secret, public)
         self.assertTrue(all(path == PTZ or path == NVT_PTZ or path.startswith('/cgi-bin/GetImage.cgi?') or path.startswith('/stw-cgi/video.cgi?') for _, path in Cameras.reads))
     def test_authentication_https_proxy_and_csrf_protect_reads_and_writes(self):
-        for path in ['/api/auto-monitor/status', '/api/map-configuration', '/api/map-client-settings', '/api/session', '/api/firewatcher-mail']:
+        for path in ['/api/auto-monitor/status', '/api/map-configuration', '/api/map-client-settings', '/api/session', '/api/firewatcher-mail', '/api/firewatcher-mail/image?id='+('0'*64)]:
             self.assertEqual(self.request(path, anonymous=True)[0], 401)
         self.assertEqual(self.request('/login', 'POST', b'username=monitor&password=ignored', {'Content-Type':'application/x-www-form-urlencoded'}, anonymous=True)[0], 403)
         self.assertEqual(self.request('/health', headers={'Host':'remote.invalid'}, anonymous=True)[0], 400)

@@ -136,3 +136,5 @@ try
     Console.WriteLine("Mail MIME/filter, encrypted restart/deduplication/binding, cancellation/tamper and actual read-only IMAP command checks passed.");
 }
 finally { Directory.Delete(directory, true); }
+
+await EventPageChecks.RunAsync(args.FirstOrDefault());

@@ -3,7 +3,8 @@ import type {Position} from './map-model';
 import type {AlertMarker} from './smoke-alert-model';
 import {monitorFetch} from './monitor-server';
 
-export type MailEvent={id:string;link:string;mailSentAt:string|null;mailReceivedAt:string|null;firstSeenAt:string;binding:{cameraId:string;lat:number;lon:number}|null};
+export type EventDetail={cameraKey:string;cameraName:string;eventType:string;reportedTime:string;displayedTime:string|null;mappingCount:number;hasDevicePose:boolean;imageSha256:string|null};
+export type MailEvent={id:string;link:string;mailSentAt:string|null;mailReceivedAt:string|null;firstSeenAt:string;binding:{cameraId:string;lat:number;lon:number}|null;detail?:EventDetail|null;detailCheckedAt?:string|null;detailStatus?:string|null;ingestionSource?:string};
 export type MailStatus={configured:boolean;enabled:boolean;status:string;checkedAt:string|null;pollSeconds:number;skippedMessages:number;retainedLimit:number;source:'iphone-mail-forward';events:MailEvent[]};
 export function mailCamera(event:MailEvent,positions:Position[]){return positions.find(p=>p.id===event.binding?.cameraId&&p.lat===event.binding.lat&&p.lon===event.binding.lon);}
 export function mailMarkers(state:MailStatus|null,positions:Position[]):AlertMarker[]{

@@ -16,7 +16,7 @@ public static class MonitoringServerSecurity
 {
     public const string Admin = "admin", Viewer = "viewer";
     private static readonly HashSet<string> ViewerReads = new(StringComparer.OrdinalIgnoreCase)
-    { "/api/session", "/api/map-configuration", "/api/map-client-settings", "/api/auto-monitor/status", "/api/auto-monitor/frame", "/api/firewatcher-mail" };
+    { "/api/session", "/api/map-configuration", "/api/map-client-settings", "/api/auto-monitor/status", "/api/auto-monitor/frame", "/api/firewatcher-mail", "/api/firewatcher-mail/image" };
     public static bool Enabled(IConfiguration config) => config["MONITOR_SERVER_MODE"] == "true";
     public static bool ValidUser(string? value) => !string.IsNullOrWhiteSpace(value) && value.Length <= 100 && value == value.Trim() && !value.Any(char.IsControl);
     public static void ValidateAccounts(IConfiguration config)

@@ -24,6 +24,7 @@ on:
       - 'tests/ServerSecurityChecks/**'
       - 'tests/MailReceiverChecks/**'
       - 'docs/firewatcher-mail.md'
+      - 'docs/alert-location.md'
       - 'docs/mail-components-notices.txt'
       - 'scripts/register-monitor-startup.ps1'
       - 'deploy/**'
@@ -165,16 +166,17 @@ jobs:
               for entry in archive.namelist():
                   if not entry.startswith(prefix) or entry.endswith('/'): continue
                   name = entry[len(prefix):]
-                  if name.startswith(('wwwroot/', 'licenses/', 'runtimes/')) or '/' not in name and name.endswith(('.dll', '.pdb', '.deps.json', '.runtimeconfig.json')) or name in ['계정권한설정.cmd', '메일수신설정.cmd', '기본보정설정.json', 'docs/automatic-monitoring.md', 'docs/firewatcher-mail.md']:
+                  if name.startswith(('wwwroot/', 'licenses/', 'runtimes/')) or '/' not in name and name.endswith(('.dll', '.pdb', '.deps.json', '.runtimeconfig.json')) or name in ['계정권한설정.cmd', '메일수신설정.cmd', '기본보정설정.json', 'docs/automatic-monitoring.md', 'docs/firewatcher-mail.md', 'docs/alert-location.md']:
                       assert '..' not in Path(name).parts
                       destination = update / name
                       destination.parent.mkdir(parents=True, exist_ok=True)
                       destination.write_bytes(archive.read(entry))
           update.joinpath('업데이트방법.txt').write_text(
-              '자동 감시 및 FIREWATCHER 메일 수신 업데이트\n\n'
+              '자동 감시 및 FIREWATCHER 감지 영상·위치 후보 업데이트\n\n'
               '적용 대상: 자동 수신 서버 기능이 포함된 Windows 실행패키지\n'
               '1. 실행 중인 WisenetPtzBridge 프로그램 창을 종료합니다.\n'
               '2. 압축을 푼 내용 전체(DLL·PDB·wwwroot·계정권한설정.cmd·docs)를 기존 실행파일 폴더에 복사하고 같은 파일을 덮어씁니다.\n'
+              '감지 영상 추가: AI 감지 알림에서 저장한 ZIP을 불러올 수 있습니다. 당시 PTZ 미제공 알림은 위치 후보 계산을 보류합니다. docs/alert-location.md 참고.\n'
               '메일 수신 추가: 전체 의존성 DLL·deps.json·메일수신설정.cmd를 함께 복사하세요. 메일수신설정.cmd로 연결 후 AI 감지 알림에서 확인합니다. docs/firewatcher-mail.md 참고.\n'
               '3. 기존 data 폴더는 그대로 둡니다. 카메라 접속 정보와 지도 설정을 다시 입력하지 않습니다.\n'
               '4. 일반 사용자 계정을 만들려면 계정권한설정.cmd를 실행합니다. 기존 계정은 관리자입니다.\n'
@@ -189,7 +191,8 @@ jobs:
               '새 PC에서는 Windows 사용자 암호화 설정을 최초 한 번 등록해야 합니다.\n'
               '자세한 권한·표시 거리·다른 PC 사용 안내는 docs/automatic-monitoring.md를 확인하세요.\n', encoding='utf-8-sig')
           assert (update/'메일수신설정.cmd').is_file() and (update/'MailKit.dll').is_file() and (update/'MimeKit.dll').is_file()
-          assert (update/'WisenetPtzBridge.deps.json').is_file()
+          assert (update/'WisenetPtzBridge.deps.json').is_file() and (update/'AngleSharp.dll').is_file()
+          assert (update/'docs/alert-location.md').is_file()
           assert not (update/'data').exists()
           assert (update/'wwwroot/index.html').is_file() and (update/'계정권한설정.cmd').is_file()
           assert not list(update.rglob('*.protected'))

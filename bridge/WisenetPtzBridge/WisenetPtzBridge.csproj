@@ -10,6 +10,7 @@
     <EmbeddedResource Include="Defaults/monitoring-map.json" LogicalName="WisenetPtzBridge.MonitoringMapDefaults.json" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="AngleSharp" Version="1.9.1" />
     <PackageReference Include="MailKit" Version="4.18.2" />
   </ItemGroup>
 </Project>

@@ -44,3 +44,4 @@
 .server-monitor>header{display:flex;align-items:center;justify-content:space-between}
 .diagnostic-review ul{padding-left:16px}.diagnostic-review li{margin:10px 0;overflow-wrap:anywhere}.diagnostic-review small{display:block;line-height:1.6}.diagnostic-review button{margin:4px 0}
 .automatic-image-frame{width:100%;aspect-ratio:16/9;display:grid;place-items:center;background:#101820;color:#e8f0f4;margin:10px 0;overflow:hidden}.automatic-image-frame .automatic-camera-image{width:100%;height:100%;max-height:none;object-fit:contain}.automatic-image-frame p{padding:12px;margin:0}
+.alert-reference svg.alert-box-picker{pointer-events:auto;touch-action:none;cursor:crosshair}.alert-location-tool{border-top:1px solid #bdcdd5;margin-top:12px;padding-top:10px}.alert-location-tool input[type=number]{width:100%;box-sizing:border-box}.alert-location-tool button{margin:5px 4px 5px 0}.alert-location-tool p{overflow-wrap:anywhere}

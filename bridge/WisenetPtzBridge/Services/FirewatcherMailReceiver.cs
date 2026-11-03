@@ -8,7 +8,8 @@ namespace WisenetPtzBridge.Services;
 
 public sealed record MailCameraBinding(string CameraId, double Lat, double Lon);
 public sealed record ForwardedMailAlert(string Id, string Link, DateTimeOffset? MailSentAt,
-    DateTimeOffset? MailReceivedAt, DateTimeOffset FirstSeenAt, MailCameraBinding? Binding);
+    DateTimeOffset? MailReceivedAt, DateTimeOffset FirstSeenAt, MailCameraBinding? Binding,
+    FirewatcherEventDetail? Detail = null, DateTimeOffset? DetailCheckedAt = null, string? DetailStatus = null, string IngestionSource = "iphone-mail-forward");
 public sealed record MailAlertState(int Version, string Owner, uint UidValidity, uint LastUid, ForwardedMailAlert[] Events);
 
 // Opaque links are access-bearing data. Persist only encrypted state; never raw SMS/email bodies.
@@ -24,7 +25,7 @@ public sealed class MailAlertStore(string path, Func<byte[], bool, byte[]> crypt
     private MailAlertState Read(string owner)
     {
         if (!File.Exists(path)) return new(1, owner, 0, 0, []);
-        if (new FileInfo(path).Length > 4 * 1024 * 1024) throw new InvalidDataException();
+        if (new FileInfo(path).Length > 16 * 1024 * 1024) throw new InvalidDataException();
         var state = JsonSerializer.Deserialize<MailAlertState>(crypt(File.ReadAllBytes(path), false)) ?? throw new InvalidDataException();
         if (state.Version != 1 || state.Events is null || state.Events.Length > 1000) throw new InvalidDataException();
         return state.Owner == owner ? state : new(1, owner, 0, 0, []);
@@ -60,6 +61,30 @@ public sealed class MailAlertStore(string path, Func<byte[], bool, byte[]> crypt
         }
         finally { gate.Release(); }
     }
+    public async Task UpdateDetailAsync(string owner, string id, FirewatcherEventDetail? detail, string status, CancellationToken ct)
+    {
+        await gate.WaitAsync(ct);
+        try
+        {
+            var state = Read(owner);
+            await WriteAsync(state with { Events = state.Events.Select(e => e.Id == id ? e with
+                { Detail = detail ?? e.Detail, DetailCheckedAt = DateTimeOffset.UtcNow, DetailStatus = status,
+                  Binding = detail is not null && e.Detail is not null && (detail.CameraKey != e.Detail.CameraKey || detail.CameraName != e.Detail.CameraName) ? null : e.Binding } : e).ToArray() }, ct);
+        }
+        finally { gate.Release(); }
+    }
+    public async Task AddImportedAsync(string owner, ForwardedMailAlert alert, CancellationToken ct)
+    {
+        await gate.WaitAsync(ct);
+        try
+        {
+            var state = Read(owner);
+            var old = state.Events.FirstOrDefault(e => e.Id == alert.Id);
+            var incoming = old is null ? alert : old with { Detail = alert.Detail, DetailCheckedAt = alert.DetailCheckedAt, DetailStatus = alert.DetailStatus, Binding = old.Detail is not null && alert.Detail is not null && (old.Detail.CameraKey != alert.Detail.CameraKey || old.Detail.CameraName != alert.Detail.CameraName) ? null : old.Binding };
+            await WriteAsync(state with { Events = state.Events.Where(e => e.Id != alert.Id).Append(incoming).OrderByDescending(e => e.FirstSeenAt).Take(1000).ToArray() }, ct);
+        }
+        finally { gate.Release(); }
+    }
     public static string LinkId(string link) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(link))).ToLowerInvariant();
 }
 
@@ -67,12 +92,17 @@ public sealed class FirewatcherMailReceiver : BackgroundService
 {
     private readonly bool enabledServer;
     private readonly MailAlertStore store;
+    private readonly FirewatcherPageReader pages;
+    private readonly string imageDirectory;
+    private readonly SemaphoreSlim detailGate = new(1, 1);
     private FirewatcherMailSettings? settings;
     private string status = "not-configured";
     private DateTimeOffset? checkedAt;
     private int skipped;
-    public FirewatcherMailReceiver(IConfiguration config)
+    public FirewatcherMailReceiver(IConfiguration config, FirewatcherPageReader pages)
     {
+        this.pages = pages;
+        imageDirectory = Path.Combine(config["CCTV_DATA_DIR"] ?? Path.Combine(AppContext.BaseDirectory, "data"), "firewatcher-images");
         enabledServer = MonitoringServerSecurity.Enabled(config);
         store = new(Path.Combine(config["CCTV_DATA_DIR"] ?? Path.Combine(AppContext.BaseDirectory, "data"), "firewatcher-mail-state.protected"), MonitoringServerSetup.Protect);
         if (!enabledServer) return;
@@ -100,6 +130,15 @@ public sealed class FirewatcherMailReceiver : BackgroundService
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
             catch (MailKit.Security.AuthenticationException) { status = "authentication-error"; }
             catch (Exception) { status = "connection-or-storage-error"; } // Never log exceptions containing credentials, MIME or links.
+            try
+            {
+                var pending = (await store.ReadAsync(settings.Identity, stoppingToken)).Events
+                    .Where(e => e.Detail is null && (e.DetailCheckedAt is null || e.DetailCheckedAt < DateTimeOffset.UtcNow.AddMinutes(-5)))
+                    .OrderByDescending(e => e.FirstSeenAt).Take(2);
+                foreach (var alert in pending) await RefreshDetailAsync(alert.Id, stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
+            catch { /* Page failures do not change the IMAP connection status. */ }
             try { await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken); }
             catch (OperationCanceledException) { break; }
         }
@@ -142,6 +181,74 @@ public sealed class FirewatcherMailReceiver : BackgroundService
             await store.CommitAsync(s.Identity, inbox.UidValidity, uid.Id, incoming, ct);
         }
         return skippedCount;
+    }
+    private async Task<string?> SaveImageAsync(string id, byte[]? image, CancellationToken ct)
+    {
+        if (image is null) return null;
+        if (!FirewatcherEventPage.IsJpeg(image) || id.Length != 64 || id.Any(c => !char.IsAsciiHexDigit(c))) throw new InvalidDataException();
+        Directory.CreateDirectory(imageDirectory);
+        var path = Path.Combine(imageDirectory, id + ".protected"); var temp = path + ".tmp";
+        try { await File.WriteAllBytesAsync(temp, MonitoringServerSetup.Protect(image, true), ct); File.Move(temp, path, true); }
+        finally { if (File.Exists(temp)) File.Delete(temp); }
+        foreach (var old in new DirectoryInfo(imageDirectory).GetFiles("*.protected").OrderByDescending(f => f.LastWriteTimeUtc).Skip(100)) old.Delete();
+        return Convert.ToHexString(SHA256.HashData(image)).ToLowerInvariant();
+    }
+    public async Task RefreshDetailAsync(string id, CancellationToken ct)
+    {
+        if (settings?.Enabled != true) return;
+        await detailGate.WaitAsync(ct);
+        try
+        {
+            var alert = (await store.ReadAsync(settings.Identity, ct)).Events.FirstOrDefault(e => e.Id == id);
+            if (alert is null || alert.DetailCheckedAt > DateTimeOffset.UtcNow.AddSeconds(-5)) return;
+            try
+            {
+                var result = await pages.ReadAsync(alert.Link, settings.AlertOrigin, ct);
+                var hash = await SaveImageAsync(id, result.Image, ct);
+                await store.UpdateDetailAsync(settings.Identity, id, result.Page.Detail with { ImageSha256 = hash }, hash is null ? "page-only" : "ready", ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch { await store.UpdateDetailAsync(settings.Identity, id, null, "unavailable", ct); }
+        }
+        finally { detailGate.Release(); }
+    }
+    public async Task<IResult> ImportPageAsync(HttpContext context, CancellationToken ct)
+    {
+        if (settings?.Enabled != true) return Results.Conflict(new { error = "메일 수신 설정을 먼저 연결하세요." });
+        try
+        {
+            using var bytes = new MemoryStream(); var buffer = new byte[8192]; int n;
+            while ((n = await context.Request.Body.ReadAsync(buffer, ct)) > 0)
+            { if (bytes.Length + n > FirewatcherEventPage.MaxZipBytes) return Results.StatusCode(413); await bytes.WriteAsync(buffer.AsMemory(0,n), ct); }
+            var imported = FirewatcherEventPage.ReadArchive(bytes.ToArray(), settings.AlertOrigin);
+            var id = MailAlertStore.LinkId(imported.Link);
+            await detailGate.WaitAsync(ct);
+            try
+            {
+                var hash = await SaveImageAsync(id, imported.Image, ct);
+                await store.AddImportedAsync(settings.Identity, new(id, imported.Link, null, null, DateTimeOffset.UtcNow, null,
+                    imported.Page.Detail with { ImageSha256 = hash }, DateTimeOffset.UtcNow, hash is null ? "page-only" : "ready", "saved-page-import"), ct);
+            }
+            finally { detailGate.Release(); }
+            return Results.Ok(new { ok = true, eventId = id });
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        { return Results.BadRequest(new { error = "알림 HTML 한 개와 감지 JPG가 포함된 ZIP인지, 설정한 알림 서버가 같은지 확인하세요." }); }
+    }
+    public async Task<IResult> ImageAsync(string id, CancellationToken ct)
+    {
+        if (settings?.Enabled != true || id.Length != 64 || id.Any(c => !char.IsAsciiHexDigit(c))) return Results.NotFound();
+        var alert = (await store.ReadAsync(settings.Identity, ct)).Events.FirstOrDefault(e => e.Id == id);
+        var path = Path.Combine(imageDirectory, id + ".protected");
+        if (alert?.Detail?.ImageSha256 is null || !File.Exists(path)) return Results.NotFound();
+        try
+        {
+            if (new FileInfo(path).Length > FirewatcherEventPage.MaxImageBytes + 8192) return Results.NotFound();
+            var image = MonitoringServerSetup.Protect(await File.ReadAllBytesAsync(path, ct), false);
+            if (Convert.ToHexString(SHA256.HashData(image)).ToLowerInvariant() != alert.Detail.ImageSha256) return Results.NotFound();
+            return Results.File(image, "image/jpeg");
+        }
+        catch (Exception e) when (e is not OperationCanceledException) { return Results.NotFound(); }
     }
     public async Task<IResult> SaveBindingAsync(MailAlertBindingRequest request, MapConfiguration maps, CancellationToken ct)
     {

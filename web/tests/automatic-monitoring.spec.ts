@@ -223,3 +223,28 @@ test('viewer can read forwarded mail and see confirmed camera but receives no bi
  await expect(page.getByText('수동 알림 자료 시험',{exact:true})).toHaveCount(0);
  await expect(panel.locator('input')).toHaveCount(0);
 });
+
+test('event image and red box load without remote browser access; historical PTZ gates terrain candidates and editing invalidates them',async({page})=>{
+ const frame=await mockServer(page,'admin',()=>state(Date.now()));
+ await frame.evaluate('window.terrainHeight=()=>500');
+ const encoded=await page.evaluate(()=>{const c=document.createElement('canvas');c.width=640;c.height=360;const x=c.getContext('2d')!;x.fillStyle='#666';x.fillRect(0,0,640,360);x.strokeStyle='#f01020';x.lineWidth=2;x.strokeRect(300,210,30,30);return c.toDataURL('image/jpeg',.95).split(',')[1];});
+ const bytes=Buffer.from(encoded,'base64'),{createHash}=await import('node:crypto'),sha=createHash('sha256').update(bytes).digest('hex'),p=configuration.positions[0];
+ const event={id:'c'.repeat(64),link:'https://alert.example/sms/test/recipient',mailSentAt:null,mailReceivedAt:null,firstSeenAt:new Date().toISOString(),binding:{cameraId:p.id,lat:p.lat,lon:p.lon},detail:{cameraKey:'synthetic-provider-camera',cameraName:'합성 감지 카메라',eventType:'Smoke',reportedTime:'2026-11-03T00:28:14.000Z',displayedTime:'2026-11-03 00:28:14',mappingCount:0,hasDevicePose:false,imageSha256:sha},detailStatus:'ready',ingestionSource:'saved-page-import'};
+ await page.route('**/api/firewatcher-mail',r=>r.fulfill({json:{configured:true,enabled:true,status:'connected',checkedAt:new Date().toISOString(),pollSeconds:30,skippedMessages:0,retainedLimit:1000,source:'iphone-mail-forward',events:[event]}}));
+ await page.route('**/api/firewatcher-mail/image?*',r=>r.fulfill({contentType:'image/jpeg',body:bytes}));
+ const remote:string[]=[];page.on('request',r=>{if(r.url().startsWith('https://alert.example'))remote.push(r.url());});
+ await page.getByRole('button',{name:'AI 감지 알림',exact:true}).click();const panel=page.getByRole('region',{name:'FIREWATCHER 메일 알림'});
+ await panel.getByRole('button',{name:'수신 상태 새로고침'}).click();await panel.getByRole('button',{name:/합성 자동 카메라 0/}).click();
+ await expect(panel.getByRole('img',{name:'FIREWATCHER 감지 당시 영상'})).toBeVisible();
+ await expect(panel.getByText('원본 640×360 · 빨간 테두리 후보 1개')).toBeVisible();
+ await panel.getByText('감지 위치 후보 계산',{exact:true}).click();const calculate=panel.getByRole('button',{name:'지형 위치 후보 계산',exact:true});
+ await expect(calculate).toBeDisabled();await expect(panel.getByLabel('감지 당시 Pan(°)')).toHaveValue('');
+ await panel.getByLabel('감지 당시 Pan(°)').fill('359');await panel.getByLabel('감지 당시 Tilt(°)').fill('-4');await panel.getByLabel('감지 당시 Zoom',{exact:true}).fill('1');
+ await panel.getByLabel('감지 영상이 잘리지 않은 전체 촬영 영역입니다.').check();
+ await panel.getByLabel('입력한 PTZ가 이 감지 영상을 촬영한 당시의 값입니다.').check();await calculate.click();
+ await expect(panel.getByText('배경 지형 위치 후보',{exact:true})).toBeVisible();
+ await expect.poll(()=>frame.evaluate('activeEntities.filter(e=>e.name==="배경 지형 위치 후보 · 발화점 미확인").length')).toBe(3);
+ await panel.getByLabel('감지 당시 Pan(°)').fill('5');
+ await expect.poll(()=>frame.evaluate('activeEntities.filter(e=>e.name==="배경 지형 위치 후보 · 발화점 미확인").length')).toBe(0);
+ await expect(calculate).toBeDisabled();expect(remote).toEqual([]);
+});

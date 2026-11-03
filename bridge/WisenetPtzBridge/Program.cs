@@ -58,6 +58,7 @@ builder.Services.AddSingleton<ScreenFrameSource>();
 builder.Services.AddSingleton<DirectSnapshotSource>();
 builder.Services.AddSingleton<AutomaticMonitoring>();
 builder.Services.AddHostedService(services => services.GetRequiredService<AutomaticMonitoring>());
+builder.Services.AddSingleton<FirewatcherPageReader>();
 builder.Services.AddSingleton<FirewatcherMailReceiver>();
 builder.Services.AddHostedService(services => services.GetRequiredService<FirewatcherMailReceiver>());
 MonitoringServerSecurity.Add(builder);
@@ -88,6 +89,20 @@ app.MapDirectSnapshotEndpoints();
 // Mail links are visible only inside the authenticated receiver, never on Pages or a standalone Bridge.
 app.MapGet("/api/firewatcher-mail", async (FirewatcherMailReceiver mail, CancellationToken ct) =>
     serverMode ? Results.Ok(await mail.StatusAsync(ct)) : Results.NotFound());
+app.MapGet("/api/firewatcher-mail/image", async (string id, FirewatcherMailReceiver mail, CancellationToken ct) =>
+    serverMode ? await mail.ImageAsync(id, ct) : Results.NotFound());
+app.MapPost("/api/firewatcher-mail/refresh", async (MailEventRequest request, FirewatcherMailReceiver mail, CancellationToken ct) =>
+{
+    if (!serverMode) return Results.NotFound();
+    await mail.RefreshDetailAsync(request.EventId, ct); return Results.Ok(new { ok = true });
+});
+app.MapPost("/api/firewatcher-mail/import", async (HttpContext context, FirewatcherMailReceiver mail, CancellationToken ct) =>
+{
+    if (!serverMode) return Results.NotFound();
+    var size = context.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpMaxRequestBodySizeFeature>();
+    if (size is { IsReadOnly: false }) size.MaxRequestBodySize = FirewatcherEventPage.MaxZipBytes;
+    return await mail.ImportPageAsync(context, ct);
+});
 app.MapPost("/api/firewatcher-mail/binding", async (MailAlertBindingRequest request, FirewatcherMailReceiver mail, MapConfiguration maps, CancellationToken ct) =>
     serverMode ? await mail.SaveBindingAsync(request, maps, ct) : Results.NotFound());
 app.MapGet("/health", () => Results.Ok(new
@@ -195,3 +210,5 @@ if (desktopDemo || serverMode && OperatingSystem.IsWindows())
     await app.WaitForShutdownAsync();
 }
 else await app.RunAsync();
+
+public sealed record MailEventRequest(string EventId);

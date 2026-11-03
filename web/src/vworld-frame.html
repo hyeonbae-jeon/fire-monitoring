@@ -5,8 +5,8 @@ let coverageOwned=[];const coverageCameras=new Map(),coverageGroups=new Map();
 let locationPicking=false,locationPin=null,geoPicking=null;
 let visibilityOwned=[],terrainJob=null,overlayGeneration=0;const visibilityCameras=new Map();
 let alarmOwned=[];const alarmCameras=new Map();
-let diagnosticOwned=[];
-function excludedOverlays(){return [...owned,...coverageOwned,...visibilityOwned,...alarmOwned,...diagnosticOwned,...(locationPin?[locationPin]:[]),...Array.from(layerSources.values()).flatMap(s=>s.entities.values)];}
+let diagnosticOwned=[],alertLocationOwned=[];
+function excludedOverlays(){return [...owned,...coverageOwned,...visibilityOwned,...alarmOwned,...diagnosticOwned,...alertLocationOwned,...(locationPin?[locationPin]:[]),...Array.from(layerSources.values()).flatMap(s=>s.entities.values)];}
 function drawDiagnosticPoints(data){
  if(!viewer)return;overlayGeneration++;diagnosticOwned.forEach(e=>viewer.entities.remove(e));diagnosticOwned=[];
  try{
@@ -19,6 +19,24 @@ function drawDiagnosticPoints(data){
   }
   parent.postMessage({scope:'vworld-prototype',session,type:'diagnostic-status',requestId:data.requestId,ok:true},appOrigin);
  }catch(_){diagnosticOwned.forEach(e=>viewer.entities.remove(e));diagnosticOwned=[];parent.postMessage({scope:'vworld-prototype',session,type:'diagnostic-status',requestId:data.requestId,ok:false},appOrigin);}
+}
+function drawAlertLocation(data){
+ if(!viewer)return;overlayGeneration++;alertLocationOwned.forEach(e=>viewer.entities.remove(e));alertLocationOwned=[];
+ try{
+  const r=data.result;if(!r)return;
+  const within=(v,a,b)=>typeof v==='number'&&Number.isFinite(v)&&v>=a&&v<=b;
+  if(r.meaning!=='background-terrain-candidate'||r.source!=='operator-confirmed-event-ptz'||!Array.isArray(r.rays)||r.rays.length!==3)throw new Error('Invalid location evidence');
+  const p=r.grid.request.position,n=p.nativeTracking;if(!n||!within(p.lon,-180,180)||!within(p.lat,-90,90)||!within(n.groundElevationM,-500,9000))throw new Error('Invalid camera');
+  const eye=Cesium.Cartesian3.fromDegrees(p.lon,p.lat,n.groundElevationM+n.pose.cameraHeightM),color=Cesium.Color.fromCssColorString('#ffce56');
+  r.rays.forEach((hit,i)=>{
+   const end=hit.point||r.grid.rays[i].samples.at(-1);
+   if(!end||!within(end.lon,-180,180)||!within(end.lat,-90,90)||!within(end.heightM,-50000,50000))throw new Error('Invalid terrain candidate');
+   const position=Cesium.Cartesian3.fromDegrees(end.lon,end.lat,end.heightM+(hit.point?2:0));
+   alertLocationOwned.push(viewer.entities.add({name:'감지 박스 하단 방향 · '+hit.role,polyline:{positions:[eye,position],width:2,material:color}}));
+   if(hit.point)alertLocationOwned.push(viewer.entities.add({name:'배경 지형 위치 후보 · 발화점 미확인',position,point:{pixelSize:hit.role==='center'?13:8,color,outlineColor:Cesium.Color.WHITE,outlineWidth:2,disableDepthTestDistance:Infinity},...(hit.role==='center'?{label:{text:'배경 지형 위치 후보\n발화점 미확인',font:'13px sans-serif',pixelOffset:new Cesium.Cartesian2(0,-28),showBackground:true,disableDepthTestDistance:Infinity}}:{})}));
+  });
+  viewer.scene.requestRender?.();
+ }catch(_){alertLocationOwned.forEach(e=>viewer.entities.remove(e));alertLocationOwned=[];}
 }
 function drawAlarms(data){
  if(!viewer)return;overlayGeneration++;
@@ -231,7 +249,7 @@ function draw(data){
  if(data.sector)owned.push(viewer.entities.add({polygon:{hierarchy:Cesium.Cartesian3.fromDegreesArray(data.sector.flat()),material:Cesium.Color.ORANGE.withAlpha(.3)}}));
  if(data.flyTo){endCalibration();const p=data.positions.find(p=>p.id===data.selected);if(p)viewer.camera.flyTo({destination:Cesium.Cartesian3.fromDegrees(p.lon,p.lat,4500),orientation:{heading:0,pitch:Cesium.Math.toRadians(-75),roll:0}});}
 }
-addEventListener('message',e=>{if(e.source!==parent||e.origin!==appOrigin||e.data?.session!==session||e.data?.scope!=='vworld-prototype')return;if(e.data.type==='draw')draw(e.data);if(e.data.type==='diagnostic-points')drawDiagnosticPoints(e.data);if(e.data.type==='layers')drawLayers(e.data);if(e.data.type==='coverage')drawCoverage(e.data);if(e.data.type==='visibility')drawVisibility(e.data);if(e.data.type==='alarms')drawAlarms(e.data);if(e.data.type==='terrain-heights')void collectTerrain(e.data);if(e.data.type==='terrain-cancel')cancelTerrain(e.data.requestId);if(e.data.type==='fit-layers'&&viewer&&Cesium.Rectangle){endCalibration();viewer.camera.flyTo({destination:Cesium.Rectangle.fromDegrees(...e.data.bounds),...(e.data.overhead===true?{orientation:{heading:0,pitch:Cesium.Math.toRadians(-90),roll:0}}:{})});}if(e.data.type==='calibrate')calibrate(e.data);if(e.data.type==='automatic-view')calibrate({...e.data,automatic:true});if(e.data.type==='calibration-ground')calibrate({...e.data,onlyGround:true});if(e.data.type==='geo-point-mode'){geoPicking=e.data.enabled&&typeof e.data.requestId==='string'?e.data.requestId:null;if(geoPicking){endCalibration();locationPicking=false;}else showLocation(null);if(viewer?.scene?.canvas?.style)viewer.scene.canvas.style.cursor=geoPicking||locationPicking?'crosshair':'';}if(e.data.type==='end-calibration')endCalibration();if(e.data.type==='location-mode'){locationPicking=e.data.enabled===true;if(viewer?.scene?.canvas?.style)viewer.scene.canvas.style.cursor=geoPicking||locationPicking?'crosshair':'';}if(e.data.type==='location-point')showLocation(e.data.point);});
+addEventListener('message',e=>{if(e.source!==parent||e.origin!==appOrigin||e.data?.session!==session||e.data?.scope!=='vworld-prototype')return;if(e.data.type==='draw')draw(e.data);if(e.data.type==='diagnostic-points')drawDiagnosticPoints(e.data);if(e.data.type==='layers')drawLayers(e.data);if(e.data.type==='coverage')drawCoverage(e.data);if(e.data.type==='visibility')drawVisibility(e.data);if(e.data.type==='alarms')drawAlarms(e.data);if(e.data.type==='alert-location')drawAlertLocation(e.data);if(e.data.type==='terrain-heights')void collectTerrain(e.data);if(e.data.type==='terrain-cancel')cancelTerrain(e.data.requestId);if(e.data.type==='fit-layers'&&viewer&&Cesium.Rectangle){endCalibration();viewer.camera.flyTo({destination:Cesium.Rectangle.fromDegrees(...e.data.bounds),...(e.data.overhead===true?{orientation:{heading:0,pitch:Cesium.Math.toRadians(-90),roll:0}}:{})});}if(e.data.type==='calibrate')calibrate(e.data);if(e.data.type==='automatic-view')calibrate({...e.data,automatic:true});if(e.data.type==='calibration-ground')calibrate({...e.data,onlyGround:true});if(e.data.type==='geo-point-mode'){geoPicking=e.data.enabled&&typeof e.data.requestId==='string'?e.data.requestId:null;if(geoPicking){endCalibration();locationPicking=false;}else showLocation(null);if(viewer?.scene?.canvas?.style)viewer.scene.canvas.style.cursor=geoPicking||locationPicking?'crosshair':'';}if(e.data.type==='end-calibration')endCalibration();if(e.data.type==='location-mode'){locationPicking=e.data.enabled===true;if(viewer?.scene?.canvas?.style)viewer.scene.canvas.style.cursor=geoPicking||locationPicking?'crosshair':'';}if(e.data.type==='location-point')showLocation(e.data.point);});
 try{
  if(typeof vw==='undefined')throw new Error(window.vworldSdkTransport.failed
   ? 'VWorld SDK를 불러오지 못했습니다. 적용된 키로 SDK 파일을 요청했지만 내려받기에 실패했습니다. 네트워크 연결과 브라우저의 요청 오류를 확인하세요.'
