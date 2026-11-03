@@ -103,6 +103,8 @@ public sealed class FirewatcherPageReader : IDisposable
     public FirewatcherPageReader(HttpMessageHandler handler) => client = new(handler) { Timeout = TimeSpan.FromSeconds(8) };
     private async Task<(byte[] Bytes, string? Type)> ReadAsync(Uri uri, int limit, CancellationToken ct)
     {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        deadline.CancelAfter(TimeSpan.FromSeconds(8)); ct = deadline.Token;
         using var request = new HttpRequestMessage(HttpMethod.Get, uri);
         using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
         response.EnsureSuccessStatusCode();
