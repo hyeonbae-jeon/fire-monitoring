@@ -290,3 +290,13 @@ test('administrator edits shared settings without reading stored secrets and bac
  const downloaded=page.waitForEvent('download');await panel.getByRole('button',{name:'암호화 백업 다운로드',exact:true}).click();expect((await downloaded).suggestedFilename()).toBe('fire-monitor-settings.backup');expect(backups).toBe(1);
  await expect(panel.getByLabel('백업 암호 (16자 이상)',{exact:true})).toHaveValue('');
 });
+
+test('shared receiver map changes reach an already open viewer without reloading the page',async({page})=>{
+ const frame=await mockServer(page,'viewer',()=>state(Date.now()));
+ await page.getByRole('button',{name:'현재 카메라 시점 보기',exact:true}).click();
+ await expect.poll(async()=>await frame.evaluate('views.at(-1)?.orientation.heading*180/Math.PI')).toBeCloseTo(102);
+ const changed=structuredClone(configuration);changed.positions[0].nativeTracking!.pose.headingDeg=125;
+ await page.route('**/api/map-configuration',r=>r.fulfill({json:{revision:'changed-central-revision',configuration:changed}}));
+ await expect.poll(async()=>await frame.evaluate('views.at(-1)?.orientation.heading*180/Math.PI'),{timeout:10000}).toBeCloseTo(127);
+ await expect(page.getByText('synthetic-viewer · 일반 사용자')).toBeVisible();
+});

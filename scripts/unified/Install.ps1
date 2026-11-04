@@ -18,7 +18,7 @@ if ($InstallRoot -eq [IO.Path]::GetPathRoot($InstallRoot)) { throw 'Select an ap
 # Reject junction/symlink paths before directory mutation.
 $check = $InstallRoot
 while ($check) {
-    if ((Test-Path -LiteralPath $check) -and ((Get-Item -LiteralPath $check).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Installation through a junction or symbolic link is not supported.' }
+    if ((Test-Path -LiteralPath $check) -and ((Get-Item -Force -LiteralPath $check).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Installation through a junction or symbolic link is not supported.' }
     $parent = Split-Path -Parent $check
     if ($parent -eq $check) { break }; $check = $parent
 }
@@ -37,7 +37,7 @@ function Stop-OwnProcess([string]$exe) {
 }
 try {
     if (!$mutex.WaitOne(0)) { throw 'Close the launcher or wait for the other update before retrying.' }
-    if ((Test-Path -LiteralPath $app) -and ((Get-Item -LiteralPath $app).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Application directory must not be a junction.' }
+    if ((Test-Path -LiteralPath $app) -and ((Get-Item -Force -LiteralPath $app).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Application directory must not be a junction.' }
     New-Item -ItemType Directory -Path $staging | Out-Null
     $archive = [IO.Compression.ZipFile]::OpenRead($payload)
     try {
@@ -56,13 +56,13 @@ try {
     } finally { $archive.Dispose() }
     if (!(Test-Path -LiteralPath (Join-Path $staging 'WisenetPtzBridge.exe')) -or !(Test-Path -LiteralPath (Join-Path $staging 'wwwroot/index.html'))) { throw 'Incomplete payload.' }
     $data = Join-Path $InstallRoot 'data'
-    if ((Test-Path -LiteralPath $data) -and ((Get-Item -LiteralPath $data).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Data directory must not be a junction.' }
+    if ((Test-Path -LiteralPath $data) -and ((Get-Item -Force -LiteralPath $data).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Data directory must not be a junction.' }
     if ($LegacyRoot) {
         $LegacyRoot = [IO.Path]::GetFullPath($LegacyRoot)
         $legacyData = Join-Path $LegacyRoot 'data'
         if (!(Test-Path -LiteralPath (Join-Path $LegacyRoot 'WisenetPtzBridge.exe')) -or !(Test-Path -LiteralPath $legacyData)) { throw 'Previous application/data folder not found.' }
         if ((Test-Path -LiteralPath $data) -and @(Get-ChildItem -LiteralPath $data -Force).Count -gt 0) { throw 'Existing central data is present. Use encrypted backup restore instead of merging.' }
-        if (@(Get-ChildItem -LiteralPath $legacyData -Recurse -Force | Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint }).Count -gt 0 -or ((Get-Item -LiteralPath $legacyData).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Previous data contains a junction.' }
+        if (@(Get-ChildItem -LiteralPath $legacyData -Recurse -Force | Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint }).Count -gt 0 -or ((Get-Item -Force -LiteralPath $legacyData).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Previous data contains a junction.' }
         # Stop only the legacy executable explicitly selected by this user.
         $legacyExe = Join-Path $LegacyRoot 'WisenetPtzBridge.exe'
         $task = Get-ScheduledTask -TaskName FireMonitoringServer -ErrorAction SilentlyContinue

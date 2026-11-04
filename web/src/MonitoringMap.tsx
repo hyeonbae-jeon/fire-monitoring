@@ -116,6 +116,20 @@ export function MonitoringMap({active=true,standalone=false,desktopDemo=false,se
   finally{setSaving(false);}
  }
  useEffect(()=>{if(!standalone)void loadCentral();else setStorageStatus('북한산 기본 지도 표시 · 편집한 설정은 JSON으로 보관하세요.');},[]);
+ const sharedMapState=useRef({revision,dirty,saving,calibrating,tools,active});sharedMapState.current={revision,dirty,saving,calibrating,tools,active};
+ useEffect(()=>{
+  if(!serverMode)return;let stopped=false,inFlight=false;
+  const canRefresh=()=>{const s=sharedMapState.current;return s.active&&s.revision!==null&&!s.dirty&&!s.saving&&!s.calibrating&&(!canManage||['auto','alerts','coverage','server-settings',''].includes(s.tools))&&!document.querySelector('.automatic-tracking-editor[open]');};
+  const timer=window.setInterval(async()=>{
+   if(inFlight||!canRefresh())return;inFlight=true;const ticket=edits.current;
+   try{
+    const next=await requestMap();if(stopped||ticket!==edits.current||!canRefresh()||next.revision==='none'||next.revision===sharedMapState.current.revision)return;
+    setConfiguration(next.configuration);setRevision(next.revision);setSelected(id=>next.configuration.positions.some(p=>p.id===id)?id:next.configuration.positions[0]?.id??'');
+    setStorageStatus('다른 접속 화면에서 저장한 중앙 지도 설정을 반영했습니다.');
+   }catch{/* Keep the last saved configuration during a temporary connection failure. */}finally{inFlight=false;}
+  },5000);return()=>{stopped=true;window.clearInterval(timer);};
+ },[serverMode,canManage]);
+
  useEffect(()=>{if(standalone||!active||settingsLoaded)return;let cancelled=false;fetch('/api/map-client-settings').then(r=>r.ok?r.json():null).then(s=>{if(!cancelled&&typeof s?.vworldApiKey==='string')setDeploymentKey(s.vworldApiKey.trim());}).catch(()=>{}).finally(()=>{if(!cancelled)setSettingsLoaded(true);});return()=>{cancelled=true;};},[active,standalone,settingsLoaded]);
  useEffect(()=>{if(active&&deploymentKey&&!autoConnected.current){autoConnected.current=true;connect(deploymentKey);}},[active,deploymentKey]);
  function cancelPending(message:string){pending.current.forEach(p=>{clearTimeout(p.timer);p.reject(new Error(message));});pending.current.clear();}
@@ -290,7 +304,7 @@ export function MonitoringMap({active=true,standalone=false,desktopDemo=false,se
   if(revision===null)return;const ticket=edits.current;setSaving(true);setError('');
   try{
    const result=await requestMap({method:'PUT',headers:{'Content-Type':'application/json','X-Inventory-Write-Key':writeKey},body:JSON.stringify({configurationRevision:revision,configuration})});
-   if(ticket===edits.current){setConfiguration(result.configuration);setDirty(false);}setRevision(result.revision);setWriteKey('');setStorageStatus(ticket===edits.current?'중앙 지도 설정 저장 완료 · 다른 브라우저에서 다시 불러올 수 있습니다.':'이전 설정 저장 완료 · 이후 변경은 추가 저장이 필요합니다.');
+   if(ticket===edits.current){setConfiguration(result.configuration);setDirty(false);}setRevision(result.revision);setWriteKey('');setStorageStatus(ticket===edits.current?'중앙 지도 설정 저장 완료 · 다른 감시 화면에 수 초 내 반영됩니다.':'이전 설정 저장 완료 · 이후 변경은 추가 저장이 필요합니다.');
   }catch(e){setError((e as Error).message);}finally{setSaving(false);}
  }
  const mapAspect=automaticView?automaticAspect:liveView?.aspect??aspect??diagnosticAspect;

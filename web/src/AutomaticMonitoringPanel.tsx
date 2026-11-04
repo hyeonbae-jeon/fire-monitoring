@@ -45,7 +45,7 @@ export function AutomaticMonitoringPanel({positions,current,state,now,error,onSe
   </fieldset>}
   <button onClick={onFit}>전체 현재 범위 보기</button>
   {error&&<p role="alert">{error}</p>}
-  {state?.configured===false&&<p>수신 서버의 카메라 접속 설정이 필요합니다. 서버설정.cmd 또는 GitHub 서버용 Secrets로 등록하세요.</p>}
+  {state?.configured===false&&<p>수신 서버의 카메라 접속 설정이 필요합니다. 관리자 설정에서 등록하세요.</p>}
   <div className="automatic-camera-list">{positions.map(p=>{
    const c=state?.cameras.find(v=>v.cameraId===p.id),pose=automaticPose(p,c,now);
    const text=pose?'현재 방향 수신 중':c?.needsAttention?'계정·권한 확인 필요':!c?'접속 설정 없음':!p.nativeTracking?'추종 기준 없음':c.feed.liveFrameAvailable?'영상 수신 · 현재 방향 미확인':'수신 끊김 · 재연결 대기';
@@ -58,7 +58,7 @@ export function AutomaticMonitoringPanel({positions,current,state,now,error,onSe
    {management&&<section aria-label="자동 감시 설정 저장"><AutomaticTrackingEditor key={current.id+':'+current.nativeTracking?.savedAt} position={current} fresh={!!automaticPose(current,camera,now)} onApply={management.onApply}/>
     <p role="status">{management.status}{management.dirty?' · 저장하지 않은 변경':''}</p>
     <button disabled={!management.canSave||!management.dirty||management.saving} onClick={management.onSave}>중앙 지도 설정 저장</button>
-    <p className="help">보정 반영 후 이 버튼으로 저장하세요. 같은 수신 서버의 다른 접속 화면은 새로고침하면 반영됩니다.</p>
+    <p className="help">보정 반영 후 이 버튼으로 저장하세요. 같은 수신 서버의 다른 감시 화면에 수 초 내 반영됩니다. 편집 중인 화면은 저장값을 다시 불러오세요.</p>
    </section>}</>}
  </>;
 }
