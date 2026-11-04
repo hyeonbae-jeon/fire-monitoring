@@ -1,4 +1,7 @@
 .env
+web/test-results-pages/
+.env.*
+!.env.example
 .vs/
 bin/
 obj/
@@ -15,3 +18,17 @@ wwwroot/
 playwright-report/
 test-results/
 __pycache__/
+artifacts/
+config/cameras.demo.json
+
+# Operational report inputs and normalized previews stay local.
+config/imports/
+
+# Local connection diagnostics contain operational camera identifiers.
+diagnostics/
+*.private.json
+*.protected
+auth-keys/
+*.private.env
+# Read-only live capture exchange and generated operational frames.
+capture.private/

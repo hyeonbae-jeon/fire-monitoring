@@ -1,0 +1,76 @@
+{
+  "provenance": "Synthetic WGS84 ENU targets projected with OpenCV 4.12 projectPoints; zero roll; no operational data.",
+  "site": {
+    "lat": 37.5,
+    "lon": 127.1,
+    "groundElevationM": 700,
+    "cameraHeightM": 3
+  },
+  "width": 1000,
+  "height": 600,
+  "expectedPose": {
+    "headingDeg": 180,
+    "pitchDeg": 4,
+    "horizontalFovDeg": 53,
+    "cameraHeightM": 3
+  },
+  "landmarks": [
+    {
+      "label": "합성 기준 1",
+      "x": 0.8174815827343584,
+      "y": 0.3966466653546041,
+      "mapPoint": {
+        "lat": 37.49,
+        "lon": 127.096,
+        "heightM": 850,
+        "source": "map-surface"
+      }
+    },
+    {
+      "label": "합성 기준 2",
+      "x": 0.1661647402992441,
+      "y": 0.6208549916521997,
+      "mapPoint": {
+        "lat": 37.488,
+        "lon": 127.105,
+        "heightM": 700,
+        "source": "map-surface"
+      }
+    },
+    {
+      "label": "합성 기준 3",
+      "x": 0.6317439329715966,
+      "y": 0.3009013966887129,
+      "mapPoint": {
+        "lat": 37.494,
+        "lon": 127.099,
+        "heightM": 830,
+        "source": "map-surface"
+      }
+    },
+    {
+      "label": "합성 기준 4",
+      "x": 0.44647387263825594,
+      "y": 0.6706819747498568,
+      "mapPoint": {
+        "lat": 37.485,
+        "lon": 127.101,
+        "heightM": 650,
+        "source": "map-surface"
+      },
+      "useForValidation": true
+    },
+    {
+      "label": "합성 기준 5",
+      "x": 0.6839120335585456,
+      "y": 0.4931716927688742,
+      "mapPoint": {
+        "lat": 37.487,
+        "lon": 127.097,
+        "heightM": 810,
+        "source": "map-surface"
+      },
+      "useForValidation": true
+    }
+  ]
+}

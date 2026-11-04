@@ -1,0 +1,198 @@
+name: Fire monitoring unified Windows setup
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feat/windows-portable-demo
+      - feat/vworld-monitoring-prototype
+    paths:
+      - '.github/workflows/windows-demo.yml'
+      - 'bridge/WisenetPtzBridge/**'
+      - 'bridge/ScreenCapture.Core/**'
+      - 'bridge/SsmScreenCapture/**'
+      - 'web/**'
+      - 'scripts/build-portable.py'
+      - 'scripts/build-unified.py'
+      - 'scripts/unified/**'
+      - 'tests/test_unified_install.ps1'
+      - 'tests/test_background_receiver.ps1'
+      - 'docs/unified-receiver.md'
+      - 'tests/test_inventory.py'
+      - 'tests/test_portable_demo.py'
+      - 'tests/serve_e2e.py'
+      - 'tests/serve_map_preview.py'
+      - 'tests/test_screen_capture.py'
+      - 'tests/test_direct_snapshot.py'
+      - 'tests/test_automatic_monitoring.py'
+      - 'tests/test_server_container.py'
+      - 'tests/ServerSecurityChecks/**'
+      - 'tests/MailReceiverChecks/**'
+      - 'docs/firewatcher-mail.md'
+      - 'docs/alert-location.md'
+      - 'docs/mail-components-notices.txt'
+      - 'scripts/register-monitor-startup.ps1'
+      - 'deploy/**'
+      - '.dockerignore'
+      - 'docs/automatic-monitoring.md'
+      - 'tests/ScreenCaptureChecks/**'
+      - 'tests/WindowsCaptureSmoke/**'
+      - 'config/inventory.example.json'
+      - 'docs/windows-demo.md'
+      - 'docs/terrain-calibration.md'
+      - 'docs/geographic-calibration.md'
+      - 'docs/visual-tracking.md'
+      - 'docs/vworld-monitoring.md'
+      - 'docs/video-direction-feasibility.md'
+      - 'docs/screen-capture.md'
+      - 'global.json'
+
+permissions:
+  contents: read
+
+jobs:
+  windows-capture-check:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.425'
+      - name: Windows encrypted server settings and login checks
+        run: |
+          dotnet run --project tests/ServerSecurityChecks -c Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet run --project tests/MailReceiverChecks -c Release
+      - name: Unified installer update and data preservation checks
+        shell: pwsh
+        run: |
+          try { ./tests/test_unified_install.ps1 }
+          catch {
+            $message = ($_.Exception.Message + ' ' + $_.InvocationInfo.PositionMessage).Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+            Write-Output "::error title=Unified installer check::$message"
+            exit 1
+          }
+      - name: Hidden Windows receiver survives launcher exit
+        shell: pwsh
+        run: |
+          try { ./tests/test_background_receiver.ps1 }
+          catch {
+            $message = ($_.Exception.Message + ' ' + $_.InvocationInfo.PositionMessage).Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+            Write-Output "::error title=Background receiver check::$message"
+            exit 1
+          }
+      - name: Synthetic Windows window, pixel capture and occlusion checks
+        shell: pwsh
+        run: |
+          dotnet publish tests/WindowsCaptureSmoke -c Release -r win-x64 --self-contained false -o artifacts/windows-smoke --nologo
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & ./artifacts/windows-smoke/ConsoleStudio2.exe
+          exit $LASTEXITCODE
+  server-container-check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build server without operational credentials
+        run: docker build -f deploy/Dockerfile -t fire-monitoring:server-check .
+      - name: Test container using synthetic disabled camera settings
+        run: python3 tests/test_server_container.py
+  package:
+    needs: [windows-capture-check, server-container-check]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.425'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Build web and Bridge
+        run: |
+          cd web
+          npm ci --no-audit --no-fund
+          npm run build -- --outDir ../bridge/WisenetPtzBridge/wwwroot --emptyOutDir
+          cd ..
+          dotnet build bridge/WisenetPtzBridge -c Release --nologo
+      - name: Test synthetic inventory and portable startup
+        run: |
+          dotnet run --project tests/MailReceiverChecks -c Release
+          dotnet run --project tests/ScreenCaptureChecks -c Release
+          python3 tests/test_screen_capture.py
+          python3 tests/test_direct_snapshot.py
+          python3 tests/test_automatic_monitoring.py
+          python3 tests/test_inventory.py
+          python3 tests/test_portable_demo.py
+      - name: Prepare browser for checks
+        timeout-minutes: 4
+        run: |
+          cctv_browser_path="$(command -v google-chrome || command -v chromium || true)"
+          if [ -n "$cctv_browser_path" ]; then
+            "$cctv_browser_path" --version
+            echo "CHROMIUM_EXECUTABLE=$cctv_browser_path" >> "$GITHUB_ENV"
+          else
+            cd web
+            npx playwright install --with-deps chromium
+          fi
+      - name: Test browser inventory, map and terrain calibration (mock SDK)
+        timeout-minutes: 4
+        run: |
+          cd web
+          PLAYWRIGHT_JSON_OUTPUT_FILE=../artifacts/browser-normal-results.json npm run test:e2e -- --reporter=line,json
+      - name: Test Pages map and numerical calibration (mock SDK)
+        timeout-minutes: 4
+        run: |
+          cd web
+          VITE_MAP_ONLY=true VITE_BASE_PATH=/fire-monitoring/ VITE_VWORLD_API_KEY=synthetic-pages-key npm run build
+          PLAYWRIGHT_JSON_OUTPUT_FILE=../artifacts/browser-pages-results.json npx playwright test --config playwright.pages.config.ts --reporter=line,json
+      - name: Report browser failures through check annotations
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          import json, re
+          from pathlib import Path
+          def suites(items):
+              for suite in items:
+                  for spec in suite.get('specs', []):
+                      for test in spec.get('tests', []):
+                          if test.get('status') not in ('unexpected', 'flaky'):
+                              continue
+                          errors = [e.get('message', '') for r in test.get('results', []) for e in r.get('errors', [])]
+                          message = spec['title'] + ': ' + ' '.join(errors)
+                          message = re.sub(r'\x1b\[[0-9;]*m', '', message)
+                          message = re.sub(r'https?://\S+', '[request URL omitted]', message)[:1800]
+                          message = message.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+                          print('::error title=Browser check failed::' + message)
+                  suites(suite.get('suites', []))
+          for path in Path('artifacts').glob('browser-*-results.json'):
+              suites(json.loads(path.read_text()).get('suites', []))
+          PY
+      - name: Package Windows x64 demo
+        run: python3 scripts/build-portable.py
+      - name: Build unified installer and update download
+        run: python3 scripts/build-unified.py
+      - name: Register one installer download
+        id: artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Fire-Monitor-Setup
+          path: artifacts/Fire-Monitor-Setup/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Download instructions
+        env:
+          ARTIFACT_URL: ${{ steps.artifact.outputs.artifact-url }}
+        run: |
+          echo "## Fire monitoring unified Windows setup" >> "$GITHUB_STEP_SUMMARY"
+          echo "Download: $ARTIFACT_URL" >> "$GITHUB_STEP_SUMMARY"
+          echo "Extract once and run Setup.cmd for both installation and update. Existing data is preserved." >> "$GITHUB_STEP_SUMMARY"
+          echo "Use the desktop launcher for background reception and the administrator settings web page. Other PCs use the same receiver HTTPS address." >> "$GITHUB_STEP_SUMMARY"
+          echo "Operational credentials are never included. See docs/unified-receiver.md. Physical Windows installation, external HTTPS access and live SMS forwarding still require checks on the operator PC." >> "$GITHUB_STEP_SUMMARY"

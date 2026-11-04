@@ -1,0 +1,51 @@
+services:
+  monitor:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    environment:
+      CCTV_CONNECTIONS_JSON: ${CCTV_CONNECTIONS_JSON:?Camera connection secret required}
+      CCTV_MAP_CONFIGURATION_JSON: ${CCTV_MAP_CONFIGURATION_JSON:?Saved map secret required}
+      CCTV_MONITOR_USER: ${CCTV_MONITOR_USER:?Monitoring login required}
+      CCTV_MONITOR_PASSWORD_HASH: ${CCTV_MONITOR_PASSWORD_HASH:?Monitoring password hash required}
+      CCTV_VIEWER_USER: ${CCTV_VIEWER_USER:-}
+      CCTV_VIEWER_PASSWORD_HASH: ${CCTV_VIEWER_PASSWORD_HASH:-}
+      VWORLD_API_KEY: ${CCTV_VWORLD_API_KEY:-}
+      MONITOR_PROXY_CIDR: 172.31.99.0/24
+    volumes:
+      - monitor-data:/data
+    networks:
+      - private
+    healthcheck:
+      test: [CMD, dotnet, WisenetPtzBridge.dll, --health-probe]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+    mem_limit: 768m
+  proxy:
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      MONITOR_DOMAIN: ${CCTV_MONITOR_DOMAIN:?HTTPS domain required}
+    ports:
+      - '${MONITOR_BIND_IP:-0.0.0.0}:${MONITOR_HTTP_PORT:-80}:80'
+      - '${MONITOR_BIND_IP:-0.0.0.0}:${MONITOR_HTTPS_PORT:-443}:443'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - proxy-data:/data
+      - proxy-config:/config
+    networks:
+      - private
+    depends_on:
+      monitor:
+        condition: service_healthy
+networks:
+  private:
+    ipam:
+      config:
+        - subnet: 172.31.99.0/24
+volumes:
+  monitor-data:
+  proxy-data:
+  proxy-config:

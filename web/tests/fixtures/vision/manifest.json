@@ -1,0 +1,25 @@
+{
+  "provenance": "SYNTHETIC random glyph terrain; independently generated OpenCV 4.12 warpPerspective with pinhole camera matrices; no operating image or coordinates.",
+  "width": 800,
+  "height": 480,
+  "referencePose": {
+    "headingDeg": 180,
+    "pitchDeg": 5,
+    "horizontalFovDeg": 70,
+    "cameraHeightM": 3
+  },
+  "expected": [
+    {
+      "file": "current-1.png",
+      "headingDeg": 185,
+      "pitchDeg": 7,
+      "horizontalFovDeg": 65
+    },
+    {
+      "file": "current-2.png",
+      "headingDeg": 185.6,
+      "pitchDeg": 7.4,
+      "horizontalFovDeg": 65.5
+    }
+  ]
+}

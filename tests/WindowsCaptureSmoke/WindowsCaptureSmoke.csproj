@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework><OutputType>Exe</OutputType>
+    <UseWindowsForms>true</UseWindowsForms><EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable>
+    <!-- A synthetic window with the allowlisted executable name; never included in release ZIPs. -->
+    <AssemblyName>ConsoleStudio2</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../bridge/ScreenCapture.Core/ScreenCapture.Core.csproj" />
+    <Compile Include="../../bridge/SsmScreenCapture/NativeWindows.cs" Link="NativeWindows.cs" />
+    <Compile Include="../../bridge/SsmScreenCapture/ScreenPixels.cs" Link="ScreenPixels.cs" />
+  </ItemGroup>
+</Project>

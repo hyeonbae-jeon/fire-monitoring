@@ -19,7 +19,7 @@ with tempfile.TemporaryDirectory() as directory:
     work = Path(directory)
     (work / 'inventory.json').write_text((ROOT / 'config/inventory.example.json').read_text())
     env = os.environ.copy()
-    env.update(INVENTORY_FILE=str(work / 'inventory.json'), CAMERA_CONFIG_FILE=str(work / 'cameras.json'),
+    env.update(INVENTORY_FILE=str(work / 'inventory.json'), CAMERA_CONFIG_FILE=str(work / 'cameras.json'), MAP_CONFIG_FILE=str(work / 'map.json'),
                INVENTORY_WRITE_KEY='synthetic-e2e-config-key', ASPNETCORE_URLS='http://127.0.0.1:5081',
                ASPNETCORE_ENVIRONMENT='Production')
     process = subprocess.Popen([dotnet, str(PROJECT / 'bin/Release/net8.0/WisenetPtzBridge.dll')], cwd=PROJECT, env=env)

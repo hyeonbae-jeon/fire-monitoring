@@ -1,0 +1,12 @@
+[
+  {
+    "file": "HTW.SSM.ConsoleStudio.Services.SystemService.dll",
+    "bytes": 140288,
+    "sha256": "4ccf40ed7e24111d3865316f3c92786ab8d09c29d1363d5995833f5601e36edb"
+  },
+  {
+    "file": "HTW.SSM.ConsoleStudio.Views.LiveViewer.dll",
+    "bytes": 215040,
+    "sha256": "8f3a6684b2c4d0d8e5aae3b10596960d2178b002ef8ce35fd86ee99ee161085f"
+  }
+]

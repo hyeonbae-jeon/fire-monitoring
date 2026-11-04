@@ -1,0 +1,84 @@
+import {test,expect} from '@playwright/test';
+import {readFileSync} from 'node:fs';
+import {sdk} from './fixtures/vworld-sdk';
+import {approximateNativePose} from '../src/native-approximation';
+import {parseConfiguration} from '../src/map-model';
+const image=readFileSync('tests/fixtures/vision/current-1.png');
+const sample={panDeg:359,tiltDeg:-4,zoom:1,zoomPulse:0,requestStartedAt:'',receivedAt:'',sequence:1};
+test('NVT optional current-position reads feed explicit saved map following and an invalid response pauses only tracking',async({page})=>{
+ let seq=0,failed=false;const name='합성 NVT 설치점';
+ const position={id:'synthetic-nvt',name,lat:37.5,lon:127.1,positionSource:'operator',ssmUuid:null,orientation:null,nativeTracking:{source:'operator-ptz-anchor',confidence:'approximate',savedAt:'2026-10-25T00:00:00Z',positionAtCalibration:{lat:37.5,lon:127.1},deviceAnchor:{panDeg:77,tiltDeg:0,zoom:1},pose:{headingDeg:100,pitchDeg:0,horizontalFovDeg:59,cameraHeightM:3},groundElevationM:null,zoomScale:false}};
+ const observation=()=>({sessionId:'synthetic-nvt-session',cameraLabel:name,status:'live',reasonCode:'snapshot-received',capturedAt:new Date().toISOString(),sequence:++seq,sceneChanged:false,lowContrast:false,referenceDifference:null});
+ await page.route('https://map.vworld.kr/**',r=>r.fulfill({contentType:'application/javascript',body:sdk}));await page.route('**/health',r=>r.fulfill({json:{ok:true,localDesktopDemo:true}}));
+ await page.route('**/api/camera-snapshot/session',r=>{expect(r.request().postDataJSON()).toEqual({cameraLabel:name,source:'nvt-getimage',snapshotUrl:'http://synthetic-nvt.invalid/cgi-bin/GetImage.cgi?USER=synthetic-user&PWD=synthetic-token&InputNumber=1',readDevicePtz:true});return r.fulfill({json:{observation:observation()}});});
+ await page.route('**/api/camera-snapshot/status',r=>r.fulfill({json:{configured:true,status:'live',liveFrameAvailable:true,observation:observation(),frameSource:'nvt-getimage-snapshot',devicePtz:{enabled:true,status:failed?'error':'live',reasonCode:failed?'nvt-ptz-invalid-response':'ptz-received',sample:failed?null:{panDeg:78,tiltDeg:0,zoom:1,zoomPulse:null,sequence:seq,requestStartedAt:new Date().toISOString(),receivedAt:new Date().toISOString()}}}}));
+ await page.route('**/api/camera-snapshot/frame?*',r=>r.fulfill({contentType:'image/png',body:image}));
+ await page.goto('/');await page.getByRole('button',{name:'지도 모니터링',exact:true}).click();await page.getByLabel('위도·경도 JSON 불러오기',{exact:true}).setInputFiles({name:'synthetic-nvt.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({schemaVersion:1,crs:'EPSG:4326',positions:[position]}))});
+ await page.getByRole('button',{name:'지도 연결',exact:true}).click();await page.getByLabel('VWorld 3D 키').fill('synthetic-key');await page.getByRole('button',{name:'VWorld 3D 연결',exact:true}).click();await expect(page.getByText(/VWorld 3D 뷰어 초기화 완료 ·/)).toBeVisible();
+ await page.getByRole('button',{name:'실시간 영상',exact:true}).click();await page.getByLabel('영상 입력 방식').filter({visible:true}).selectOption('nvt');await page.getByLabel('NVT JPEG 요청 전체 주소').fill('http://synthetic-nvt.invalid/cgi-bin/GetImage.cgi?USER=synthetic-user&PWD=synthetic-token&InputNumber=1');await page.getByLabel('장비 Pan·Tilt·Zoom 함께 조회').check();await page.getByRole('button',{name:'JPEG 연결 시험·수신 시작',exact:true}).click();
+ const status=page.getByRole('region',{name:'장비 PTZ 수신 상태'});await expect(status).toContainText('Pan 78.00° · Tilt 0.00° · Zoom 1.00');await expect(status).not.toContainText('ZoomPulse');await expect(page.getByRole('button',{name:'영상·PTZ 기준 묶음 저장',exact:true})).toBeEnabled();
+ await page.getByLabel('지도 추종 방식').selectOption('device');const frame=page.frames().find(f=>f!==page.mainFrame())!;expect(await frame.evaluate('views.length')).toBe(0);await page.getByLabel('수신 영상이 선택한 카메라임을 확인').check();await page.getByRole('button',{name:'저장 기준으로 추종 재개',exact:true}).click();await expect.poll(async()=>(await frame.evaluate('views.at(-1)?.orientation.heading'))*180/Math.PI).toBeCloseTo(101);
+ failed=true;await expect(status).toContainText('NVT 현재 위치 응답');await expect(page.locator('.map-bottom-status')).not.toContainText('장비 PTZ 근사 추종');await expect(page.getByRole('img',{name:'지도에서 확인하는 최신 CCTV 화면'})).toBeVisible();
+});
+test('saved native profiles accept zero values and reject changed sites, missing flags and credential fields',()=>{
+ const p={id:'synthetic-profile',name:'합성 기준',lat:37.5,lon:127.1,positionSource:'operator',ssmUuid:null,orientation:null,nativeTracking:{source:'operator-ptz-anchor',confidence:'approximate',savedAt:'2026-10-25T00:00:00Z',positionAtCalibration:{lat:37.5,lon:127.1},deviceAnchor:{panDeg:0,tiltDeg:0,zoom:1},pose:{headingDeg:0,pitchDeg:0,horizontalFovDeg:59,cameraHeightM:3},groundElevationM:0,zoomScale:false}};
+ const doc={schemaVersion:1,crs:'EPSG:4326',positions:[p]},read=(v:unknown)=>parseConfiguration(JSON.stringify(v));
+ expect(read(doc).positions[0].nativeTracking).toEqual(p.nativeTracking);
+ const moved=structuredClone(doc);moved.positions[0].lat+=.001;expect(()=>read(moved)).toThrow('장비 추종 기준');
+ const secret=structuredClone(doc) as any;secret.positions[0].nativeTracking.deviceAnchor.password='synthetic-secret';expect(()=>read(secret)).toThrow('장비 추종 기준');
+ const missing=structuredClone(doc) as any;delete missing.positions[0].nativeTracking.zoomScale;expect(()=>read(missing)).toThrow('장비 추종 기준');
+ const {nativeTracking,...old}=p;expect(read({...doc,positions:[old]}).positions[0]).toEqual(old);
+});
+test('approximate mapping wraps north, follows tilt, scales zoom and preserves the anchor',()=>{
+ const anchor={sample:{...sample},pose:{headingDeg:138,pitchDeg:14,horizontalFovDeg:59,cameraHeightM:20}};
+ const r=approximateNativePose(anchor,{...sample,panDeg:1,tiltDeg:-2,zoom:2},true);
+ expect(r.headingDeg).toBe(140);expect(r.pitchDeg).toBe(12);expect(r.horizontalFovDeg).toBeCloseTo(2*Math.atan(Math.tan(59*Math.PI/360)/2)*180/Math.PI);
+ expect(approximateNativePose(anchor,{...sample,panDeg:358},false).headingDeg).toBe(137);
+ expect(approximateNativePose(anchor,{...sample,zoom:2},false).horizontalFovDeg).toBe(59);
+ expect(anchor.sample.panDeg).toBe(359);expect(anchor.pose.headingDeg).toBe(138);
+ expect(()=>approximateNativePose(anchor,{...sample,zoom:0},true)).toThrow();expect(()=>approximateNativePose(anchor,{...sample,tiltDeg:100},true)).toThrow();
+});
+test('camera without geographic fit follows native PTZ; expiry pauses, session resets, export is unchanged',async({page})=>{
+ test.setTimeout(45000);let sequence=0,pan=359,tilt=-4,zoom=1,stale=false,sessionId='native-approx-session';
+ const observation=()=>({sessionId,cameraLabel:'합성 근사 카메라',status:'live',reasonCode:'snapshot-received',capturedAt:new Date().toISOString(),sequence:++sequence,sceneChanged:false,lowContrast:false,referenceDifference:null});
+ await page.route('https://map.vworld.kr/**',r=>r.fulfill({contentType:'application/javascript',body:sdk}));
+ await page.route('**/health',r=>r.fulfill({json:{ok:true,localDesktopDemo:true}}));
+ await page.route('**/api/camera-snapshot/session',r=>r.fulfill({json:{observation:observation()}}));
+ await page.route('**/api/camera-snapshot/status',r=>r.fulfill({json:{configured:true,status:'live',liveFrameAvailable:true,observation:observation(),devicePtz:{enabled:true,status:'live',reasonCode:'ptz-received',sample:{panDeg:pan,tiltDeg:tilt,zoom,zoomPulse:0,sequence,requestStartedAt:new Date().toISOString(),receivedAt:new Date(Date.now()-(stale?10000:0)).toISOString()}}}}));
+ await page.route('**/api/camera-snapshot/frame?*',r=>r.fulfill({contentType:'image/png',body:image}));
+ const config={schemaVersion:1,crs:'EPSG:4326',positions:[{id:'approx-test',name:'합성 근사 카메라',lat:37.5,lon:127.1,positionSource:'operator',ssmUuid:null,orientation:null}]};
+ await page.goto('/');await page.getByRole('button',{name:'지도 모니터링',exact:true}).click();await page.getByLabel('위도·경도 JSON 불러오기',{exact:true}).setInputFiles({name:'synthetic-map.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(config))});
+ await page.getByRole('button',{name:'지도 연결',exact:true}).click();await page.getByLabel('VWorld 3D 키').fill('synthetic-key');await page.getByRole('button',{name:'VWorld 3D 연결',exact:true}).click();await expect(page.getByText(/VWorld 3D 뷰어 초기화 완료 ·/)).toBeVisible();
+ await page.getByRole('button',{name:'실시간 영상',exact:true}).click();await page.getByLabel('영상 입력 방식').filter({visible:true}).selectOption('direct');
+ await page.getByLabel('직접 연결 카메라 이름').fill('합성 근사 카메라');await page.getByLabel('카메라 웹 접속 주소').fill('http://synthetic-device.invalid');await page.getByLabel('카메라 장비 ID').fill('synthetic-user');await page.getByLabel('카메라 장비 PW').fill('synthetic-password');await page.getByLabel('장비 Pan·Tilt·Zoom 함께 조회').check();await page.getByRole('button',{name:'JPEG 연결 시험·수신 시작',exact:true}).click();await expect(page.getByRole('img',{name:'지도에서 확인하는 최신 CCTV 화면'})).toBeVisible();
+ await page.getByLabel('지도 추종 방식').selectOption('device');const panel=page.getByRole('region',{name:'장비 PTZ 근사 추종'}),frame=page.frames().find(f=>f!==page.mainFrame())!;
+ for(const [name,value] of [['시험 기준 방위각(°)','138'],['시험 기준 기울기(°)','14'],['시험 기준 수평 화각(°)','59'],['시험 렌즈 높이(m)','20'],['시험 지도 지면 고도(m, 빈칸은 자동 조회)','582.9']])await page.getByLabel(name,{exact:true}).fill(value);
+ expect(await frame.evaluate('views.length')).toBe(0);const confirm=page.getByLabel('수신 영상이 선택한 카메라임을 확인'),start=page.getByRole('button',{name:'현재 PTZ를 기준으로 시험 추종 시작',exact:true});await confirm.check();await start.click();await expect(page.locator('.map-bottom-status')).toContainText('장비 PTZ 근사 추종');
+ await expect.poll(()=>frame.evaluate('views.at(-1)?.destination')).toEqual([127.1,37.5,602.9]);pan=1;tilt=-2;zoom=2;
+ await expect.poll(async()=>(await frame.evaluate('views.at(-1)?.orientation.heading'))*180/Math.PI).toBeCloseTo(140);expect((await frame.evaluate('views.at(-1).orientation.pitch'))*180/Math.PI).toBeCloseTo(12);expect((await frame.evaluate('ws3d.viewer.camera.frustum.fov'))*180/Math.PI).toBeCloseTo(2*Math.atan(Math.tan(59*Math.PI/360)/2)*180/Math.PI);
+ stale=true;await expect(panel).toContainText('장비 추종 일시 정지');await expect.poll(()=>frame.evaluate('ws3d.viewer.scene.screenSpaceCameraController.enableInputs')).toBe(true);const count=await frame.evaluate('views.length');await page.waitForTimeout(1200);expect(await frame.evaluate('views.length')).toBe(count);
+ stale=false;await expect(page.locator('.map-bottom-status')).toContainText('장비 PTZ 근사 추종');sessionId='new-native-session';await expect(panel).toContainText('장비 추종 중지');await expect(confirm).not.toBeChecked();await confirm.check();await start.click();await expect(page.locator('.map-bottom-status')).toContainText('장비 PTZ 근사 추종');
+ await page.getByRole('button',{name:'지도 라이브 표시 중지',exact:true}).click();await expect(panel).toContainText('장비 추종 중지');await expect.poll(()=>frame.evaluate('ws3d.viewer.scene.screenSpaceCameraController.enableInputs')).toBe(true);
+ await page.getByRole('button',{name:'카메라·설정',exact:true}).click();const download=page.waitForEvent('download');await page.getByRole('button',{name:'좌표 설정 다운로드',exact:true}).click();const stream=await(await download).createReadStream();let raw='';for await(const c of stream!)raw+=c.toString();expect(JSON.parse(raw)).toEqual(config);expect(await page.evaluate(()=>({local:localStorage.length,session:sessionStorage.length}))).toEqual({local:0,session:0});
+});
+
+test('saved baselines resume at a new device angle, stay separate by camera and export the original anchor',async({page})=>{
+ test.setTimeout(45000);
+ const profile=(lat:number,pan:number,heading:number)=>({source:'operator-ptz-anchor',confidence:'approximate',savedAt:'2026-10-25T00:00:00Z',positionAtCalibration:{lat,lon:127.1},deviceAnchor:{panDeg:pan,tiltDeg:0,zoom:1},pose:{headingDeg:heading,pitchDeg:0,horizontalFovDeg:59,cameraHeightM:3},groundElevationM:null,zoomScale:true});
+ const first={id:'saved-first',name:'합성 첫 카메라',lat:37.5,lon:127.1,positionSource:'operator',ssmUuid:null,orientation:null,nativeTracking:profile(37.5,359,138)};
+ const second={...first,id:'saved-second',name:'합성 둘째 카메라',lat:37.51,nativeTracking:profile(37.51,90,210)};
+ let seq=0,pan=10,sessionId='saved-first-session',cameraLabel=first.name;
+ const observation=()=>({sessionId,cameraLabel,status:'live',reasonCode:'snapshot-received',capturedAt:new Date().toISOString(),sequence:++seq,sceneChanged:false,lowContrast:false,referenceDifference:null});
+ await page.route('https://map.vworld.kr/**',r=>r.fulfill({contentType:'application/javascript',body:sdk}));await page.route('**/health',r=>r.fulfill({json:{ok:true,localDesktopDemo:true}}));
+ await page.route('**/api/camera-snapshot/session',r=>r.fulfill({json:{observation:observation()}}));await page.route('**/api/camera-snapshot/frame?*',r=>r.fulfill({contentType:'image/png',body:image}));
+ await page.route('**/api/camera-snapshot/status',r=>r.fulfill({json:{configured:true,status:'live',liveFrameAvailable:true,observation:observation(),devicePtz:{enabled:true,status:'live',reasonCode:'ptz-received',sample:{panDeg:pan,tiltDeg:0,zoom:1,zoomPulse:0,sequence:seq,requestStartedAt:new Date().toISOString(),receivedAt:new Date().toISOString()}}}}));
+ async function connectDevice(){await page.getByLabel('영상 입력 방식').filter({visible:true}).selectOption('direct');await page.getByLabel('직접 연결 카메라 이름').fill(cameraLabel);await page.getByLabel('카메라 웹 접속 주소').fill('http://synthetic-device.invalid');await page.getByLabel('카메라 장비 ID').fill('synthetic-user');await page.getByLabel('카메라 장비 PW').fill('synthetic-password');await page.getByLabel('장비 Pan·Tilt·Zoom 함께 조회').check();await page.getByRole('button',{name:'JPEG 연결 시험·수신 시작',exact:true}).click();await expect(page.getByRole('img',{name:'지도에서 확인하는 최신 CCTV 화면'})).toBeVisible();}
+ await page.goto('/');await page.getByRole('button',{name:'지도 모니터링',exact:true}).click();await page.getByLabel('위도·경도 JSON 불러오기',{exact:true}).setInputFiles({name:'synthetic-pair.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({schemaVersion:1,crs:'EPSG:4326',positions:[first,second]}))});
+ await page.getByRole('button',{name:'지도 연결',exact:true}).click();await page.getByLabel('VWorld 3D 키').fill('synthetic-key');await page.getByRole('button',{name:'VWorld 3D 연결',exact:true}).click();await expect(page.getByText(/VWorld 3D 뷰어 초기화 완료 ·/)).toBeVisible();await page.getByRole('button',{name:'실시간 영상',exact:true}).click();await connectDevice();await page.getByLabel('지도 추종 방식').selectOption('device');
+ const frame=page.frames().find(f=>f!==page.mainFrame())!,confirm=page.getByLabel('수신 영상이 선택한 카메라임을 확인'),resume=page.getByRole('button',{name:'저장 기준으로 추종 재개',exact:true});
+ expect(await frame.evaluate('views.length')).toBe(0);await expect(resume).toBeDisabled();await confirm.check();await resume.click();await expect.poll(async()=>(await frame.evaluate('views.at(-1)?.orientation.heading'))*180/Math.PI).toBeCloseTo(149);
+ await page.getByRole('button',{name:'근사 기준을 지도 설정에 반영',exact:true}).click();await expect(page.getByRole('region',{name:'장비 PTZ 근사 추종'})).toContainText('저장된 근사 기준 · Pan 359.00°');
+ await page.getByLabel('추종할 설치 카메라').selectOption(second.id);await expect(page.getByRole('region',{name:'장비 PTZ 근사 추종'})).toContainText('저장된 근사 기준 · Pan 90.00°');await expect(resume).toBeDisabled();await expect(page.getByRole('img',{name:'지도에서 확인하는 최신 CCTV 화면'})).toHaveCount(0);
+ pan=100;cameraLabel=second.name;sessionId='saved-second-session';await connectDevice();await confirm.check();await resume.click();await expect.poll(async()=>(await frame.evaluate('views.at(-1)?.orientation.heading'))*180/Math.PI).toBeCloseTo(220);
+ await page.getByRole('button',{name:'카메라·설정',exact:true}).click();const downloading=page.waitForEvent('download');await page.getByRole('button',{name:'좌표 설정 다운로드',exact:true}).click();const stream=await(await downloading).createReadStream();let raw='';for await(const c of stream!)raw+=c.toString();const doc=JSON.parse(raw);expect(doc.positions[0].nativeTracking.deviceAnchor.panDeg).toBe(359);expect(doc.positions[1].nativeTracking).toEqual(second.nativeTracking);for(const secret of ['synthetic-user','synthetic-password','synthetic-device.invalid','sessionId'])expect(raw).not.toContain(secret);
+});
