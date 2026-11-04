@@ -60,7 +60,7 @@ export function FirewatcherMailPanel({state,error,canManage,positions,onRefresh,
     <label><input type="checkbox" checked={confirmed} onChange={e=>setConfirmed(e.target.checked)}/>원본 알림과 같은 카메라임을 확인했습니다.</label>
     <button disabled={busy||!confirmed||!cameraId} onClick={()=>void bind()}>알림 카메라 연결 저장</button>{event.binding&&<button disabled={busy} onClick={()=>void bind(true)}>지도 연결 해제</button>}
    </fieldset>}
-   <p className="help">카메라 위치는 연기 발생점이 아닙니다. 현재 PTZ를 과거 감지 방향으로 적용하지 않습니다. 지도 연결 해제는 FIREWATCHER 알림을 해제하지 않습니다.</p>
+   <p className="help">카메라 위치는 연기 발생점이 아닙니다. 위치 후보는 감지 영상과 구도를 대조한 현재 CCTV 각도를 사용합니다. 지도 연결 해제는 FIREWATCHER 알림을 해제하지 않습니다.</p>
    {message&&<p role="status">{message}</p>}
   </div>}
  </section>;
