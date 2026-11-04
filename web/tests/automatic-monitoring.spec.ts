@@ -273,9 +273,9 @@ test('administrator edits shared settings without reading stored secrets and bac
  await page.route('**/api/admin/settings',async route=>{
   if(route.request().method()==='PUT'){
    expect(route.request().headers()['x-monitor-csrf']).toBe('synthetic-csrf-token');
-   const body=route.request().postDataJSON();expect(body.revision).toBe('redacted-revision');expect(body.cameras[0].password).toBe('');expect(body.cameras[0].url).toBe('');expect(body.cameras[0].displayRangeM).toBe(4500);writes++;await route.fulfill({json:{saved:true,requiresLogin:false,reloadMap:false}});return;
+   const body=route.request().postDataJSON();expect(body.revision).toBe('redacted-revision');expect(body.cameras[0].password).toBe('');expect(body.cameras[0].url).toBe('');expect(body.cameras[0].displayRangeM).toBe(4500);expect(body.mail.hasPassword).toBeUndefined();expect(body.mail.appPassword).toBe('');writes++;await route.fulfill({json:{saved:true,requiresLogin:false,reloadMap:false}});return;
   }
-  await route.fulfill({json:{writable:true,revision:'redacted-revision',cameras:[{cameraId:'camera-0',name:'합성 자동 카메라 0',source:'hanwha',configured:true,address:'http://synthetic-camera.invalid',username:'synthetic-user',enabled:true,displayRangeM:3000}],accounts:{adminUser:'synthetic-admin',viewerUser:'synthetic-viewer',viewerEnabled:true},mail:null,hasMapKey:true}});
+  await route.fulfill({json:{writable:true,revision:'redacted-revision',cameras:[{cameraId:'camera-0',name:'합성 자동 카메라 0',source:'hanwha',configured:true,address:'http://synthetic-camera.invalid',username:'synthetic-user',enabled:true,displayRangeM:3000}],accounts:{adminUser:'synthetic-admin',viewerUser:'synthetic-viewer',viewerEnabled:true},mail:{enabled:true,userName:'synthetic',allowedFrom:'synthetic@naver.com',alertOrigin:'https://synthetic-alert.invalid',readFromUtc:'2026-01-01T00:00:00Z',hasPassword:true},hasMapKey:true}});
  });
  await page.route('**/api/admin/settings/backup',async route=>{expect(route.request().headers()['x-monitor-csrf']).toBe('synthetic-csrf-token');expect(route.request().postDataJSON().passphrase).toBe('synthetic-recovery-password');backups++;await route.fulfill({contentType:'application/octet-stream',body:'synthetic-encrypted-backup'});});
  await mockServer(page,'admin',()=>state(Date.now()));

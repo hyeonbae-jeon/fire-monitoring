@@ -287,6 +287,8 @@ public static class MonitoringServerSetup
             if (values.Keys.Any(k => !Keys.Contains(k)) || values["MONITOR_SERVER_MODE"] != "true" ||
                 string.IsNullOrWhiteSpace(values["CCTV_MONITOR_USER"]) || values["CCTV_MONITOR_USER"].Length > 100 ||
                 !MonitoringServerSecurity.ValidHash(values["CCTV_MONITOR_PASSWORD_HASH"])) throw new JsonException();
+            if (!values.ContainsKey("CCTV_MAIL_SETTINGS_JSON") && ReadProtectedSettings()["CCTV_MAIL_SETTINGS_JSON"] is { } mail)
+                values["CCTV_MAIL_SETTINGS_JSON"] = mail;
             UnifiedSettings.Validate(values);
             MonitoringServerSecurity.ValidateAccounts(new ConfigurationBuilder().AddInMemoryCollection(values!).Build());
             var map = JsonSerializer.Deserialize<MapDocument>(values["CCTV_MAP_CONFIGURATION_JSON"], FileCameraInventorySource.Json) ?? throw new JsonException(); MapConfiguration.Validate(map);

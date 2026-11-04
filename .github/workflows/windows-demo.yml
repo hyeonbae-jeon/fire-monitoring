@@ -66,10 +66,22 @@ jobs:
           dotnet run --project tests/MailReceiverChecks -c Release
       - name: Unified installer update and data preservation checks
         shell: pwsh
-        run: ./tests/test_unified_install.ps1
+        run: |
+          try { ./tests/test_unified_install.ps1 }
+          catch {
+            $message = ($_.Exception.Message + ' ' + $_.InvocationInfo.PositionMessage).Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+            Write-Output "::error title=Unified installer check::$message"
+            exit 1
+          }
       - name: Hidden Windows receiver survives launcher exit
         shell: pwsh
-        run: ./tests/test_background_receiver.ps1
+        run: |
+          try { ./tests/test_background_receiver.ps1 }
+          catch {
+            $message = ($_.Exception.Message + ' ' + $_.InvocationInfo.PositionMessage).Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+            Write-Output "::error title=Background receiver check::$message"
+            exit 1
+          }
       - name: Synthetic Windows window, pixel capture and occlusion checks
         shell: pwsh
         run: |
