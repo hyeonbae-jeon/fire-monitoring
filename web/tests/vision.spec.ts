@@ -58,13 +58,16 @@ test('packaged offline OpenCV worker matches independently generated views and r
    await ask({type:'reference',blob:blob(reference),pose,aspect:800/480,alignment:aligned.result});
    const croppedMotion=await ask({type:'frame',blob:await capture(first)});
    const resized=await ask({type:'frame',blob:blob(first)});
-   return {ready,a,b,wide,rejected,unrelated,wrongSize,narrow,aligned,croppedMotion,resized};
+   const sameCurrent=await ask({type:'same-current-view',referenceBlob:blob(reference),blob:blob(reference)});
+   const movedCurrent=await ask({type:'same-current-view',referenceBlob:blob(reference),blob:blob(first)});
+   return {ready,a,b,wide,rejected,unrelated,wrongSize,narrow,aligned,croppedMotion,resized,sameCurrent,movedCurrent};
   }finally{w.terminate();}
  },{workerFile,reference:reference.toString('base64'),first:first.toString('base64'),second:second.toString('base64'),pose});
  expect(result.ready.type,JSON.stringify(result.ready)).toBe('ready');
  for(const [i,key] of ['a','b'].entries()){
   const a=result[key];expect(a.type,JSON.stringify(a)).toBe('result');expect(a.result.pose.headingDeg).toBeCloseTo(manifest.expected[i].headingDeg,0);expect(a.result.pose.pitchDeg).toBeCloseTo(manifest.expected[i].pitchDeg,0);expect(Math.abs(a.result.pose.horizontalFovDeg-manifest.expected[i].horizontalFovDeg)).toBeLessThan(1);expect(a.result.validationCount).toBeGreaterThanOrEqual(8);
  }
+ expect(result.sameCurrent.type,JSON.stringify(result.sameCurrent)).toBe('same-current-view');expect(result.sameCurrent.result.validationCount).toBeGreaterThanOrEqual(8);expect(result.movedCurrent.type).toBe('unknown');
  expect(result.rejected.type).toBe('unknown');
  expect(result.unrelated.type).toBe('unknown');expect(result.wrongSize.type).toBe('unknown');expect(result.narrow.type).toBe('unknown');
  expect(result.wide.type,JSON.stringify(result.wide)).toBe('result');expect(result.wide.result.pose.headingDeg).toBeCloseTo(185,0);expect(Math.abs(result.wide.result.pose.horizontalFovDeg-65)).toBeLessThan(1);

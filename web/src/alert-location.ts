@@ -1,15 +1,16 @@
 import type {Position} from './map-model';
 import type {Pose} from './calibration-model';
+import type {CurrentViewEvidence} from './current-alert-view';
 import {approximateNativePose} from './native-approximation';
 
 export type PixelBox={x:number;y:number;width:number;height:number};
 export type EventDevicePose={panDeg:number;tiltDeg:number;zoom:number};
-export type AlertLocationRequest={eventId:string;imageSha256:string;position:Position;frame:{width:number;height:number};box:PixelBox;device:EventDevicePose;confirmed:true;rangeM:number};
+export type AlertLocationRequest={eventId:string;imageSha256:string;position:Position;frame:{width:number;height:number};box:PixelBox;device:EventDevicePose;confirmed:true;rangeM:number;currentView?:CurrentViewEvidence};
 type GroundPoint={lat:number;lon:number;heightM:number;distanceM:number};
 export type LocationRay={role:'left'|'center'|'right';bearingDeg:number;elevationDeg:number;samples:GroundPoint[]};
 export type AlertRayGrid={key:string;request:AlertLocationRequest;pose:Pose;rays:LocationRay[];points:[number,number][]};
 export type RayHit={role:LocationRay['role'];state:'intersection'|'beyond-range'|'terrain-unknown'|'camera-below-terrain';point:GroundPoint|null;intervalM:[number,number]|null;bearingDeg:number};
-export type AlertLocationResult={key:string;cameraId:string;cameraName:string;source:'operator-confirmed-event-ptz';meaning:'background-terrain-candidate';rays:RayHit[];grid:AlertRayGrid;heightSource:string};
+export type AlertLocationResult={key:string;cameraId:string;cameraName:string;source:'operator-confirmed-event-ptz'|'matched-current-cctv';meaning:'background-terrain-candidate';rays:RayHit[];grid:AlertRayGrid;heightSource:string};
 const rad=Math.PI/180,deg=180/Math.PI;
 const dot=(a:number[],b:number[])=>a.reduce((s,n,i)=>s+n*b[i],0);
 const norm=(v:number[])=>Math.hypot(...v);
@@ -35,6 +36,7 @@ export function createAlertRayGrid(request:AlertLocationRequest):AlertRayGrid{
   !request.eventId||!request.imageSha256||!Number.isInteger(f.width)||!Number.isInteger(f.height)||!valid(f.width,1,8192)||!valid(f.height,1,8192)||f.width*f.height>36_000_000||
   !valid(b.x,0,f.width)||!valid(b.y,0,f.height)||!valid(b.width,1,f.width)||!valid(b.height,1,f.height)||b.x+b.width>f.width||b.y+b.height>f.height||
   !valid(d.panDeg,0,360)||!valid(d.tiltDeg,-360,360)||!valid(d.zoom,.001,10000)||!valid(request.rangeM,100,20000))throw new Error('감지 당시 PTZ 확인과 원본 영상·박스·카메라 높이가 필요합니다.');
+ if(request.currentView&&(request.currentView.source!=='matched-current-cctv'||request.currentView.cameraId!==p.id||request.currentView.frameWidth!==f.width||request.currentView.frameHeight!==f.height||(['panDeg','tiltDeg','zoom'] as const).some(k=>request.currentView!.device[k]!==d[k])))throw new Error('현재 CCTV 영상과 장비 각도의 대응을 확인하세요.');
  const pose=approximateNativePose({sample:n.deviceAnchor,pose:n.pose},d,n.zoomScale,.05);
  const origin=ecef(p.lat,p.lon,n.groundElevationM+pose.cameraHeightM),lat=p.lat*rad,lon=p.lon*rad;
  const east=[-Math.sin(lon),Math.cos(lon),0],north=[-Math.sin(lat)*Math.cos(lon),-Math.sin(lat)*Math.sin(lon),Math.cos(lat)],up=[Math.cos(lat)*Math.cos(lon),Math.cos(lat)*Math.sin(lon),Math.sin(lat)];
@@ -63,7 +65,7 @@ export function intersectAlertTerrain(grid:AlertRayGrid,heights:unknown,heightSo
   }
   return result('beyond-range');
  });
- return {key:grid.key,cameraId:grid.request.position.id,cameraName:grid.request.position.name,source:'operator-confirmed-event-ptz',meaning:'background-terrain-candidate',rays,grid,heightSource};
+ return {key:grid.key,cameraId:grid.request.position.id,cameraName:grid.request.position.name,source:grid.request.currentView?'matched-current-cctv':'operator-confirmed-event-ptz',meaning:'background-terrain-candidate',rays,grid,heightSource};
 }
 
 // Find visible red annotations, not the underlying detector's unpublished bounding-box contract.

@@ -37,7 +37,7 @@ export function FirewatcherMailPanel({state,error,canManage,positions,onRefresh,
  return <section aria-label="FIREWATCHER 메일 알림"><h2>AI 감지 알림</h2>
   <p role="status">{error||statuses[state?.status??'']||'메일 수신 상태 조회 중…'}</p>
   {canManage&&!state?.enabled&&<p>프로그램을 종료하고 실행 폴더의 <strong>메일수신설정.cmd</strong>에서 네이버 계정을 연결한 뒤 다시 실행하세요.</p>}
-  <p className="help">전달된 알림의 카메라명·감지 영상을 읽습니다. 감지 당시 방향이 없는 알림은 위치 후보 계산을 보류합니다.</p>
+  <p className="help">전달된 알림의 카메라명·감지 영상을 읽습니다. 현재 CCTV 영상과 감지 영상의 구도를 대조해 현재 장비 각도로 위치 후보를 계산합니다.</p>
   {state?.enabled&&<><p>최근 조회: {time(state.checkedAt)} · 조회 주기 {state.pollSeconds}초</p><p>보관된 알림 {state.events.length}건 · 최근 최대 {state.retainedLimit}건</p></>}
   <button onClick={onRefresh}>수신 상태 새로고침</button>
   {canManage&&<><label>저장한 알림 페이지 ZIP 불러오기<input type="file" accept=".zip,application/zip" disabled={importing} onChange={e=>{void importPage(e.target.files?.[0]);e.target.value='';}}/></label>{importStatus&&<p role="status">{importStatus}</p>}</>}
@@ -49,7 +49,7 @@ export function FirewatcherMailPanel({state,error,canManage,positions,onRefresh,
   {(state?.events.length??0)>100&&<p>목록은 최근 100건을 표시합니다.</p>}
   {event&&<div className="smoke-alert-detail"><h3>{event.detail?.cameraName??camera?.name??'카메라 확인 필요'}</h3>
    <p>원본 감지 시각: {event.detail?.displayedTime??event.detail?.reportedTime??'미확인'}{event.detail&&' · 시간대 확인 전'}<br/>메일 작성: {time(event.mailSentAt)}<br/>메일 도착: {time(event.mailReceivedAt)}<br/>프로그램 최초 수신: {time(event.firstSeenAt)}</p>
-   {event.detail&&<p>감지 종류: {event.detail.eventType}<br/>제공자 위치 구역 {event.detail.mappingCount}개 · 감지 당시 PTZ 미제공</p>}
+   {event.detail&&<p>감지 종류: {event.detail.eventType}<br/>제공자 위치 구역 {event.detail.mappingCount}개 · 현재 CCTV 각도 사용</p>}
    {event.detailStatus==='unavailable'&&<p>원본 페이지 조회 실패 · 저장한 ZIP으로도 불러올 수 있습니다.</p>}
    {canManage&&<button disabled={busy} onClick={()=>void refreshPage()}>알림 페이지 다시 읽기</button>}
    <FirewatcherEventImage key={event.id+':'+event.detail?.imageSha256+':'+event.detailCheckedAt+':'+JSON.stringify(camera?.nativeTracking)} event={event} position={camera} canManage={canManage} projection={projection}/>

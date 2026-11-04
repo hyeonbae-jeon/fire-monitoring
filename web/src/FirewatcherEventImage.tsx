@@ -5,7 +5,7 @@ import {monitorFetch} from './monitor-server';
 import {redOutlineBoxes,type PixelBox} from './alert-location';
 import {AlertLocationTool,type AlertProjectionControls} from './AlertLocationTool';
 export function FirewatcherEventImage({event,position,canManage,projection}:{event:MailEvent;position:Position|undefined;canManage:boolean;projection:AlertProjectionControls}){
- const [frame,setFrame]=useState<{url:string;width:number;height:number}|null>(null),[boxes,setBoxes]=useState<PixelBox[]>([]),[selected,setSelected]=useState<PixelBox|null>(null),[error,setError]=useState('');
+ const [frame,setFrame]=useState<{url:string;width:number;height:number;blob:Blob}|null>(null),[boxes,setBoxes]=useState<PixelBox[]>([]),[selected,setSelected]=useState<PixelBox|null>(null),[error,setError]=useState('');
  const drag=useRef<{x:number;y:number}|null>(null);
  useEffect(()=>{
   const abort=new AbortController();let stopped=false,url:string|null=null;
@@ -24,7 +24,7 @@ export function FirewatcherEventImage({event,position,canManage,projection}:{eve
     const scale=Math.min(1,1600/w,1000/h),canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(w*scale));canvas.height=Math.max(1,Math.round(h*scale));
     const ctx=canvas.getContext('2d',{willReadFrequently:true});if(!ctx)throw new Error('영상 박스 판독을 지원하지 않습니다.');ctx.drawImage(image,0,0,canvas.width,canvas.height);
     const found=redOutlineBoxes(ctx.getImageData(0,0,canvas.width,canvas.height).data,canvas.width,canvas.height).map(b=>({x:b.x*w/canvas.width,y:b.y*h/canvas.height,width:b.width*w/canvas.width,height:b.height*h/canvas.height}));
-    setFrame({url,width:w,height:h});setBoxes(found);setSelected(found.length===1?found[0]:null);
+    setFrame({url,width:w,height:h,blob});setBoxes(found);setSelected(found.length===1?found[0]:null);
    }catch(e){if(!stopped){if(url){URL.revokeObjectURL(url);url=null;}setError((e as Error).message);}}
   })();
   return()=>{stopped=true;abort.abort();if(url)URL.revokeObjectURL(url);};
@@ -37,10 +37,9 @@ export function FirewatcherEventImage({event,position,canManage,projection}:{eve
     setSelected({x:Math.min(a.x,b.x),y:Math.min(a.y,b.y),width:Math.abs(a.x-b.x),height:Math.abs(a.y-b.y)});projection.clear();
    }:undefined}>{boxes.map((b,i)=><rect key={i} {...b} fill="none" stroke="#ff7474" strokeWidth={Math.max(1,frame.width/640)}/>)}{selected&&<rect {...selected} fill="none" stroke="#ffce56" strokeWidth={Math.max(2,frame.width/320)}/>}</svg></div>
    <p>원본 {frame.width}×{frame.height} · 빨간 테두리 후보 {boxes.length}개</p>
-   {canManage&&<><p className="help">여러 박스가 있으면 선택하세요. 놓친 박스는 영상 위에서 드래그해 지정할 수 있습니다. 빨간 테두리 판독은 원본 AI 박스 좌표와 다를 수 있습니다.</p>{boxes.map((b,i)=><button key={i} onClick={()=>{setSelected(b);projection.clear();}}>감지 박스 {i+1} 선택</button>)}</>}
+   <p className="help">여러 박스가 있으면 선택하세요. 빨간 테두리 판독은 원본 AI 박스 좌표와 다를 수 있습니다.</p>{boxes.map((b,i)=><button key={i} onClick={()=>{setSelected(b);projection.clear();}}>감지 박스 {i+1} 선택</button>)}
    {!position&&<p>지도 카메라를 연결하면 위치 후보 계산을 사용할 수 있습니다.</p>}
-   {position&&selected&&canManage&&<AlertLocationTool event={event} position={position} frame={frame} box={selected} projection={projection}/>}
-   {position&&selected&&!canManage&&<p>감지 당시 방향 미제공 · 위치 후보 계산은 관리자 확인이 필요합니다.</p>}
+   {position&&selected&&<AlertLocationTool event={event} position={position} frame={frame} blob={frame.blob} box={selected} projection={projection} canManage={canManage}/>}
   </>}
   {!event.detail?.imageSha256&&<p>감지 영상 수집 전입니다.</p>}
  </section>;

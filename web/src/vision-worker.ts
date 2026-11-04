@@ -1,5 +1,6 @@
 import cvModule from '@techstark/opencv-js';
 import {fitVisualPose,type FeatureMatch} from './vision-pose';
+import {verifySameCurrentView} from './same-current-view';
 import type {Pose} from './calibration-model';
 import {alignCapturePoint,fitCaptureAlignment,type CaptureAlignment} from './capture-alignment';
 
@@ -70,7 +71,16 @@ onmessage=async(e:MessageEvent)=>{
  const {id,type,blob}=e.data;
  try{
   const {cv}=await runtime;
-  if(type==='reference'){release(reference);reference=null;pose=e.data.pose;referenceAspect=e.data.aspect;alignment=e.data.alignment??null;reference=await extract(cv,blob);postMessage({id,type:'ready',features:reference.points.length});}
+  if(type==='same-current-view'){
+   let ref:Features|null=null,cur:Features|null=null;
+   try{
+    ref=await extract(cv,e.data.referenceBlob);cur=await extract(cv,blob);
+    const {matches}=correspondences(cv,ref,cur);
+    const result=verifySameCurrentView(matches,ref.sourceWidth/ref.sourceHeight,cur.sourceWidth/cur.sourceHeight);
+    postMessage({id,type:'same-current-view',result:{...result,width:cur.sourceWidth,height:cur.sourceHeight}});
+   }finally{release(ref);release(cur);}
+  }
+  else if(type==='reference'){release(reference);reference=null;pose=e.data.pose;referenceAspect=e.data.aspect;alignment=e.data.alignment??null;reference=await extract(cv,blob);postMessage({id,type:'ready',features:reference.points.length});}
   else if(type==='frame'||type==='align'){
    if(!reference||!pose)throw new Error('기준 영상이 준비되지 않았습니다.');let current:Features|null=null;
    try{
