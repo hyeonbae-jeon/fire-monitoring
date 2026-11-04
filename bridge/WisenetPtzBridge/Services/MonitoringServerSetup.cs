@@ -8,9 +8,9 @@ namespace WisenetPtzBridge.Services;
 
 public static class MonitoringServerSetup
 {
-    private static string ProtectedPath => Path.Combine(AppContext.BaseDirectory, "data", "server-settings.protected");
-    private static readonly string[] Keys = ["MONITOR_SERVER_MODE", "CCTV_CONNECTIONS_JSON", "CCTV_MAP_CONFIGURATION_JSON",
-        "CCTV_MONITOR_USER", "CCTV_MONITOR_PASSWORD_HASH", "VWORLD_API_KEY", "CCTV_VIEWER_USER", "CCTV_VIEWER_PASSWORD_HASH"];
+    public static string ProtectedPath => MonitoringPaths.ServerSettings;
+    public static readonly string[] Keys = ["MONITOR_SERVER_MODE", "CCTV_CONNECTIONS_JSON", "CCTV_MAP_CONFIGURATION_JSON",
+        "CCTV_MONITOR_USER", "CCTV_MONITOR_PASSWORD_HASH", "VWORLD_API_KEY", "CCTV_VIEWER_USER", "CCTV_VIEWER_PASSWORD_HASH", "CCTV_MAIL_SETTINGS_JSON"];
     public static IConfigurationRoot ReadProtectedSettings(string? path = null)
     {
         // ConfigurationRoot cannot accept assignments until it has a writable provider.
@@ -65,6 +65,34 @@ public static class MonitoringServerSetup
             else if (!char.IsControl(key.KeyChar) && value.Length < 4096) value += key.KeyChar;
         }
     }
+    public static async Task SaveProtectedSettingsAsync(Dictionary<string, string> values, string? path = null)
+    {
+        if (values.Keys.Any(k => !Keys.Contains(k))) throw new ArgumentException();
+        var bytes = Protect(JsonSerializer.SerializeToUtf8Bytes(values), true); path ??= ProtectedPath;
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        var temp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try { await File.WriteAllBytesAsync(temp, bytes); File.Move(temp, path, true); }
+        finally { if (File.Exists(temp)) File.Delete(temp); }
+    }
+    public static async Task<int> BootstrapAsync()
+    {
+        if (!OperatingSystem.IsWindows() || Console.IsInputRedirected) { Console.Error.WriteLine("통합 실행 도구에서 최초 관리자 계정을 등록하세요."); return 1; }
+        if (File.Exists(ProtectedPath)) { Console.WriteLine("기존 설정을 사용합니다."); return 0; }
+        try
+        {
+            Console.WriteLine("최초 관리자 계정만 등록합니다. 카메라·메일은 로그인 후 관리자 설정에서 입력합니다.");
+            var user = Read("관리자 로그인 이름", "monitor");
+            var password = Read("관리자 비밀번호 (12자 이상, 입력 숨김)", "", true);
+            var confirmation = Read("관리자 비밀번호 확인 (입력 숨김)", "", true);
+            if (password != confirmation) throw new ArgumentException();
+            var values = new Dictionary<string, string> { ["MONITOR_SERVER_MODE"] = "true", ["CCTV_CONNECTIONS_JSON"] = "",
+                ["CCTV_MAP_CONFIGURATION_JSON"] = MonitoringMapDefaults.ReadText(), ["CCTV_MONITOR_USER"] = user,
+                ["CCTV_MONITOR_PASSWORD_HASH"] = MonitoringServerSecurity.HashPassword(password), ["VWORLD_API_KEY"] = "" };
+            MonitoringServerSecurity.ValidateAccounts(new ConfigurationBuilder().AddInMemoryCollection(values!).Build());
+            await SaveProtectedSettingsAsync(values); Console.WriteLine("관리자 등록 완료. 웹 관리자 설정에서 나머지 정보를 입력하세요."); return 0;
+        }
+        catch { Console.Error.WriteLine("관리자 이름·비밀번호와 확인값을 확인하세요. 설정을 저장하지 않았습니다."); return 1; }
+    }
     public static async Task<int> ConfigureAsync()
     {
         if (!OperatingSystem.IsWindows() || Console.IsInputRedirected)
@@ -72,7 +100,7 @@ public static class MonitoringServerSetup
         try
         {
             var old = ReadProtectedSettings();
-            var defaultMapPath = Path.Combine(AppContext.BaseDirectory, "data", "map.demo.json");
+            var defaultMapPath = Path.Combine(MonitoringPaths.DataDirectory, "map.demo.json");
             var mapPath = Read("저장한 지도 JSON 경로 (기본 보정값 사용은 Enter)", defaultMapPath).Trim('"');
             var defaultPathSelected = string.Equals(Path.GetFullPath(mapPath), Path.GetFullPath(defaultMapPath), StringComparison.OrdinalIgnoreCase);
             var mapJson = defaultPathSelected && !File.Exists(defaultMapPath)
@@ -118,7 +146,7 @@ public static class MonitoringServerSetup
                 ["CCTV_MAP_CONFIGURATION_JSON"] = mapJson, ["CCTV_MONITOR_USER"] = login,
                 ["CCTV_MONITOR_PASSWORD_HASH"] = passwordHash, ["VWORLD_API_KEY"] = key
             };
-            foreach (var name in new[] { "CCTV_VIEWER_USER", "CCTV_VIEWER_PASSWORD_HASH" })
+            foreach (var name in new[] { "CCTV_VIEWER_USER", "CCTV_VIEWER_PASSWORD_HASH", "CCTV_MAIL_SETTINGS_JSON" })
                 if (old[name] is { } value) values[name] = value;
             MonitoringServerSecurity.ValidateAccounts(new ConfigurationBuilder().AddInMemoryCollection(values!).Build());
             var encrypted = Protect(JsonSerializer.SerializeToUtf8Bytes(values), true);
@@ -184,7 +212,7 @@ public static class MonitoringServerSetup
                 return 1;
             }
             stage = "현재 지도 설정 읽기";
-            var currentMap = Path.Combine(AppContext.BaseDirectory, "data", "map.demo.json");
+            var currentMap = Path.Combine(MonitoringPaths.DataDirectory, "map.demo.json");
             if (File.Exists(currentMap))
             {
                 var text = await File.ReadAllTextAsync(currentMap);
@@ -259,7 +287,7 @@ public static class MonitoringServerSetup
             if (values.Keys.Any(k => !Keys.Contains(k)) || values["MONITOR_SERVER_MODE"] != "true" ||
                 string.IsNullOrWhiteSpace(values["CCTV_MONITOR_USER"]) || values["CCTV_MONITOR_USER"].Length > 100 ||
                 !MonitoringServerSecurity.ValidHash(values["CCTV_MONITOR_PASSWORD_HASH"])) throw new JsonException();
-            AutomaticMonitoring.Parse(values["CCTV_CONNECTIONS_JSON"]);
+            UnifiedSettings.Validate(values);
             MonitoringServerSecurity.ValidateAccounts(new ConfigurationBuilder().AddInMemoryCollection(values!).Build());
             var map = JsonSerializer.Deserialize<MapDocument>(values["CCTV_MAP_CONFIGURATION_JSON"], FileCameraInventorySource.Json) ?? throw new JsonException(); MapConfiguration.Validate(map);
             var encrypted = Protect(JsonSerializer.SerializeToUtf8Bytes(values), true);
@@ -268,7 +296,7 @@ public static class MonitoringServerSetup
             await File.WriteAllBytesAsync(temp, encrypted); File.Move(temp, ProtectedPath, true);
             Console.WriteLine("서버 설정을 Windows 사용자 암호화로 가져왔습니다. 프로그램을 재시작하면 적용됩니다.");return 0;
         }
-        catch (Exception e) when (e is JsonException or KeyNotFoundException or InventoryException or IOException or CryptographicException or PlatformNotSupportedException or InvalidOperationException or UnauthorizedAccessException)
+        catch (Exception e) when (e is JsonException or KeyNotFoundException or InventoryException or IOException or CryptographicException or PlatformNotSupportedException or InvalidOperationException or UnauthorizedAccessException or ArgumentException)
         { Console.Error.WriteLine("서버 시크릿 형식 또는 암호화 권한을 확인하세요. 기존 설정은 유지했습니다.");return 1; }
     }
     public static async Task InitializeMapAsync(IConfiguration config, bool useBundledDefaults = false)

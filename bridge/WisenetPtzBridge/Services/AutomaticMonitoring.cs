@@ -51,15 +51,26 @@ public sealed class AutomaticMonitoring(IConfiguration config, MapConfiguration 
     }
     public override Task StartAsync(CancellationToken ct)
     {
-        if (Configured)
-        {
-            var doc = Parse(config["CCTV_CONNECTIONS_JSON"]!);
-            foreach (var c in doc.Cameras.Where(c => c.Enabled)) channels[c.CameraId] = new(c);
-        }
+        if (Configured) Parse(config["CCTV_CONNECTIONS_JSON"]!);
         return base.StartAsync(ct);
     }
-    protected override Task ExecuteAsync(CancellationToken stoppingToken) => !Configured ? Task.CompletedTask :
-        Task.WhenAll(channels.Select(entry => ChannelLoopAsync(entry.Key, entry.Value, stoppingToken)));
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            var text = config["CCTV_CONNECTIONS_JSON"] ?? "";
+            using var batch = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+            if (!string.IsNullOrWhiteSpace(text))
+                foreach (var c in Parse(text).Cameras.Where(c => c.Enabled)) channels[c.CameraId] = new(c);
+            var tasks = channels.Select(entry => ChannelLoopAsync(entry.Key, entry.Value, batch.Token)).ToArray();
+            try
+            {
+                while (text == (config["CCTV_CONNECTIONS_JSON"] ?? "")) await Task.Delay(1000, stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
+            finally { batch.Cancel(); await Task.WhenAll(tasks); channels.Clear(); }
+        }
+    }
     private async Task ChannelLoopAsync(string cameraId, Channel ch, CancellationToken stoppingToken)
     {
         try

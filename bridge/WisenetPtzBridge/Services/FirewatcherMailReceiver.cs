@@ -123,9 +123,17 @@ public sealed class FirewatcherMailReceiver : BackgroundService
     }
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        if (!enabledServer || settings?.Enabled != true) return;
+        if (!enabledServer || !OperatingSystem.IsWindows()) return;
         while (!stoppingToken.IsCancellationRequested)
         {
+            try { settings = FirewatcherMailSettings.Load(); if (settings?.Enabled != true) status = settings is null ? "not-configured" : "disabled"; }
+            catch { settings = null; status = "settings-error"; }
+            if (settings?.Enabled != true)
+            {
+                if (status != "settings-error") status = settings is null ? "not-configured" : "disabled";
+                try { await Task.Delay(1000, stoppingToken); } catch (OperationCanceledException) { break; }
+                continue;
+            }
             try { await PollAsync(settings, stoppingToken); status = "connected"; checkedAt = DateTimeOffset.UtcNow; }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
             catch (MailKit.Security.AuthenticationException) { status = "authentication-error"; }

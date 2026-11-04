@@ -27,15 +27,24 @@ public sealed record FirewatcherMailSettings(bool Enabled, string UserName, stri
         return value with { UserName = value.UserName!.ToLowerInvariant(), AllowedFrom = sender.Address.ToLowerInvariant(),
             AlertOrigin = origin.GetLeftPart(UriPartial.Authority), ReadFromUtc = value.ReadFromUtc.ToUniversalTime() };
     }
-    public static string SettingsPath => Path.Combine(AppContext.BaseDirectory, "data", "firewatcher-mail-settings.protected");
+    public static string SettingsPath => Path.Combine(MonitoringPaths.DataDirectory, "firewatcher-mail-settings.protected");
     public static FirewatcherMailSettings? Load()
     {
+        var unified = MonitoringServerSetup.ReadProtectedSettings()["CCTV_MAIL_SETTINGS_JSON"];
+        if (unified is not null) return unified.Length == 0 ? null : Validate(JsonSerializer.Deserialize<FirewatcherMailSettings>(unified) ?? throw new JsonException());
         if (!File.Exists(SettingsPath)) return null;
         return Validate(JsonSerializer.Deserialize<FirewatcherMailSettings>(MonitoringServerSetup.Protect(File.ReadAllBytes(SettingsPath), false)) ?? throw new JsonException());
     }
     public static async Task SaveAsync(FirewatcherMailSettings settings)
     {
         Validate(settings);
+        var server = MonitoringServerSetup.ReadProtectedSettings();
+        if (server["CCTV_MONITOR_USER"] is not null)
+        {
+            var values = server.AsEnumerable().Where(v => v.Value is not null).ToDictionary(v => v.Key, v => v.Value!);
+            values["CCTV_MAIL_SETTINGS_JSON"] = JsonSerializer.Serialize(settings);
+            await MonitoringServerSetup.SaveProtectedSettingsAsync(values); return;
+        }
         var bytes = MonitoringServerSetup.Protect(JsonSerializer.SerializeToUtf8Bytes(settings), true);
         Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!);
         var temp = SettingsPath + ".tmp";

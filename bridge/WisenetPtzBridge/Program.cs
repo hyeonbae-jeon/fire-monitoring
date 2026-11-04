@@ -14,6 +14,8 @@ if (args.Contains("--health-probe"))
     try { using var probe = new HttpClient { Timeout = TimeSpan.FromSeconds(3) }; var r = await probe.GetAsync("http://127.0.0.1:" + (Environment.GetEnvironmentVariable("MONITOR_PORT") ?? "5080") + "/health"); Environment.ExitCode = r.IsSuccessStatusCode ? 0 : 1; }
     catch { Environment.ExitCode = 1; } return;
 }
+if (args.Contains("--initialize-monitoring")) { Environment.ExitCode = await MonitoringServerSetup.BootstrapAsync(); return; }
+if (args.Contains("--restore-settings-backup")) { Environment.ExitCode = await UnifiedSettings.RestoreCliAsync(); return; }
 if (args.Contains("--import-server-settings-stdin")) { Environment.ExitCode = await MonitoringServerSetup.ImportAsync(); return; }
 if (args.Contains("--configure-monitoring-server")) { Environment.ExitCode = await MonitoringServerSetup.ConfigureAsync(); return; }
 if (args.Contains("--configure-monitoring-accounts")) { Environment.ExitCode = await MonitoringServerSetup.ConfigureAccountsAsync(); return; }
@@ -24,7 +26,7 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
     Args = args.Where(a => a is not "--desktop-demo" and not "--no-browser" and not "--server").ToArray(),
     ContentRootPath = desktopDemo ? AppContext.BaseDirectory : null
 });
-var hasPrivateServerSettings = File.Exists(Path.Combine(AppContext.BaseDirectory, "data", "server-settings.protected"));
+var hasPrivateServerSettings = File.Exists(MonitoringPaths.ServerSettings);
 MonitoringServerSetup.LoadProtected(builder.Configuration);
 if (desktopDemo && !hasPrivateServerSettings && !args.Contains("--server"))
 {
@@ -56,6 +58,7 @@ builder.Services.AddSingleton<CameraConfiguration>();
 builder.Services.AddSingleton<MapConfiguration>();
 builder.Services.AddSingleton<ScreenFrameSource>();
 builder.Services.AddSingleton<DirectSnapshotSource>();
+builder.Services.AddSingleton<UnifiedSettings>();
 builder.Services.AddSingleton<AutomaticMonitoring>();
 builder.Services.AddHostedService(services => services.GetRequiredService<AutomaticMonitoring>());
 builder.Services.AddSingleton<FirewatcherPageReader>();
@@ -83,6 +86,8 @@ app.Use(async (context, next) =>
     }
 });
 MonitoringServerSecurity.Use(app);
+MonitoringPaths.RegisterReceiver(app);
+app.MapUnifiedSettings();
 app.UseDefaultFiles();
 app.UseStaticFiles();
 app.MapDirectSnapshotEndpoints();

@@ -1,4 +1,4 @@
-name: Windows portable demo
+name: Fire monitoring unified Windows setup
 
 on:
   workflow_dispatch:
@@ -13,6 +13,11 @@ on:
       - 'bridge/SsmScreenCapture/**'
       - 'web/**'
       - 'scripts/build-portable.py'
+      - 'scripts/build-unified.py'
+      - 'scripts/unified/**'
+      - 'tests/test_unified_install.ps1'
+      - 'tests/test_background_receiver.ps1'
+      - 'docs/unified-receiver.md'
       - 'tests/test_inventory.py'
       - 'tests/test_portable_demo.py'
       - 'tests/serve_e2e.py'
@@ -59,6 +64,12 @@ jobs:
           dotnet run --project tests/ServerSecurityChecks -c Release
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           dotnet run --project tests/MailReceiverChecks -c Release
+      - name: Unified installer update and data preservation checks
+        shell: pwsh
+        run: ./tests/test_unified_install.ps1
+      - name: Hidden Windows receiver survives launcher exit
+        shell: pwsh
+        run: ./tests/test_background_receiver.ps1
       - name: Synthetic Windows window, pixel capture and occlusion checks
         shell: pwsh
         run: |
@@ -154,76 +165,22 @@ jobs:
           PY
       - name: Package Windows x64 demo
         run: python3 scripts/build-portable.py
-      - name: Prepare monitoring update without replacing saved data
-        run: |
-          python3 - <<'PYUPDATE'
-          from pathlib import Path
-          import zipfile
-          update = Path('artifacts/Windows-Monitoring-Update')
-          update.mkdir(parents=True, exist_ok=True)
-          with zipfile.ZipFile('artifacts/Wisenet-Camera-Inventory-Demo-win-x64.zip') as archive:
-              prefix = 'Wisenet-Camera-Inventory-Demo/'
-              for entry in archive.namelist():
-                  if not entry.startswith(prefix) or entry.endswith('/'): continue
-                  name = entry[len(prefix):]
-                  if name.startswith(('wwwroot/', 'licenses/', 'runtimes/')) or '/' not in name and name.endswith(('.dll', '.pdb', '.deps.json', '.runtimeconfig.json')) or name in ['계정권한설정.cmd', '메일수신설정.cmd', '기본보정설정.json', 'docs/automatic-monitoring.md', 'docs/firewatcher-mail.md', 'docs/alert-location.md']:
-                      assert '..' not in Path(name).parts
-                      destination = update / name
-                      destination.parent.mkdir(parents=True, exist_ok=True)
-                      destination.write_bytes(archive.read(entry))
-          update.joinpath('업데이트방법.txt').write_text(
-              '자동 감시 및 FIREWATCHER 감지 영상·위치 후보 업데이트\n\n'
-              '적용 대상: 자동 수신 서버 기능이 포함된 Windows 실행패키지\n'
-              '1. 실행 중인 WisenetPtzBridge 프로그램 창을 종료합니다.\n'
-              '2. 압축을 푼 내용 전체(DLL·PDB·wwwroot·계정권한설정.cmd·docs)를 기존 실행파일 폴더에 복사하고 같은 파일을 덮어씁니다.\n'
-              '감지 영상 추가: AI 감지 알림에서 저장한 ZIP을 불러올 수 있습니다. 같은 CCTV 구도는 현재 영상·PTZ를 대조해 자동 위치 후보를 계산합니다. 다른 구도는 보류합니다. docs/alert-location.md 참고.\n'
-              '메일 수신 추가: 전체 의존성 DLL·deps.json·메일수신설정.cmd를 함께 복사하세요. 메일수신설정.cmd로 연결 후 AI 감지 알림에서 확인합니다. docs/firewatcher-mail.md 참고.\n'
-              '3. 기존 data 폴더는 그대로 둡니다. 카메라 접속 정보와 지도 설정을 다시 입력하지 않습니다.\n'
-              '4. 일반 사용자 계정을 만들려면 계정권한설정.cmd를 실행합니다. 기존 계정은 관리자입니다.\n'
-              '5. WisenetPtzBridge.exe를 다시 실행하고 로그인합니다. 일반 사용자는 감시용 메뉴만 표시됩니다.\n'
-              '6. 자동 감시에서 현재 카메라 시점 보기를 누르면 지도가 현재 PTZ를 따라갑니다.\n'
-              '7. 방향 수정은 자동 감시에서 카메라를 선택한 뒤 영상 아래 감시 방향 보정 (관리자)을 펼쳐 진행합니다.\n'
-              '8. 보정 반영 후 같은 패널의 중앙 지도 설정 저장을 누릅니다.\n'
-              '9. 일반 사용자는 자동 감시 한 화면에서 영상과 관측 범위 표시를 함께 사용합니다.\n'
-              '10. 계정 변경을 GitHub 서버 배포에도 적용하려면 GitHub시크릿등록.cmd를 다시 실행합니다.\n\n'
-              '9대의 최종 보정값은 프로그램에 기본 포함됩니다. 새 설치는 자동 적용하며 기존 data는 덮어쓰지 않습니다.\n'
-              '기존 PC에도 이 배포의 보정값을 적용하려면 관리자 카메라·설정에서 기본보정설정.json을 불러와 중앙 저장합니다.\n'
-              '새 PC에서는 Windows 사용자 암호화 설정을 최초 한 번 등록해야 합니다.\n'
-              '자세한 권한·표시 거리·다른 PC 사용 안내는 docs/automatic-monitoring.md를 확인하세요.\n', encoding='utf-8-sig')
-          assert (update/'메일수신설정.cmd').is_file() and (update/'MailKit.dll').is_file() and (update/'MimeKit.dll').is_file()
-          assert (update/'WisenetPtzBridge.deps.json').is_file() and (update/'AngleSharp.dll').is_file()
-          assert (update/'docs/alert-location.md').is_file()
-          assert not (update/'data').exists()
-          assert (update/'wwwroot/index.html').is_file() and (update/'계정권한설정.cmd').is_file()
-          assert not list(update.rglob('*.protected'))
-          import json
-          assert len(json.loads((update/'기본보정설정.json').read_text())['positions']) == 9
-          PYUPDATE
-      - name: Register monitoring update download
-        uses: actions/upload-artifact@v4
-        with:
-          name: Windows-Monitoring-Update
-          path: artifacts/Windows-Monitoring-Update/
-          if-no-files-found: error
-          retention-days: 30
-      - name: Register downloadable artifact
+      - name: Build unified installer and update download
+        run: python3 scripts/build-unified.py
+      - name: Register one installer download
         id: artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Windows-Camera-Inventory-Demo
-          path: |
-            artifacts/Wisenet-Camera-Inventory-Demo-win-x64.zip
-            artifacts/Wisenet-Camera-Inventory-Demo-win-x64.zip.sha256
+          name: Fire-Monitor-Setup
+          path: artifacts/Fire-Monitor-Setup/
           if-no-files-found: error
           retention-days: 30
       - name: Download instructions
         env:
           ARTIFACT_URL: ${{ steps.artifact.outputs.artifact-url }}
         run: |
-          echo "## Windows x64 sample demo" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Fire monitoring unified Windows setup" >> "$GITHUB_STEP_SUMMARY"
           echo "Download: $ARTIFACT_URL" >> "$GITHUB_STEP_SUMMARY"
-          echo "Extract the artifact ZIP, then the package ZIP. Double-click WisenetPtzBridge.exe." >> "$GITHUB_STEP_SUMMARY"
-          echo "SSM is not connected. Uses synthetic cameras only. Demo save key: local-demo-only." >> "$GITHUB_STEP_SUMMARY"
-          echo "Manual image/terrain calibration and map settings persistence are included. Direction accuracy and live VWorld terrain remain unverified." >> "$GITHUB_STEP_SUMMARY"
-          echo "Windows server setup: run 서버설정.cmd once with saved map settings and camera credentials. Automatic nine-camera reception, authenticated monitoring and current approximate coverage are included. Actual credentials are never included in this artifact. See docs/automatic-monitoring.md." >> "$GITHUB_STEP_SUMMARY"
-          echo "On the SSM display PC, run 화면캡처.cmd and select a single video region, then open 실시간 화면 시험 in the browser. Optional local reference-image matching and map-view estimates are included; field accuracy is unverified. See docs/visual-tracking.md." >> "$GITHUB_STEP_SUMMARY"
+          echo "Extract once and run Setup.cmd for both installation and update. Existing data is preserved." >> "$GITHUB_STEP_SUMMARY"
+          echo "Use the desktop launcher for background reception and the administrator settings web page. Other PCs use the same receiver HTTPS address." >> "$GITHUB_STEP_SUMMARY"
+          echo "Operational credentials are never included. See docs/unified-receiver.md. Physical Windows installation, external HTTPS access and live SMS forwarding still require checks on the operator PC." >> "$GITHUB_STEP_SUMMARY"

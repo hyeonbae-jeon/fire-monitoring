@@ -193,12 +193,24 @@ class AutomaticMonitoringTests(unittest.TestCase):
         observation=next(c for c in json.loads(raw)['cameras'] if c['feed']['liveFrameAvailable'])
         o=observation['feed']['observation'];query=urllib.parse.urlencode(dict(cameraId=observation['cameraId'],sessionId=o['sessionId'],sequence=o['sequence']))
         self.assertEqual(self.request('/api/auto-monitor/frame?'+query,client=self.viewer)[0],200)
-        for path in ['/api/inventory','/api/cameras','/api/camera-snapshot/status','/api/screen-capture/status']:
+        for path in ['/api/inventory','/api/cameras','/api/camera-snapshot/status','/api/screen-capture/status','/api/admin/settings']:
             self.assertEqual(self.request(path,client=self.viewer)[0],403)
-        for path in ['/api/map-configuration','/api/cameras','/api/inventory','/api/camera-snapshot/session']:
+        for path in ['/api/map-configuration','/api/cameras','/api/inventory','/api/camera-snapshot/session','/api/admin/settings','/api/admin/settings/backup']:
             self.assertEqual(self.request(path,'PUT' if path in ['/api/map-configuration','/api/cameras'] else 'POST',b'{}',
                 {'Content-Type':'application/json','X-Monitor-CSRF':self.viewer_csrf,'X-Role':'admin'},client=self.viewer)[0],403)
         self.assertNotIn(VIEWER_PASSWORD,raw.decode()+self.log_path.read_text())
+    def test_unified_settings_redaction_and_csrf(self):
+        code, raw, _ = self.request('/api/admin/settings')
+        self.assertEqual(code, 200)
+        settings = json.loads(raw)
+        self.assertEqual(len(settings['cameras']), 9)
+        for secret in [PASSWORD, VIEWER_PASSWORD, TOKEN, 'password-0', 'CCTV_MONITOR_PASSWORD_HASH']:
+            self.assertNotIn(secret, raw.decode())
+        self.assertNotIn('PWD=', raw.decode())
+        for path, method in [('/api/admin/settings','PUT'),('/api/admin/settings/backup','POST')]:
+            self.assertEqual(self.request(path,method,b'{}',{'Content-Type':'application/json'})[0],403)
+            self.assertEqual(self.request(path,method,b'{}',{'Content-Type':'application/json'},anonymous=True)[0],401)
+
     def test_z_authentication_denial_stops_repeated_credentials_for_only_that_camera(self):
         Cameras.blocked.add(7)
         self.wait_for(lambda: any(c['cameraId']=='camera-7' and c['needsAttention'] for c in self.status()['cameras']))

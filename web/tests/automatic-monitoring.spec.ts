@@ -72,7 +72,7 @@ test('images and map entities stay mounted across refreshes; changing PTZ update
 test('viewer sees monitoring tools and current-camera view without any configuration or import controls',async({page})=>{
  const frame=await mockServer(page,'viewer',()=>state(Date.now()));
  await expect(page.getByText('synthetic-viewer · 일반 사용자')).toBeVisible();
- for(const name of ['카메라·설정','지도 레이어','지도 연결','위치·지번','중앙 지도 설정 저장'])await expect(page.getByRole('button',{name,exact:true,includeHidden:true})).toHaveCount(0);
+ for(const name of ['관리자 설정','카메라·설정','지도 레이어','지도 연결','위치·지번','중앙 지도 설정 저장'])await expect(page.getByRole('button',{name,exact:true,includeHidden:true})).toHaveCount(0);
  await expect(page.locator('input[type=file]')).toHaveCount(0);
  await expect(page.getByText('감시 방향 보정 (관리자)',{exact:true})).toHaveCount(0);
  await expect(page.getByRole('button',{name:'근사 기준을 지도 설정에 반영',exact:true,includeHidden:true})).toHaveCount(0);
@@ -266,4 +266,27 @@ test('viewer automatically projects a red box with matched current CCTV angles a
  await expect.poll(()=>frame.evaluate('activeEntities.filter(e=>e.name==="배경 지형 위치 후보 · 발화점 미확인").length')).toBe(3);
  pan=30;await expect.poll(()=>frame.evaluate('activeEntities.filter(e=>e.name==="배경 지형 위치 후보 · 발화점 미확인").length')).toBe(0);
  await expect(panel.getByText('현재 영상·PTZ가 만료되거나 방향이 바뀌었습니다. 현재 CCTV 각도로 다시 계산하세요.')).toBeVisible();
+});
+
+test('administrator edits shared settings without reading stored secrets and backup uses CSRF',async({page})=>{
+ let writes=0,backups=0;
+ await page.route('**/api/admin/settings',async route=>{
+  if(route.request().method()==='PUT'){
+   expect(route.request().headers()['x-monitor-csrf']).toBe('synthetic-csrf-token');
+   const body=route.request().postDataJSON();expect(body.revision).toBe('redacted-revision');expect(body.cameras[0].password).toBe('');expect(body.cameras[0].url).toBe('');expect(body.cameras[0].displayRangeM).toBe(4500);writes++;await route.fulfill({json:{saved:true,requiresLogin:false,reloadMap:false}});return;
+  }
+  await route.fulfill({json:{writable:true,revision:'redacted-revision',cameras:[{cameraId:'camera-0',name:'합성 자동 카메라 0',source:'hanwha',configured:true,address:'http://synthetic-camera.invalid',username:'synthetic-user',enabled:true,displayRangeM:3000}],accounts:{adminUser:'synthetic-admin',viewerUser:'synthetic-viewer',viewerEnabled:true},mail:null,hasMapKey:true}});
+ });
+ await page.route('**/api/admin/settings/backup',async route=>{expect(route.request().headers()['x-monitor-csrf']).toBe('synthetic-csrf-token');expect(route.request().postDataJSON().passphrase).toBe('synthetic-recovery-password');backups++;await route.fulfill({contentType:'application/octet-stream',body:'synthetic-encrypted-backup'});});
+ await mockServer(page,'admin',()=>state(Date.now()));
+ await page.getByRole('button',{name:'관리자 설정',exact:true}).click();
+ const panel=page.locator('.server-settings');await expect(panel.getByText('카메라 접속 정보 (1대 저장됨)',{exact:true})).toBeVisible();
+ await panel.getByText('합성 자동 카메라 0 · 저장됨 · 수신 사용',{exact:true}).click();
+ await expect(panel.getByLabel('장비 비밀번호',{exact:true})).toHaveValue('');
+ await panel.getByLabel('관측 범위 표시 거리(m)',{exact:true}).fill('4500');await panel.getByRole('button',{name:'공통 설정 저장',exact:true}).click();
+ await expect.poll(()=>writes).toBe(1);await expect(panel.getByRole('status')).toContainText('설정 저장 완료');
+ await panel.getByText('수신 PC 교체·암호화 백업',{exact:true}).click();
+ await panel.getByLabel('백업 암호 (16자 이상)',{exact:true}).fill('synthetic-recovery-password');await panel.getByLabel('백업 암호 확인',{exact:true}).fill('synthetic-recovery-password');
+ const downloaded=page.waitForEvent('download');await panel.getByRole('button',{name:'암호화 백업 다운로드',exact:true}).click();expect((await downloaded).suggestedFilename()).toBe('fire-monitor-settings.backup');expect(backups).toBe(1);
+ await expect(panel.getByLabel('백업 암호 (16자 이상)',{exact:true})).toHaveValue('');
 });

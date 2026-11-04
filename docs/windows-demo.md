@@ -1,3 +1,5 @@
+> 최신 설치·업데이트는 하나의 **Fire-Monitor-Setup → Setup.cmd**로 진행합니다. 웹 관리자 설정·백그라운드 수신·다른 PC 접속은 [통합 설치 안내](unified-receiver.md)를 먼저 확인하세요. 아래의 개별 CMD 도구는 기존 배포의 고급/호환 안내입니다.
+
 # Windows 실행 패키지 사용방법
 
 대상: Windows 10/11 64비트(x64) PC. Git, .NET, Node.js를 설치하지 않아도 됩니다.

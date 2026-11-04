@@ -22,6 +22,7 @@ import {useAutomaticMonitoring,automaticCoverage,automaticPose} from './automati
 import type {CoverageShape} from './coverage-model';
 import {AutomaticMonitoringPanel} from './AutomaticMonitoringPanel';
 import {monitorFetch} from './monitor-server';
+import {ServerSettingsPanel} from './ServerSettingsPanel';
 import type {DevicePtzObservation} from './DevicePtzStatus';
 import type {NativeProfile} from './native-profile';
 import {VisualTracking,type LiveVisualView} from './VisualTracking';
@@ -42,7 +43,7 @@ export function MonitoringMap({active=true,standalone=false,desktopDemo=false,se
  const initialMap=standalone&&publishedMap?publishedMap:{...sample,layers:[]};
  const [configuration,setConfiguration]=useState<MapConfiguration>({schemaVersion:1,crs:'EPSG:4326',positions:initialMap.positions}),[selected,setSelected]=useState(initialMap.positions[0]?.id??'');
  const [revision,setRevision]=useState<string|null>(null),[dirty,setDirty]=useState(false),[writeKey,setWriteKey]=useState(''),[saving,setSaving]=useState(false),[storageStatus,setStorageStatus]=useState('중앙 지도 설정을 읽는 중…');
- const [deploymentKey,setDeploymentKey]=useState(import.meta.env.VITE_VWORLD_API_KEY?.trim()??''),[settingsLoaded,setSettingsLoaded]=useState(standalone),[tools,setTools]=useState(serverMode?'auto':'cameras');
+ const [deploymentKey,setDeploymentKey]=useState(import.meta.env.VITE_VWORLD_API_KEY?.trim()??''),[settingsLoaded,setSettingsLoaded]=useState(standalone),[tools,setTools]=useState(serverMode?(canManage&&new URLSearchParams(location.search).has('settings')?'server-settings':'auto'):'cameras');
  const autoConnected=useRef(false);
  const fittedFrame=useRef<string|null>(null);
  const [layers,setLayers]=useState<MapLayer[]>(initialMap.layers),[visibleLayers,setVisibleLayers]=useState<string[]>(initialMap.layers.map(l=>l.id)),[layerRevision,setLayerRevision]=useState(initialMap.layers.length?'published-bukhansan':'none'),[layerStatus,setLayerStatus]=useState<Record<string,string>>({});
@@ -300,6 +301,7 @@ export function MonitoringMap({active=true,standalone=false,desktopDemo=false,se
  return <main className="monitoring map-workspace" data-live={tools==='live'||tools==='auto'||serverMode&&tools!=='cameras'?'true':undefined}>
   <div className="map-topbar"><div><strong>VWorld 3D · 산불감시 지도</strong><span role="status">{status}</span></div><div className="map-tool-tabs" aria-label="지도 도구">
    {canManage&&<button aria-pressed={tools==='cameras'} onClick={()=>setTools(tools==='cameras'?'':'cameras')}>카메라·설정</button>}
+   {serverMode&&canManage&&<button aria-pressed={tools==='server-settings'} onClick={()=>setTools(tools==='server-settings'?'':'server-settings')}>관리자 설정</button>}
    <button aria-pressed={tools==='alerts'} onClick={()=>setTools(tools==='alerts'?'':'alerts')}>AI 감지 알림</button>
    {!standalone&&!serverMode&&<button aria-pressed={tools==='live'} onClick={()=>setTools(tools==='live'?'':'live')}>실시간 영상</button>}
    {serverMode&&<button aria-pressed={tools==='auto'} onClick={()=>setTools('auto')}>자동 감시</button>}
@@ -307,6 +309,7 @@ export function MonitoringMap({active=true,standalone=false,desktopDemo=false,se
    {canManage&&<><button aria-pressed={tools==='layers'} onClick={()=>setTools(tools==='layers'?'':'layers')}>지도 레이어</button><button aria-pressed={tools==='location'} onClick={()=>setTools(tools==='location'?'':'location')}>위치·지번</button><button aria-pressed={tools==='connection'} onClick={()=>setTools(tools==='connection'?'':'connection')}>지도 연결</button></>}
   </div></div>
   {error&&<p role="alert" className="error map-error">{error}</p>}
+  {serverMode&&canManage&&tools==='server-settings'&&<aside className="map-floating server-settings-panel"><ServerSettingsPanel/></aside>}
   <div className="monitor-grid">{canManage&&<aside className="map-floating camera-panel" hidden={tools!=='cameras'}><h2>카메라 위치</h2>
    {positions.map(p=><button className={p.id===selected?'camera active':'camera'} key={p.id} onClick={()=>selectPosition(p.id)}>{p.name}<small>{p.positionSource==='synthetic'?'시험 좌표':'입력 좌표'} · {p.orientation?.status==='estimate'?'영상·지형 추정':'방향 UNKNOWN'}{p.nativeTracking?' · 장비 기준 있음':''}</small></button>)}
    <button disabled={!current||!ready} onClick={exitPreview}>선택 위치로 지도 이동</button>
