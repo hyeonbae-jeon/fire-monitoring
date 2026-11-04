@@ -34,6 +34,18 @@ try {
     & (Join-Path $package 'Install.ps1') -InstallRoot $install -NonInteractive -NoLaunch -NoShortcut
     if ((Get-Content -LiteralPath (Join-Path $install 'app/wwwroot/index.html') -Raw).Trim() -ne 'version-two' -or (Test-Path -LiteralPath (Join-Path $install 'app/obsolete.dll'))) { throw 'Update did not replace application files.' }
     if ([Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $data 'server-settings.protected'))) -ne [Convert]::ToBase64String($secret) -or (Get-Content -LiteralPath (Join-Path $data 'map.demo.json') -Raw).Trim() -ne 'synthetic-preserved-map') { throw 'Update replaced saved operator data.' }
+    # Import an explicitly selected old installation; keep its original data and hidden files.
+    $legacy = Join-Path $work '이전 실행 폴더'
+    New-Item -ItemType Directory -Force -Path (Join-Path $legacy 'data') | Out-Null
+    Set-Content -LiteralPath (Join-Path $legacy 'WisenetPtzBridge.exe') -Value 'synthetic executable is never run'
+    [IO.File]::WriteAllBytes((Join-Path $legacy 'data/server-settings.protected'), $secret)
+    Set-Content -LiteralPath (Join-Path $legacy 'data/hidden-operator-state') -Value 'synthetic-hidden-state'
+    [IO.File]::SetAttributes((Join-Path $legacy 'data/hidden-operator-state'), [IO.FileAttributes]::Hidden)
+    $migrated = Join-Path $work 'migrated receiver'
+    & (Join-Path $package 'Install.ps1') -InstallRoot $migrated -LegacyRoot $legacy -NonInteractive -NoLaunch -NoShortcut
+    if (![IO.File]::Exists((Join-Path $migrated 'data/hidden-operator-state')) -or
+        [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $migrated 'data/server-settings.protected'))) -ne [Convert]::ToBase64String($secret) -or
+        ![IO.File]::Exists((Join-Path $legacy 'data/server-settings.protected'))) { throw 'Previous installation import lost or removed operator data.' }
     # A checksum mismatch and traversal entry must fail before changing the installed application/data.
     '0' * 64 | Set-Content -LiteralPath (Join-Path $package 'payload.sha256')
     $rejected = $false
@@ -48,5 +60,5 @@ try {
     if (!$rejected -or (Test-Path -LiteralPath (Join-Path $work 'outside.txt'))) { throw 'Traversal payload was not rejected.' }
     if ((Get-Content -LiteralPath (Join-Path $install 'app/wwwroot/index.html') -Raw).Trim() -ne 'version-two') { throw 'Bad package changed installed application.' }
     if (@(Get-ChildItem -LiteralPath $install -Directory -Filter '.stage-*').Count -gt 0) { throw 'Failed staging cleanup.' }
-    Write-Host 'Unified installer parsing, spaced/Korean paths, fresh install, update, data preservation, obsolete-file removal, checksum and traversal checks passed.'
+    Write-Host 'Unified installer parsing, spaced/Korean paths, fresh install, update, data preservation, previous installation import including hidden files, obsolete-file removal, checksum and traversal checks passed.'
 } finally { if (Test-Path -LiteralPath $work) { Remove-Item -LiteralPath $work -Recurse -Force } }

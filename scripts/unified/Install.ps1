@@ -73,7 +73,7 @@ try {
         }
         Stop-OwnProcess $legacyExe
         $migration = Join-Path $InstallRoot ('.migration-' + [Guid]::NewGuid().ToString('N'))
-        try { Copy-Item -LiteralPath $legacyData -Destination $migration -Recurse; if (Test-Path -LiteralPath $data) { Remove-Item -LiteralPath $data }; Move-Item -LiteralPath $migration -Destination $data }
+        try { Copy-Item -LiteralPath $legacyData -Destination $migration -Recurse -Force; if (Test-Path -LiteralPath $data) { Remove-Item -LiteralPath $data }; Move-Item -LiteralPath $migration -Destination $data }
         finally { if (Test-Path -LiteralPath $migration) { Remove-Item -LiteralPath $migration -Recurse -Force } }
     }
     Stop-OwnProcess (Join-Path $app 'WisenetPtzBridge.exe')
