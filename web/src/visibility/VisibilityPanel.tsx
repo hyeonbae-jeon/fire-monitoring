@@ -116,17 +116,29 @@ export function VisibilityPanel() {
       <a href="/examples/visibility-demo.json" download>입력 양식 다운로드</a></div>
     {error && <p role="alert" className="error">{error}</p>}
     {notice && <p role="status" className="success">{notice}</p>}
-    <p className="help">파일은 브라우저에서 계산하며 중앙 설정을 변경하지 않습니다. 화면을 떠나기 전에 ‘분석 입력 저장’으로 보관하세요. JSON의 cameras 배열(기존 uuid/name/latitude/longitude 필드)을 사용합니다.</p>
+    <p className="help">파일은 브라우저에서 계산하며 중앙 설정을 변경하지 않습니다. 화면을 떠나기 전에 ‘분석 입력 저장’으로 보관하세요. cameras 배열과 camera-map-positions의 positions 배열을 불러올 수 있습니다.</p>
     <details open={cameras.length > 0}><summary>카메라 분석 설정 · {cameras.length}대</summary>
       <p className="help">설치 높이와 최대 거리 미입력 시 ‘데이터 부족’으로 처리합니다. 지반 고도는 groundElevationM 또는 DEM에서 가져옵니다. 실제 시야각은 JSON의 headingDeg/horizontalFovDeg, tiltDeg/verticalFovDeg로 입력합니다.</p>
+      {cameras.some(c => c.savedView) && <p className="analysis-notice">지도 위치 파일의 보정 시야는 저장 당시의 추정값입니다. 기본은 360° 잠재 가시권이며 ‘저장 수평 시야 사용’으로 과거 방위각과 수평 시야각을 선택할 수 있습니다. 수직 시야각이 없어 pitch와 장치 pan/tilt/zoom은 계산에 적용하지 않습니다. 위치가 바뀐 보정값은 사용하지 않습니다.</p>}
       <div className="table-scroll"><table><thead><tr><th>사용</th><th>카메라 / 좌표</th><th>지상 설치 높이 (m)</th><th>최대 감시 거리 (m)</th><th>시야</th></tr></thead><tbody>{cameras.map((c,i) => <tr key={c.uuid}>
         <td><input type="checkbox" aria-label={`${c.name} 분석에 사용`} checked={c.enabled !== false} onChange={e => setCameras(old => old.map((v,j) => j === i ? { ...v, enabled: e.target.checked } : v))} /></td>
-        <td><strong>{c.name}</strong><small>{c.latitude.toFixed(5)}, {c.longitude.toFixed(5)}{terrain && !onMap(c) && " · DEM 범위 밖"}</small></td>
+        <td><strong>{c.name}</strong><small>{c.latitude.toFixed(5)}, {c.longitude.toFixed(5)}{terrain && !onMap(c) && " · DEM 범위 밖"}</small>
+          {c.mapPositionId && <small>위치 ID: {c.mapPositionId} · {c.ssmUuid ? "SSM UUID 연결됨" : "SSM UUID 미연결"}</small>}
+          <small>지반 고도: {c.groundElevationM == null ? "DEM에서 추출" : `${c.groundElevationM.toFixed(1)}m (입력값)`}</small></td>
         <td><input aria-label={`${c.name} 설치 높이`} type="number" min="0" max="1000" value={c.cameraHeightM ?? ""} placeholder="미입력" onChange={e => editCamera(i,"cameraHeightM",e.target.value)} /></td>
         <td><input aria-label={`${c.name} 최대 거리`} type="number" min="1" max="50000" value={c.rangeM ?? ""} placeholder="미입력" onChange={e => editCamera(i,"rangeM",e.target.value)} /></td>
-        <td>{c.horizontalFovDeg == null || c.horizontalFovDeg === 360 ? "360° 잠재 가시권" : `방위 ${c.headingDeg}° / 수평 ${c.horizontalFovDeg}°`}{c.verticalFovDeg != null && <small>틸트 {c.tiltDeg}° / 수직 {c.verticalFovDeg}°</small>}</td>
+        <td>{c.horizontalFovDeg == null || c.horizontalFovDeg === 360 ? "360° 잠재 가시권" : `방위 ${c.headingDeg}° / 수평 ${c.horizontalFovDeg}°`}{c.verticalFovDeg != null && <small>틸트 {c.tiltDeg}° / 수직 {c.verticalFovDeg}°</small>}
+          {c.savedView && <><small>저장 추정 시야 · {c.savedView.confidence} · {c.savedView.capturedAt ?? "시각 미확인"}</small>
+            {!c.savedView.positionMatches && <small>보정 당시 위치 불일치 · 높이·고도·시야 사용 안 함</small>}
+            <button disabled={!c.savedView.positionMatches || c.savedView.headingDeg == null || c.savedView.horizontalFovDeg == null}
+              aria-label={`${c.name} ${c.horizontalFovDeg == null ? "저장 수평 시야 사용" : "360도 잠재 가시권 사용"}`}
+              onClick={() => setCameras(old => old.map((v,j) => j === i ? { ...v,
+                headingDeg:v.horizontalFovDeg == null ? v.savedView!.headingDeg : null,
+                horizontalFovDeg:v.horizontalFovDeg == null ? v.savedView!.horizontalFovDeg : null,
+                tiltDeg:null, verticalFovDeg:null } : v))}>{c.horizontalFovDeg == null ? "저장 수평 시야 사용" : "360° 잠재 가시권 사용"}</button></>}
+        </td>
       </tr>)}</tbody></table></div></details>
-    {!terrain && <div className="analysis-empty"><h3>카메라 위치 JSON부터 불러오세요</h3><p>지형 고도 데이터가 준비되면 가시권 계산이 시작됩니다.<br />사찰 좌표는 나중에 추가해도 됩니다. 예제로 결과 표시를 먼저 확인할 수 있습니다.</p></div>}
+    {!terrain && <div className="analysis-empty"><h3>{cameras.length ? `카메라 ${cameras.length}대 입력 완료 · 지형 DEM이 필요합니다` : "카메라 위치 JSON부터 불러오세요"}</h3><p>지형 고도 데이터가 준비되면 가시권 계산이 시작됩니다.<br />사찰 좌표는 나중에 추가해도 됩니다. 예제로 결과 표시를 먼저 확인할 수 있습니다.</p></div>}
     {terrain && <>
       <div className="analysis-stats">{(Object.keys(labels) as Status[]).map(s => <div key={s}><span style={{color: colors[s]}}>● {labels[s]}</span><strong>{result ? `${(counts[s]/result.cells.length*100).toFixed(1)}%` : "—"}</strong><small>분석 격자 중심점 비율</small></div>)}</div>
       <div className="analysis-map-heading"><div><h3>{label}</h3><p>{terrain.source} · 북쪽 ↑ · WGS84</p></div>

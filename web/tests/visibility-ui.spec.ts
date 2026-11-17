@@ -56,3 +56,19 @@ test("mobile imports, labels and map fit within viewport", async ({page}) => {
   await expect(page.getByText(/분석 완료/)).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
+
+test("map positions imports without DEM, and historical horizontal view is an explicit choice", async ({page}) => {
+  const json = {schemaVersion:1,crs:"EPSG:4326",positions:[{id:"map-a",name:"지도 카메라",lat:37.005,lon:127.005,ssmUuid:null,
+    nativeTracking:{confidence:"approximate",savedAt:"2026-10-01T00:00:00Z",positionAtCalibration:{lat:37.005,lon:127.005},
+      deviceAnchor:{panDeg:240,tiltDeg:10,zoom:2},pose:{headingDeg:90,pitchDeg:-3,horizontalFovDeg:60,cameraHeightM:15},groundElevationM:120}}]};
+  await page.getByLabel("카메라 JSON",{exact:true}).setInputFiles({name:"camera-map-positions.json",mimeType:"application/json",buffer:Buffer.from(JSON.stringify(json))});
+  await expect(page.getByText("카메라 1대 입력 완료 · 지형 DEM이 필요합니다",{exact:true})).toBeVisible();
+  await expect(page.getByLabel("지도 카메라 설치 높이")).toHaveValue("15");
+  await expect(page.getByLabel("지도 카메라 최대 거리")).toHaveValue("");
+  await expect(page.getByText(/위치 ID: map-a · SSM UUID 미연결/)).toBeVisible();
+  await expect(page.getByRole("row",{name:/지도 카메라/})).toContainText("360° 잠재 가시권");
+  await page.getByRole("button",{name:"지도 카메라 저장 수평 시야 사용",exact:true}).click();
+  await expect(page.getByRole("row",{name:/지도 카메라/})).toContainText("방위 90° / 수평 60°");
+  await page.getByRole("button",{name:"지도 카메라 360도 잠재 가시권 사용",exact:true}).click();
+  await expect(page.getByRole("row",{name:/지도 카메라/})).toContainText("360° 잠재 가시권");
+});

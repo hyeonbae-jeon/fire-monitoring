@@ -53,6 +53,16 @@ npm run dev
 - `tiltDeg`: 수평 0°, 위쪽 양수, 아래쪽 음수. `verticalFovDeg`를 설정하면 함께 입력합니다. 기존 정규화 PTZ 값이나 `tiltOffsetDeg`를 직접 사용하지 않습니다.
 - `enabled: false`: 분석에서 제외합니다.
 
+## 지도 위치 파일 (`camera-map-positions*.json`)
+
+**카메라 JSON** 입력에서 `schemaVersion: 1`, `crs: "EPSG:4326"`, `positions` 배열의 기존 지도 저장 파일도 직접 읽습니다. `lat/lon`은 위도/경도로, `id`는 지도 위치 ID로 가져옵니다. `ssmUuid`가 없으면 `map-position:<id>`라는 분석 내부 키를 사용하며, 이를 실제 SSM UUID로 간주하지 않습니다.
+
+설치 높이·지반 고도는 현재 좌표와 `positionAtCalibration`이 일치하는 `nativeTracking.pose.cameraHeightM` / `nativeTracking.groundElevationM`에서 읽고, 없거나 위치가 다르면 일치하는 `orientation`을 확인합니다. 둘 다 위치가 다르거나 보정 위치가 없으면 높이·지반 고도를 사용하지 않습니다. 좌표 일치 허용 오차는 각 축 0.0000001도입니다. 신뢰도와 보정 시각을 함께 표시합니다.
+
+기본 분석은 **360° 회전 잠재 가시권**입니다. 카메라별 **저장 수평 시야 사용** 버튼을 누르면 해당 보정값의 `headingDeg`와 `horizontalFovDeg`만 적용합니다. 저장 시점의 추정 수평 시야이며 현재 화면이 아닙니다. 수직 시야각이 없고 원본 pitch의 좌표계가 확정되지 않았으므로 `pitchDeg`와 `deviceAnchor`의 pan/tilt/zoom으로 현재 수직 시야나 줌을 추정하지 않습니다. 최대 감시 거리 `rangeM`이 없으면 화면에서 입력해야 하며, 기본 거리를 임의 지정하지 않습니다.
+
+분석 입력 내보내기는 원본 지도 파일의 `orientation.landmarks`나 `nativeTracking.deviceAnchor` 등 전체 메타데이터를 보존하지 않습니다. 원본 파일은 별도로 보관하세요. 업로드한 실제 카메라 위치 파일은 소스 저장소의 예제에 포함하지 않습니다.
+
 ## 사찰 JSON
 
 ```json

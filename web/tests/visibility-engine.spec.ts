@@ -70,3 +70,43 @@ test("reject duplicate IDs, invalid coordinates, nonfinite heights, bad DEM dime
   expect(() => parseTemples([{...target,id:"a",name:"A",radiusM:-1}])).toThrow();
   expect(() => parseScenario({label:"oops",terrain:terrain(),cameras:[]})).toThrow(/synthetic/);
 });
+
+const mapPosition = () => ({ id:"map-a",name:"Synthetic map camera",lat:37.005,lon:127.005,ssmUuid:null,orientation:null,
+  nativeTracking:{source:"operator-ptz-anchor",confidence:"approximate",savedAt:"2026-10-01T00:00:00Z",
+    positionAtCalibration:{lat:37.005,lon:127.005},deviceAnchor:{panDeg:244,tiltDeg:10,zoom:2},
+    pose:{headingDeg:90,pitchDeg:-3,horizontalFovDeg:60,cameraHeightM:15},groundElevationM:120} });
+const mapFile = (positions: unknown[]) => ({schemaVersion:1,crs:"EPSG:4326",positions});
+test("map positions imports calibration heights and independent IDs without claiming a live view", () => {
+  const [c] = parseCameras(mapFile([mapPosition()]));
+  expect(c.uuid).toBe("map-position:map-a");
+  expect(c.mapPositionId).toBe("map-a");
+  expect(c.ssmUuid).toBe(null);
+  expect(c.cameraHeightM).toBe(15);
+  expect(c.groundElevationM).toBe(120);
+  expect(c.rangeM).toBe(null);
+  expect(c.headingDeg).toBe(null);
+  expect(c.horizontalFovDeg).toBe(null);
+  expect(c.tiltDeg).toBe(null);
+  expect(c.savedView).toMatchObject({headingDeg:90,pitchDeg:-3,horizontalFovDeg:60,positionMatches:true,source:"nativeTracking"});
+  expect(parseCameras({cameras:[c]})[0]).toEqual(c);
+});
+test("moving a map camera invalidates its saved calibration; matching orientation is a fallback", () => {
+  const moved = {...mapPosition(),lat:37.006};
+  let c = parseCameras(mapFile([moved]))[0];
+  expect(c.cameraHeightM).toBe(null);
+  expect(c.groundElevationM).toBe(null);
+  expect(c.savedView?.positionMatches).toBe(false);
+  c = parseCameras(mapFile([{...moved,orientation:{headingDeg:120,horizontalFovDeg:80,pitchDeg:5,
+    cameraHeightM:20,groundElevationM:130,positionAtCalibration:{lat:moved.lat,lon:moved.lon},confidence:"unvalidated"}}]))[0];
+  expect(c.savedView?.source).toBe("orientation");
+  expect(c.cameraHeightM).toBe(20);
+  expect(c.savedView?.positionMatches).toBe(true);
+});
+test("map import validates CRS, version, duplicate IDs and optional SSM identity", () => {
+  expect(() => parseCameras({...mapFile([]),crs:"EPSG:3857"})).toThrow(/EPSG:4326/);
+  expect(() => parseCameras({...mapFile([]),schemaVersion:2})).toThrow(/schemaVersion/);
+  expect(() => parseCameras(mapFile([mapPosition(),{...mapPosition(),ssmUuid:"different-ssm-id"}]))).toThrow(/중복/);
+  const [c] = parseCameras(mapFile([{...mapPosition(),ssmUuid:"real-ssm-id"}]));
+  expect(c.uuid).toBe("real-ssm-id");
+  expect(c.mapPositionId).toBe("map-a");
+});
