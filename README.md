@@ -85,3 +85,7 @@ Playwright Chromium이 필요하며, 시스템 Chromium은 `CHROMIUM_EXECUTABLE`
 - `probe/` : 실험용 코드
 
 운영 CCTV이므로 초기 개발은 읽기 전용으로 진행한다.
+
+## 지형 가시권 · 사찰 감시
+
+기존 위치 JSON과 DEM을 불러와 지형 가림과 사찰 주변 사각지대를 계산할 수 있습니다. 사찰 좌표는 나중에 추가해도 됩니다. 화면의 **지형·사찰 가시권** 탭을 열어 시작하세요. [입력 형식, GeoTIFF 변환 및 검증 안내](docs/terrain-visibility.md)를 참고하세요.

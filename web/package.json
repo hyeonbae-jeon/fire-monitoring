@@ -6,7 +6,8 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:visibility": "playwright test --config playwright.visibility.config.ts"
   },
   "dependencies": {
     "react": "19.2.0",
