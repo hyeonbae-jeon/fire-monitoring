@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./style.css";
+import { VisibilityPanel } from "./visibility/VisibilityPanel";
 
 type Camera = {
   uuid: string; name: string; channel: string | null; device: string | null;
@@ -25,6 +26,7 @@ async function api<T>(url: string, options?: RequestInit): Promise<T> {
 const flag = (value: boolean | null) => value === null ? "UNKNOWN" : value ? "있음" : "없음";
 
 function App() {
+  const [tab, setTab] = useState("inventory");
   const [inventory, setInventory] = useState<Inventory | null>(null);
   const [configuration, setConfiguration] = useState<Configuration | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -78,13 +80,14 @@ function App() {
     finally { setBusy(false); }
   }
   return <div className="app">
-    <header><p className="eyebrow">중앙 PTZ Bridge · Camera Inventory</p><h1>산불감시 카메라 선택</h1>
+    <header><p className="eyebrow">중앙 PTZ Bridge · Camera Inventory</p><h1>산불감시 · 카메라와 사각지대</h1>
       <p>카메라 목록을 확인하고 사용할 대상을 UUID 기준으로 저장합니다.</p></header>
-    <main>
+    <nav className="app-tabs" aria-label="주요 기능"><button aria-pressed={tab === "inventory"} onClick={() => setTab("inventory")}>카메라 선택</button><button aria-pressed={tab === "visibility"} onClick={() => setTab("visibility")}>지형·사찰 가시권</button></nav>
+    <main><div hidden={tab !== "visibility"}><VisibilityPanel /></div><div hidden={tab !== "inventory"}>
       <section className="notice" aria-label="연결 상태">
         <strong>파일 입력 모드 · 실제 SSM 미연결</strong>
         <p>SSM 전체 조회 인터페이스는 UNKNOWN입니다. 전체 목록 여부는 입력 작성자의 선언이며 자동 검증되지 않습니다.
-          CCTV에는 명령을 보내지 않습니다. PTZ 구독 및 VWorld 3D는 다음 단계입니다.</p>
+          CCTV에는 명령을 보내지 않습니다. 지형·사찰 가시권은 별도 탭에서 입력 데이터를 기반으로 계산합니다. PTZ 구독 및 VWorld 3D는 다음 단계입니다.</p>
         {inventory && <p>입력: {inventory.provenance} · 수집 시각: {new Date(inventory.capturedAt).toLocaleString()}</p>}
       </section>
       <div className="toolbar">
@@ -112,7 +115,7 @@ function App() {
         <button disabled={busy || !inventory || !configuration || missing.length > 0 || !writeKey || !dirty} onClick={() => void save()}>선택한 카메라 저장</button>
         <p>선택 해제한 카메라는 설정에서 제거됩니다. 0대 저장은 전체 선택 해제입니다. 키는 브라우저 저장소에 보관하지 않습니다.</p>
       </section>
-    </main>
+    </div></main>
   </div>;
 }
 createRoot(document.getElementById("root")!).render(<App />);
